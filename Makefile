@@ -3,6 +3,7 @@
 # Build the server
 build:
 	go build -o mcp-server cmd/server/main.go
+	GOOS=linux GOARCH=amd64 go build -o server cmd/server/main.go
 
 # Run the server in stdio mode
 run-stdio: build
