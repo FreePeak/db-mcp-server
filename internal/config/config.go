@@ -18,6 +18,7 @@ type Config struct {
 	ServerPort     int
 	TransportMode  string
 	LogLevel       string
+	ServerName     string            // Name used for MCP tools prefix
 	DBConfig       DatabaseConfig    // Legacy single database config
 	MultiDBConfig  *db.MultiDBConfig // New multi-database config
 	ConfigPath     string            // Path to the configuration file
@@ -82,6 +83,7 @@ func LoadConfig() (*Config, error) {
 		ServerPort:     port,
 		TransportMode:  getEnv("TRANSPORT_MODE", "sse"),
 		LogLevel:       getEnv("LOG_LEVEL", "info"),
+		ServerName:     getEnv("MCP_SERVER_NAME", "db"), // Get server name from env or use "db" as default
 		ConfigPath:     configPath,
 		DisableLogging: disableLogging,
 		DBConfig: DatabaseConfig{

@@ -146,7 +146,7 @@ func main() {
 	// Set up Clean Architecture layers
 	dbRepo := repository.NewDatabaseRepository()
 	dbUseCase := usecase.NewDatabaseUseCase(dbRepo)
-	toolRegistry := mcp.NewToolRegistry(mcpServer)
+	toolRegistry := mcp.NewToolRegistry(mcpServer, cfg.ServerName)
 
 	// Set the database use case in the tool registry
 	ctx := context.Background()
@@ -168,17 +168,20 @@ func main() {
 
 	// If we have databases, display the available tools
 	if len(dbIDs) > 0 {
+		// Calculate tool prefix for display
+		toolPrefix := fmt.Sprintf("mcp_%s_", cfg.ServerName)
+
 		log.Printf("Available database tools:")
 		for _, dbID := range dbIDs {
 			log.Printf("  Database %s:", dbID)
-			log.Printf("    - query_%s: Execute SQL queries", dbID)
-			log.Printf("    - execute_%s: Execute SQL statements", dbID)
-			log.Printf("    - transaction_%s: Manage transactions", dbID)
-			log.Printf("    - performance_%s: Analyze query performance", dbID)
-			log.Printf("    - schema_%s: Get database schema", dbID)
+			log.Printf("    - %squery_%s: Execute SQL queries", toolPrefix, dbID)
+			log.Printf("    - %sexecute_%s: Execute SQL statements", toolPrefix, dbID)
+			log.Printf("    - %stransaction_%s: Manage transactions", toolPrefix, dbID)
+			log.Printf("    - %sperformance_%s: Analyze query performance", toolPrefix, dbID)
+			log.Printf("    - %sschema_%s: Get database schema", toolPrefix, dbID)
 		}
 		log.Printf("  Common tools:")
-		log.Printf("    - list_databases: List all available databases")
+		log.Printf("    - %slist_databases: List all available databases", toolPrefix)
 	}
 
 	// If no database connections, register mock tools to ensure at least some tools are available

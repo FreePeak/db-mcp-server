@@ -20,15 +20,17 @@ type ToolRegistry struct {
 	mcpServer       *server.MCPServer
 	databaseUseCase UseCaseProvider
 	factory         *ToolTypeFactory
+	serverName      string
 }
 
 // NewToolRegistry creates a new tool registry
-func NewToolRegistry(mcpServer *server.MCPServer) *ToolRegistry {
+func NewToolRegistry(mcpServer *server.MCPServer, serverName string) *ToolRegistry {
 	factory := NewToolTypeFactory()
 	return &ToolRegistry{
-		server:    NewServerWrapper(mcpServer),
-		mcpServer: mcpServer,
-		factory:   factory,
+		server:     NewServerWrapper(mcpServer),
+		mcpServer:  mcpServer,
+		factory:    factory,
+		serverName: serverName,
 	}
 }
 
@@ -85,8 +87,8 @@ func (tr *ToolRegistry) registerDatabaseTools(ctx context.Context, dbID string) 
 	// Register each tool type for this database
 	registrationErrors := 0
 	for _, typeName := range toolTypeNames {
-		// Use simpler tool names: <tooltype>_<dbID>
-		toolName := fmt.Sprintf("%s_%s", typeName, dbID)
+		// Create tool name with cursor-compatible prefix: mcp_<servername>_<tooltype>_<dbID>
+		toolName := fmt.Sprintf("mcp_%s_%s_%s", tr.serverName, typeName, dbID)
 		if err := tr.registerTool(ctx, typeName, toolName, dbID); err != nil {
 			log.Printf("Error registering tool %s: %v", toolName, err)
 			registrationErrors++
@@ -122,11 +124,11 @@ func (tr *ToolRegistry) registerTool(ctx context.Context, toolTypeName string, n
 
 // registerCommonTools registers tools that are not specific to a database
 func (tr *ToolRegistry) registerCommonTools(ctx context.Context) {
-	// Register the list_databases tool with simple name
+	// Register the list_databases tool with prefix for Cursor compatibility
 	_, ok := tr.factory.GetToolType("list_databases")
 	if ok {
-		// Use simple name for list_databases tool
-		listDbName := "list_databases"
+		// Use prefixed name for list_databases tool: mcp_<servername>_list_databases
+		listDbName := fmt.Sprintf("mcp_%s_list_databases", tr.serverName)
 		if err := tr.registerTool(ctx, "list_databases", listDbName, ""); err != nil {
 			log.Printf("Error registering %s tool: %v", listDbName, err)
 		} else {
@@ -141,8 +143,8 @@ func (tr *ToolRegistry) RegisterMockTools(ctx context.Context) error {
 
 	// For each tool type, register a simplified mock tool
 	for toolTypeName := range tr.factory.toolTypes {
-		// Format: mock_<tooltype>
-		mockToolName := fmt.Sprintf("mock_%s", toolTypeName)
+		// Format: mcp_<servername>_mock_<tooltype>
+		mockToolName := fmt.Sprintf("mcp_%s_mock_%s", tr.serverName, toolTypeName)
 
 		toolTypeImpl, ok := tr.factory.GetToolType(toolTypeName)
 		if !ok {

@@ -7,10 +7,10 @@
                 "stdio",
                 "-c",
                 "/Users/harvey/Work/dev/FreePeak/SaaS/cashflow-core/database_config.json"
-            ]
-        },
-        "multidb2": {
-            "url": "http://127.0.0.1:9090/sse"
+            ],
+            "env": {
+                "MCP_SERVER_NAME": "multidb"
+            }
         }
     }
 }

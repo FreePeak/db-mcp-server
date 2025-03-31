@@ -567,9 +567,31 @@ func (f *ToolTypeFactory) GetToolType(name string) (ToolType, bool) {
 
 // GetToolTypeForSourceName finds the appropriate tool type for a source name
 func (f *ToolTypeFactory) GetToolTypeForSourceName(sourceName string) (ToolType, string, bool) {
-	// Handle simpler format: <tooltype>_<dbID>
+	// Handle Cursor format: mcp_<servername>_<tooltype>_<dbID>
 	parts := strings.Split(sourceName, "_")
 
+	if len(parts) >= 3 && parts[0] == "mcp" {
+		// Check for list_databases special case
+		if len(parts) == 3 && parts[2] == "list_databases" {
+			toolType, ok := f.toolTypes["list_databases"]
+			return toolType, "", ok
+		}
+
+		// For database tools, format is mcp_<servername>_<tooltype>_<dbID>
+		if len(parts) >= 4 {
+			// parts[0] is "mcp", parts[1] is server name, parts[2] is tool type, parts[3] is dbID
+			toolTypeName := parts[2]
+			dbID := parts[3]
+
+			toolType, ok := f.toolTypes[toolTypeName]
+			if ok {
+				return toolType, dbID, true
+			}
+		}
+	}
+
+	// Fall back to original naming scheme for backward compatibility
+	// Handle simpler format: <tooltype>_<dbID>
 	if len(parts) >= 2 {
 		// First part is tool type, last part is dbID
 		toolTypeName := parts[0]
