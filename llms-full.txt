@@ -422,7 +422,7 @@ The latest updates and improvements to MCP
   * We are exited to announce the availability of the MCP
     [C# SDK](https://github.com/modelcontextprotocol/csharp-sdk/) developed by
     [Peder Holdgaard Pedersen](http://github.com/PederHP) and Microsoft. This joins our growing
-    list of supported languages. The C# SDK is also avaialble as
+    list of supported languages. The C# SDK is also available as
     [NuGet package](https://www.nuget.org/packages/ModelContextProtocol)
   * Python SDK 1.5.0 was released with multiple fixes and improvements.
 </Update>
