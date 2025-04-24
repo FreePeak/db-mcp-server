@@ -215,7 +215,13 @@ func handleQueryBuilder(ctx context.Context, params map[string]interface{}) (int
 	}
 
 	// Create context with timeout
-	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	dbTimeout := db.QueryTimeout() * 1000 // Convert from seconds to milliseconds
+	timeout := dbTimeout                  // Default to the database's query timeout
+	if timeoutParam, ok := getIntParam(params, "timeout"); ok {
+		timeout = timeoutParam
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
 	defer cancel()
 
 	// Execute requested action

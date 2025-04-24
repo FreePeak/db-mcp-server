@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  db-mcp-test:
+    build: 
+      context: .
+      dockerfile: test.Dockerfile
+    volumes:
+      - ./config.json:/app/config.json
+    # For testing purposes
+    tty: true
+    stdin_open: true
+    # Use this for debugging
+    command: ["bash"]
+    # Use this for actual MCP proxy execution
+    # command: ["mcp-proxy","/app/server-linux","-t","stdio","-no-log","--stdio"] 

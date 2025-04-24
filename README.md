@@ -397,7 +397,12 @@ Create a `config.json` file with your database connections:
       "port": 3306,
       "name": "db1",
       "user": "user1",
-      "password": "password1"
+      "password": "password1",
+      "query_timeout": 60,
+      "max_open_conns": 20,
+      "max_idle_conns": 5,
+      "conn_max_lifetime_seconds": 300,
+      "conn_max_idle_time_seconds": 60
     },
     {
       "id": "mysql2",
@@ -873,3 +878,43 @@ If you encounter issues:
    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=FreePeak/db-mcp-server&type=Date" />
  </picture>
 </a>
+
+## Database Query Timeout Configuration
+
+You can configure the database query timeout for each database connection in the `config.json` file. The timeout is specified in seconds.
+
+Example configuration:
+
+```json
+{
+    "connections": [
+        {
+            "id": "mysql1",
+            "type": "mysql",
+            "host": "mysql1",
+            "port": 3306,
+            "name": "db1",
+            "user": "user1",
+            "password": "password1",
+            "query_timeout": 60,  // 60 seconds timeout for queries
+            "max_open_conns": 20,
+            "max_idle_conns": 5,
+            "conn_max_lifetime_seconds": 300,
+            "conn_max_idle_time_seconds": 60
+        }
+    ]
+}
+```
+
+If not specified, the default query timeout is 30 seconds. You can override this timeout for individual queries by specifying the `timeout` parameter (in milliseconds) when executing a query.
+
+```json
+{
+    "tool": "query_mysql",
+    "params": {
+        "query": "SELECT * FROM large_table",
+        "database": "mysql1",
+        "timeout": 120000  // 120 seconds (overrides the database configuration)
+    }
+}
+```

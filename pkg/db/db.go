@@ -52,6 +52,7 @@ type Config struct {
 	SSLRootCert        string
 	ApplicationName    string
 	ConnectTimeout     int               // in seconds
+	QueryTimeout       int               // in seconds, default is 30 seconds
 	TargetSessionAttrs string            // for PostgreSQL 10+
 	Options            map[string]string // Extra connection options
 
@@ -82,6 +83,9 @@ func (c *Config) SetDefaults() {
 	if c.ConnectTimeout == 0 {
 		c.ConnectTimeout = 10 // Default 10 seconds
 	}
+	if c.QueryTimeout == 0 {
+		c.QueryTimeout = 30 // Default 30 seconds
+	}
 }
 
 // Database represents a generic database interface
@@ -102,6 +106,7 @@ type Database interface {
 	// Metadata
 	DriverName() string
 	ConnectionString() string
+	QueryTimeout() int
 
 	// DB object access (for specific DB operations)
 	DB() *sql.DB
@@ -322,4 +327,9 @@ func (d *database) ConnectionString() string {
 	default:
 		return "unknown"
 	}
+}
+
+// QueryTimeout returns the configured query timeout in seconds
+func (d *database) QueryTimeout() int {
+	return d.config.QueryTimeout
 }

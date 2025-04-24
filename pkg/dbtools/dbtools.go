@@ -609,3 +609,18 @@ func _loadConfigFromEnv() (*db.MultiDBConfig, error) {
 	logger.Info("Created database config from environment variables")
 	return dbConfig, nil
 }
+
+// GetDatabaseQueryTimeout returns the query timeout for a database in milliseconds
+func GetDatabaseQueryTimeout(db db.Database) int {
+	// Get the query timeout from the database configuration
+	// Default to 30 seconds (30000ms) if not configured
+	defaultTimeout := 30000 // ms
+
+	if dbConfig, ok := db.(interface{ QueryTimeout() int }); ok {
+		if timeout := dbConfig.QueryTimeout(); timeout > 0 {
+			return timeout * 1000 // Convert from seconds to milliseconds
+		}
+	}
+
+	return defaultTimeout
+}

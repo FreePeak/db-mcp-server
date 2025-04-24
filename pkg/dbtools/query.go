@@ -74,7 +74,8 @@ func handleQuery(ctx context.Context, params map[string]interface{}) (interface{
 	}
 
 	// Extract timeout
-	timeout := 5000 // Default timeout: 5 seconds
+	dbTimeout := db.QueryTimeout() * 1000 // Convert from seconds to milliseconds
+	timeout := dbTimeout                  // Default to the database's query timeout
 	if timeoutParam, ok := getIntParam(params, "timeout"); ok {
 		timeout = timeoutParam
 	}

@@ -26,6 +26,7 @@ type DatabaseConnectionConfig struct {
 	SSLRootCert        string            `json:"ssl_root_cert,omitempty"`
 	ApplicationName    string            `json:"application_name,omitempty"`
 	ConnectTimeout     int               `json:"connect_timeout,omitempty"`
+	QueryTimeout       int               `json:"query_timeout,omitempty"` // in seconds
 	TargetSessionAttrs string            `json:"target_session_attrs,omitempty"`
 	Options            map[string]string `json:"options,omitempty"`
 
@@ -107,8 +108,13 @@ func (m *Manager) Connect() error {
 			dbConfig.SSLRootCert = cfg.SSLRootCert
 			dbConfig.ApplicationName = cfg.ApplicationName
 			dbConfig.ConnectTimeout = cfg.ConnectTimeout
+			dbConfig.QueryTimeout = cfg.QueryTimeout
 			dbConfig.TargetSessionAttrs = cfg.TargetSessionAttrs
 			dbConfig.Options = cfg.Options
+		} else if cfg.Type == "mysql" {
+			// Set MySQL-specific options
+			dbConfig.ConnectTimeout = cfg.ConnectTimeout
+			dbConfig.QueryTimeout = cfg.QueryTimeout
 		}
 
 		// Connection pool settings
