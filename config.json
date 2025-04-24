@@ -11,7 +11,8 @@
             "max_open_conns": 20,
             "max_idle_conns": 5,
             "conn_max_lifetime_seconds": 300,
-            "conn_max_idle_time_seconds": 60
+            "conn_max_idle_time_seconds": 60,
+            "query_timeout": 60
         },
         {
             "id": "mysql2",
@@ -24,7 +25,8 @@
             "max_open_conns": 20,
             "max_idle_conns": 5,
             "conn_max_lifetime_seconds": 300,
-            "conn_max_idle_time_seconds": 60
+            "conn_max_idle_time_seconds": 60,
+            "query_timeout": 45
         },
         {
             "id": "postgres1",
@@ -37,6 +39,7 @@
             "ssl_mode": "disable",
             "application_name": "db-mcp-server",
             "connect_timeout": 10,
+            "query_timeout": 60,
             "max_open_conns": 20,
             "max_idle_conns": 5,
             "conn_max_lifetime_seconds": 300,
@@ -53,6 +56,7 @@
             "ssl_mode": "prefer",
             "application_name": "db-mcp-server",
             "connect_timeout": 15,
+            "query_timeout": 90,
             "target_session_attrs": "any",
             "options": {
                 "application_name": "db-mcp-server",
@@ -74,6 +78,7 @@
             "ssl_mode": "disable",
             "application_name": "db-mcp-server",
             "connect_timeout": 10,
+            "query_timeout": 120,
             "max_open_conns": 20,
             "max_idle_conns": 5,
             "conn_max_lifetime_seconds": 300,
