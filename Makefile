@@ -11,11 +11,11 @@ build-example:
 
 # Run the server in stdio mode
 run-stdio: build
-	./server -t stdio
+	TRANSPORT_MODE=stdio ./bin/server
 
 # Run the server in SSE mode
 run-sse: clean build
-	./server -t sse -p 9090 -h 127.0.0.1 -c /Users/harvey/Work/dev/FreePeak/SaaS/cashflow-core/database_config.json
+	TRANSPORT_MODE=sse ./bin/server -t sse -p 9090 -h 127.0.0.1 -c config.json
 
 # Build and run the example client
 client:

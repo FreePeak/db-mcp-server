@@ -1,12 +1,12 @@
 {
     "mcpServers": {
         "multidb": {
-            "command": "/Users/harvey/Work/dev/FreePeak/Opensource/db-mcp-server/server",
+            "command": "/Users/harvey/Work/dev/FreePeak/Opensource/db-mcp-server/bin/server",
             "args": [
                 "-t",
                 "stdio",
                 "-c",
-                "/Users/harvey/Work/dev/FreePeak/SaaS/cashflow-core/database_config.json"
+                "/Users/harvey/Work/dev/FreePeak/SaaS/CashFlow/cashflow-core/database_config.json"
             ]
         },
         "multidb2": {
