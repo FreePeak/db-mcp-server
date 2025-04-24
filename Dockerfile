@@ -28,7 +28,7 @@ RUN apk add --no-cache ca-certificates tzdata bash netcat-openbsd bind-tools ipu
 WORKDIR /app
 
 # Copy the built binary from the builder stage
-COPY --from=builder /app/server /app/server
+COPY --from=builder /app/bin/server /app/server
 
 # Copy default config file
 COPY config.json /app/config.json
