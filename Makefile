@@ -5,6 +5,8 @@ build:
 	CGO_ENABLE=0 go build -o ./bin/server cmd/server/main.go
 	CGO_ENABLE=0 GOOS=linux GOARCH=amd64 go build -o ./bin/server-linux cmd/server/main.go
 
+build-multidb:
+	CGO_ENABLE=0 go build -o ./multidb cmd/server/main.go
 # Build the example stdio server
 build-example:
 	cd examples && go build -o mcp-example mcp_stdio_example.go

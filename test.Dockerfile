@@ -10,12 +10,14 @@ USER service-user
 
 WORKDIR /app
 
-# RUN git clone https://github.com/FreePeak/db-mcp-server . && git checkout 01bc85c8c93dbea90c1a2be729d7fd71b4d40f47
-COPY . .
+# RUN git clone https://github.com/FreePeak/db-mcp-server . && git checkout 43eb9c1247a0495952b45ac6223af1a9a207edbf
 
-# Add -no-log flag to prevent non-JSON log messages from causing parse errors in mcp-proxy
-# This fixes errors like: SyntaxError: Unexpected token 'N', "No active "... is not valid JSON
-# Redirect stderr to /dev/null to ensure no log messages interfere with JSON-RPC communication
-# CMD ["sh", "-c", "exec mcp-proxy /app/server-linux -t stdio -no-log --stdio 2>/dev/null"]
+COPY ./multidb-linux /app/multidb-linux
+COPY ./docker-wrapper.sh /app/docker-wrapper.sh
 
-CMD ["mcp-proxy", "/app/server-linux", "-t", "stdio", "-no-log", "--stdio"]
+# Setting environment variables to disable logging in the container
+ENV MCP_DISABLE_LOGGING=true \
+    DISABLE_LOGGING=true \
+    TRANSPORT_MODE=stdio
+
+CMD ["mcp-proxy", "/app/docker-wrapper.sh"]

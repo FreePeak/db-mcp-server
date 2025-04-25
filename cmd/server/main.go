@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -271,8 +272,15 @@ func main() {
 		os.Setenv("MCP_DISABLE_LOGGING", "true")
 		os.Setenv("DISABLE_LOGGING", "true")
 
-		// The logger initialization will handle file-based logging
-		// Here we just ensure we don't introduce any printing to stdout
+		// Ensure standard logger doesn't output to stdout for any imported libraries
+		// that use the standard log package
+		logFile, err := os.OpenFile(filepath.Join(logsDir, "stdio-server.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create stdio server log file: %v\n", err)
+		} else {
+			// Redirect all standard logging to the file
+			log.SetOutput(logFile)
+		}
 
 		// Critical: Use ServeStdio WITHOUT any console output to stdout
 		if err := mcpServer.ServeStdio(); err != nil {
