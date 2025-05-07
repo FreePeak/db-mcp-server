@@ -361,10 +361,10 @@ func (t *TimescaleDBTool) handleEnableCompression(ctx context.Context, request s
 	// If interval is specified, add compression policy
 	if afterInterval != "" {
 		// Build the SQL statement for compression policy
-		policySql := fmt.Sprintf("SELECT add_compression_policy('%s', INTERVAL '%s')", targetTable, afterInterval)
+		policySQL := fmt.Sprintf("SELECT add_compression_policy('%s', INTERVAL '%s')", targetTable, afterInterval)
 
 		// Execute the statement
-		_, err = useCase.ExecuteStatement(ctx, dbID, policySql, nil)
+		_, err = useCase.ExecuteStatement(ctx, dbID, policySQL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add compression policy: %w", err)
 		}
@@ -496,8 +496,8 @@ func (t *TimescaleDBTool) handleAddCompressionPolicy(ctx context.Context, reques
 
 	// If compression isn't enabled, enable it first
 	if !isCompressed {
-		enableSql := fmt.Sprintf("ALTER TABLE %s SET (timescaledb.compress = true)", targetTable)
-		_, err = useCase.ExecuteStatement(ctx, dbID, enableSql, nil)
+		enableSQL := fmt.Sprintf("ALTER TABLE %s SET (timescaledb.compress = true)", targetTable)
+		_, err = useCase.ExecuteStatement(ctx, dbID, enableSQL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to enable compression: %w", err)
 		}
@@ -575,8 +575,8 @@ func (t *TimescaleDBTool) handleRemoveCompressionPolicy(ctx context.Context, req
 	}
 
 	// Remove the policy
-	removeSql := fmt.Sprintf("SELECT remove_compression_policy(%v)", jobID)
-	_, err = useCase.ExecuteStatement(ctx, dbID, removeSql, nil)
+	removeSQL := fmt.Sprintf("SELECT remove_compression_policy(%v)", jobID)
+	_, err = useCase.ExecuteStatement(ctx, dbID, removeSQL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove compression policy: %w", err)
 	}

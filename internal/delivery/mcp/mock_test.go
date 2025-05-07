@@ -6,20 +6,26 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockDatabaseUseCase is a mock implementation of the database use case for testing
+// MockDatabaseUseCase is a mock implementation of the database use case
 type MockDatabaseUseCase struct {
 	mock.Mock
-}
-
-// ExecuteQuery mocks the ExecuteQuery method
-func (m *MockDatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string, params []interface{}) (string, error) {
-	args := m.Called(ctx, dbID, query, params)
-	return args.String(0), args.Error(1)
 }
 
 // ExecuteStatement mocks the ExecuteStatement method
 func (m *MockDatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement string, params []interface{}) (string, error) {
 	args := m.Called(ctx, dbID, statement, params)
+	return args.String(0), args.Error(1)
+}
+
+// GetDatabaseType mocks the GetDatabaseType method
+func (m *MockDatabaseUseCase) GetDatabaseType(dbID string) (string, error) {
+	args := m.Called(dbID)
+	return args.String(0), args.Error(1)
+}
+
+// ExecuteQuery mocks the ExecuteQuery method
+func (m *MockDatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string, params []interface{}) (string, error) {
+	args := m.Called(ctx, dbID, query, params)
 	return args.String(0), args.Error(1)
 }
 
@@ -39,10 +45,4 @@ func (m *MockDatabaseUseCase) GetDatabaseInfo(dbID string) (map[string]interface
 func (m *MockDatabaseUseCase) ListDatabases() []string {
 	args := m.Called()
 	return args.Get(0).([]string)
-}
-
-// GetDatabaseType mocks the GetDatabaseType method
-func (m *MockDatabaseUseCase) GetDatabaseType(dbID string) (string, error) {
-	args := m.Called(dbID)
-	return args.String(0), args.Error(1)
 }
