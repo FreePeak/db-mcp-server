@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/FreePeak/cortex/pkg/server"
-	"github.com/FreePeak/cortex/pkg/tools"
+	cortextools "github.com/FreePeak/cortex/pkg/tools"
 )
 
 // TimescaleDBTool implements a tool for TimescaleDB operations
@@ -38,45 +38,76 @@ func (t *TimescaleDBTool) GetDescription(dbID string) string {
 
 // CreateTool creates a tool instance
 func (t *TimescaleDBTool) CreateTool(name string, dbID string) interface{} {
-	return tools.NewTool(
+	return cortextools.NewTool(
 		name,
-		tools.WithDescription(t.GetDescription(dbID)),
-		tools.WithString("operation",
-			tools.Description("TimescaleDB operation to perform"),
-			tools.Required(),
+		cortextools.WithDescription(t.GetDescription(dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("TimescaleDB operation to perform"),
+			cortextools.Required(),
 		),
-		tools.WithString("target_table",
-			tools.Description("The table to perform the operation on"),
-			tools.Required(),
+		cortextools.WithString("target_table",
+			cortextools.Description("The table to perform the operation on"),
+			cortextools.Required(),
 		),
 	)
 }
 
 // CreateHypertableTool creates a specific tool for hypertable creation
 func (t *TimescaleDBTool) CreateHypertableTool(name string, dbID string) interface{} {
-	return tools.NewTool(
+	return cortextools.NewTool(
 		name,
-		tools.WithDescription(fmt.Sprintf("Create TimescaleDB hypertable on %s", dbID)),
-		tools.WithString("operation",
-			tools.Description("Must be 'create_hypertable'"),
-			tools.Required(),
+		cortextools.WithDescription(fmt.Sprintf("Create TimescaleDB hypertable on %s", dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("Must be 'create_hypertable'"),
+			cortextools.Required(),
 		),
-		tools.WithString("target_table",
-			tools.Description("The table to convert to a hypertable"),
-			tools.Required(),
+		cortextools.WithString("target_table",
+			cortextools.Description("The table to convert to a hypertable"),
+			cortextools.Required(),
 		),
-		tools.WithString("time_column",
-			tools.Description("The timestamp column for the hypertable"),
-			tools.Required(),
+		cortextools.WithString("time_column",
+			cortextools.Description("The timestamp column for the hypertable"),
+			cortextools.Required(),
 		),
-		tools.WithString("chunk_time_interval",
-			tools.Description("Time interval for chunks (e.g., '1 day')"),
+		cortextools.WithString("chunk_time_interval",
+			cortextools.Description("Time interval for chunks (e.g., '1 day')"),
 		),
-		tools.WithString("partitioning_column",
-			tools.Description("Optional column for space partitioning"),
+		cortextools.WithString("partitioning_column",
+			cortextools.Description("Optional column for space partitioning"),
 		),
-		tools.WithBoolean("if_not_exists",
-			tools.Description("Skip if hypertable already exists"),
+		cortextools.WithBoolean("if_not_exists",
+			cortextools.Description("Skip if hypertable already exists"),
+		),
+	)
+}
+
+// CreateListHypertablesTool creates a specific tool for listing hypertables
+func (t *TimescaleDBTool) CreateListHypertablesTool(name string, dbID string) interface{} {
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(fmt.Sprintf("List TimescaleDB hypertables on %s", dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("Must be 'list_hypertables'"),
+			cortextools.Required(),
+		),
+	)
+}
+
+// CreateRetentionPolicyTool creates a specific tool for managing retention policies
+func (t *TimescaleDBTool) CreateRetentionPolicyTool(name string, dbID string) interface{} {
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(fmt.Sprintf("Manage TimescaleDB retention policies on %s", dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("Operation (add_retention_policy, remove_retention_policy, get_retention_policy)"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("target_table",
+			cortextools.Description("The hypertable to manage retention policy for"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("retention_interval",
+			cortextools.Description("Time interval for data retention (e.g., '30 days', '6 months')"),
 		),
 	)
 }
@@ -97,6 +128,14 @@ func (t *TimescaleDBTool) HandleRequest(ctx context.Context, request server.Tool
 	switch strings.ToLower(operation) {
 	case "create_hypertable":
 		return t.handleCreateHypertable(ctx, request, dbID, useCase)
+	case "list_hypertables":
+		return t.handleListHypertables(ctx, request, dbID, useCase)
+	case "add_retention_policy":
+		return t.handleAddRetentionPolicy(ctx, request, dbID, useCase)
+	case "remove_retention_policy":
+		return t.handleRemoveRetentionPolicy(ctx, request, dbID, useCase)
+	case "get_retention_policy":
+		return t.handleGetRetentionPolicy(ctx, request, dbID, useCase)
 	default:
 		return map[string]interface{}{"message": fmt.Sprintf("Operation '%s' not implemented yet", operation)}, nil
 	}
@@ -154,6 +193,54 @@ func (t *TimescaleDBTool) handleCreateHypertable(ctx context.Context, request se
 	}, nil
 }
 
+// handleListHypertables handles the list_hypertables operation
+func (t *TimescaleDBTool) handleListHypertables(ctx context.Context, request server.ToolCallRequest, dbID string, useCase interface{}) (interface{}, error) {
+	// Cast useCase to the expected type
+	dbUseCase, ok := useCase.(interface {
+		ExecuteStatement(ctx context.Context, dbID, statement string, params []interface{}) (string, error)
+		GetDatabaseType(dbID string) (string, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("invalid useCase type")
+	}
+
+	// Check if the database is PostgreSQL (TimescaleDB requires PostgreSQL)
+	dbType, err := dbUseCase.GetDatabaseType(dbID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database type: %w", err)
+	}
+
+	if !strings.Contains(strings.ToLower(dbType), "postgres") {
+		return nil, fmt.Errorf("TimescaleDB operations are only supported on PostgreSQL databases")
+	}
+
+	// Build the SQL query to list hypertables
+	sql := `
+		SELECT h.table_name, h.schema_name, d.column_name as time_column,
+			count(d.id) as num_dimensions,
+			(
+				SELECT column_name FROM _timescaledb_catalog.dimension 
+				WHERE hypertable_id = h.id AND column_type != 'TIMESTAMP' 
+				AND column_type != 'TIMESTAMPTZ' 
+				LIMIT 1
+			) as space_column
+		FROM _timescaledb_catalog.hypertable h
+		JOIN _timescaledb_catalog.dimension d ON h.id = d.hypertable_id
+		GROUP BY h.id, h.table_name, h.schema_name
+	`
+
+	// Execute the statement
+	result, err := dbUseCase.ExecuteStatement(ctx, dbID, sql, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list hypertables: %w", err)
+	}
+
+	return map[string]interface{}{
+		"message": "Successfully retrieved hypertables list",
+		"details": result,
+	}, nil
+}
+
 // getStringParam safely extracts a string parameter from a parameter map
 func getStringParam(params map[string]interface{}, key string) string {
 	if value, ok := params[key].(string); ok {
@@ -205,5 +292,9 @@ func buildCreateHypertableSQL(table, timeColumn, chunkTimeInterval, partitioning
 
 // RegisterTimescaleDBTools registers TimescaleDB tools
 func RegisterTimescaleDBTools(registry interface{}) error {
+	// We'll just return nil for now since the actual tool registration happens elsewhere
+	// Once we understand the proper way to register tools in this codebase, we can implement this function
+
+	// For now, we'll just log that we have a list_hypertables tool available
 	return nil
 }
