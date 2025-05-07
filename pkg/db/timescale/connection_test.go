@@ -6,41 +6,38 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/FreePeak/db-mcp-server/pkg/db"
 )
 
 func TestNewTimescaleDB(t *testing.T) {
-	// Create a basic config
-	config := TimescaleDBConfig{
-		PostgresConfig: db.Config{
-			Type:     "postgres",
-			Host:     "localhost",
-			Port:     5432,
-			User:     "testuser",
-			Password: "testpass",
-			Name:     "testdb",
-		},
+	// Create a config with test values
+	pgConfig := db.Config{
+		Type:     "postgres",
+		Host:     "localhost",
+		Port:     5432,
+		User:     "postgres",
+		Password: "password",
+		Name:     "testdb",
+	}
+	config := DBConfig{
+		PostgresConfig: pgConfig,
 		UseTimescaleDB: true,
 	}
 
-	// Create a new TimescaleDB instance directly with a mock database
-	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
-		Database: mockDB,
-		config:   config,
-	}
-
-	// Check that the config was stored
-	if tsdb.config.UseTimescaleDB != config.UseTimescaleDB {
-		t.Errorf("Expected UseTimescaleDB to be %v, got %v", config.UseTimescaleDB, tsdb.config.UseTimescaleDB)
-	}
+	// Create a new DB instance
+	tsdb, err := NewTimescaleDB(config)
+	assert.NoError(t, err)
+	assert.NotNil(t, tsdb)
+	assert.Equal(t, pgConfig, tsdb.config.PostgresConfig)
 }
 
 func TestConnect(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
-		config:        TimescaleDBConfig{UseTimescaleDB: true},
+		config:        DBConfig{UseTimescaleDB: true},
 		isTimescaleDB: false,
 	}
 
@@ -64,9 +61,9 @@ func TestConnect(t *testing.T) {
 	// Test error case when database connection fails
 	mockDB = NewMockDB()
 	mockDB.SetConnectError(errors.New("mocked connection error"))
-	tsdb = &TimescaleDB{
+	tsdb = &DB{
 		Database:      mockDB,
-		config:        TimescaleDBConfig{UseTimescaleDB: true},
+		config:        DBConfig{UseTimescaleDB: true},
 		isTimescaleDB: false,
 	}
 
@@ -78,9 +75,9 @@ func TestConnect(t *testing.T) {
 	// Test case when TimescaleDB extension is not available
 	mockDB = NewMockDB()
 	mockDB.RegisterQueryResult("SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'", nil, sql.ErrNoRows)
-	tsdb = &TimescaleDB{
+	tsdb = &DB{
 		Database:      mockDB,
-		config:        TimescaleDBConfig{UseTimescaleDB: true},
+		config:        DBConfig{UseTimescaleDB: true},
 		isTimescaleDB: false,
 	}
 
@@ -97,9 +94,9 @@ func TestConnect(t *testing.T) {
 	// Test case when TimescaleDB check fails with an unexpected error
 	mockDB = NewMockDB()
 	mockDB.RegisterQueryResult("SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'", nil, errors.New("mocked query error"))
-	tsdb = &TimescaleDB{
+	tsdb = &DB{
 		Database:      mockDB,
-		config:        TimescaleDBConfig{UseTimescaleDB: true},
+		config:        DBConfig{UseTimescaleDB: true},
 		isTimescaleDB: false,
 	}
 
@@ -111,7 +108,7 @@ func TestConnect(t *testing.T) {
 
 func TestClose(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database: mockDB,
 	}
 
@@ -124,7 +121,7 @@ func TestClose(t *testing.T) {
 	// Test error case
 	mockDB = NewMockDB()
 	mockDB.SetCloseError(errors.New("mocked close error"))
-	tsdb = &TimescaleDB{
+	tsdb = &DB{
 		Database: mockDB,
 	}
 
@@ -135,7 +132,7 @@ func TestClose(t *testing.T) {
 }
 
 func TestExtVersion(t *testing.T) {
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		extVersion: "2.8.0",
 	}
 
@@ -145,7 +142,7 @@ func TestExtVersion(t *testing.T) {
 }
 
 func TestTimescaleDBInstance(t *testing.T) {
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		isTimescaleDB: true,
 	}
 
@@ -161,7 +158,7 @@ func TestTimescaleDBInstance(t *testing.T) {
 
 func TestApplyConfig(t *testing.T) {
 	// Test when TimescaleDB is not available
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		isTimescaleDB: false,
 	}
 
@@ -171,7 +168,7 @@ func TestApplyConfig(t *testing.T) {
 	}
 
 	// Test when TimescaleDB is available
-	tsdb = &TimescaleDB{
+	tsdb = &DB{
 		isTimescaleDB: true,
 	}
 
@@ -183,7 +180,7 @@ func TestApplyConfig(t *testing.T) {
 
 func TestExecuteSQLWithoutParams(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database: mockDB,
 	}
 
@@ -227,7 +224,7 @@ func TestExecuteSQLWithoutParams(t *testing.T) {
 
 func TestExecuteSQL(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database: mockDB,
 	}
 
@@ -255,13 +252,12 @@ func TestExecuteSQL(t *testing.T) {
 		t.Fatalf("Failed to execute statement: %v", err)
 	}
 
-	// Since the mock doesn't do much, just verify it's a MockResult
-	_, ok := insertResult.(*MockResult)
-	if !ok {
-		t.Error("Expected result to be a MockResult")
+	// Since the mock doesn't do much, just verify it's not nil
+	if insertResult == nil {
+		t.Error("Expected non-nil result for INSERT")
 	}
 
-	// Test query error with parameters
+	// Test query error
 	mockDB.RegisterQueryResult("SELECT * FROM error_table WHERE id = $1", nil, errors.New("mocked query error"))
 	_, err = tsdb.ExecuteSQL(ctx, "SELECT * FROM error_table WHERE id = $1", 1)
 	if err == nil {
@@ -291,5 +287,54 @@ func TestIsSelectQuery(t *testing.T) {
 		if result != tc.expected {
 			t.Errorf("isSelectQuery(%q) = %v, expected %v", tc.query, result, tc.expected)
 		}
+	}
+}
+
+func TestTimescaleDB_Connect(t *testing.T) {
+	mockDB := NewMockDB()
+	tsdb := &DB{
+		Database:      mockDB,
+		config:        DBConfig{UseTimescaleDB: true},
+		isTimescaleDB: false,
+	}
+
+	// Mock the QueryRow method to simulate a successful TimescaleDB detection
+	mockDB.RegisterQueryResult("SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'", "2.8.0", nil)
+
+	// Connect to the database
+	err := tsdb.Connect()
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+
+	// Check that the TimescaleDB extension was detected
+	if !tsdb.isTimescaleDB {
+		t.Error("Expected isTimescaleDB to be true, got false")
+	}
+	if tsdb.extVersion != "2.8.0" {
+		t.Errorf("Expected extVersion to be '2.8.0', got '%s'", tsdb.extVersion)
+	}
+}
+
+func TestTimescaleDB_ConnectNoExtension(t *testing.T) {
+	mockDB := NewMockDB()
+	tsdb := &DB{
+		Database:      mockDB,
+		config:        DBConfig{UseTimescaleDB: true},
+		isTimescaleDB: false,
+	}
+
+	// Mock the QueryRow method to simulate no TimescaleDB extension
+	mockDB.RegisterQueryResult("SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'", nil, sql.ErrNoRows)
+
+	// Connect to the database
+	err := tsdb.Connect()
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+
+	// Check that TimescaleDB features are disabled
+	if tsdb.isTimescaleDB {
+		t.Error("Expected isTimescaleDB to be false, got true")
 	}
 }

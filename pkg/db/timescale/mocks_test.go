@@ -201,15 +201,15 @@ func (r *MockResult) RowsAffected() (int64, error) {
 }
 
 // MockTimescaleDB creates a TimescaleDB instance with mocked database for testing
-func MockTimescaleDB(t testing.TB) (*TimescaleDB, *MockDB) {
+func MockTimescaleDB(t testing.TB) (*DB, *MockDB) {
 	mockDB := NewMockDB()
 	mockDB.SetTimescaleAvailable(true)
 
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 		extVersion:    "2.8.0",
-		config: TimescaleDBConfig{
+		config: DBConfig{
 			UseTimescaleDB: true,
 		},
 	}
@@ -366,4 +366,13 @@ func (r *MockRows) Next(dest []driver.Value) error {
 		return nil
 	}
 	return io.EOF
+}
+
+// RunQueryTest executes a mock query test against the DB
+func RunQueryTest(t *testing.T, testFunc func(*DB) error) {
+	tsdb, _ := MockTimescaleDB(t)
+	err := testFunc(tsdb)
+	if err != nil {
+		t.Errorf("Test failed: %v", err)
+	}
 }

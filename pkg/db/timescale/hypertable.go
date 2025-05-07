@@ -3,7 +3,6 @@ package timescale
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 )
 
@@ -284,9 +283,11 @@ func (t *DB) CheckIfHypertable(ctx context.Context, tableName string) (bool, err
 	}
 
 	query := fmt.Sprintf(`
-		SELECT COUNT(*) as count
-		FROM _timescaledb_catalog.hypertable
-		WHERE table_name = '%s'
+		SELECT EXISTS (
+			SELECT 1 
+			FROM _timescaledb_catalog.hypertable
+			WHERE table_name = '%s'
+		) as is_hypertable
 	`, tableName)
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
@@ -299,25 +300,23 @@ func (t *DB) CheckIfHypertable(ctx context.Context, tableName string) (bool, err
 		return false, fmt.Errorf("unexpected result from database query")
 	}
 
-	var count int
-	switch c := rows[0]["count"].(type) {
-	case int:
-		count = c
-	case int64:
-		count = int(c)
-	case string:
-		if n, err := strconv.Atoi(c); err == nil {
-			count = n
-		}
+	isHypertable, ok := rows[0]["is_hypertable"].(bool)
+	if !ok {
+		return false, fmt.Errorf("unexpected result type for is_hypertable")
 	}
 
-	return count > 0, nil
+	return isHypertable, nil
 }
 
 // RecentChunks returns information about the most recent chunks
 func (t *DB) RecentChunks(ctx context.Context, tableName string, limit int) (interface{}, error) {
 	if !t.isTimescaleDB {
 		return nil, fmt.Errorf("TimescaleDB extension not available")
+	}
+
+	// Use default limit of 10 if not specified
+	if limit <= 0 {
+		limit = 10
 	}
 
 	query := fmt.Sprintf(`
@@ -339,14 +338,15 @@ func (t *DB) RecentChunks(ctx context.Context, tableName string, limit int) (int
 	return result, nil
 }
 
-// Helper function to create hypertable (needed by other packages)
+// CreateHypertable is a helper function to create a hypertable with the given configuration options.
+// This is exported for use by other packages.
 func CreateHypertable(ctx context.Context, db *DB, table, timeColumn string, opts ...HypertableOption) error {
 	config := HypertableConfig{
 		TableName:  table,
 		TimeColumn: timeColumn,
 	}
 
-	// Apply any options
+	// Apply all options
 	for _, opt := range opts {
 		opt(&config)
 	}

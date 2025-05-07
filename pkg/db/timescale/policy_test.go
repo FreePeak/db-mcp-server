@@ -8,7 +8,7 @@ import (
 
 func TestEnableCompression(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -72,7 +72,7 @@ func TestEnableCompression(t *testing.T) {
 
 func TestDisableCompression(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -126,7 +126,7 @@ func TestDisableCompression(t *testing.T) {
 
 func TestAddCompressionPolicy(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -192,7 +192,7 @@ func TestAddCompressionPolicy(t *testing.T) {
 
 func TestRemoveCompressionPolicy(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -241,7 +241,7 @@ func TestRemoveCompressionPolicy(t *testing.T) {
 
 func TestGetCompressionSettings(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -326,7 +326,7 @@ func TestGetCompressionSettings(t *testing.T) {
 
 func TestAddRetentionPolicy(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -361,7 +361,7 @@ func TestAddRetentionPolicy(t *testing.T) {
 
 func TestRemoveRetentionPolicy(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -410,7 +410,7 @@ func TestRemoveRetentionPolicy(t *testing.T) {
 
 func TestGetRetentionSettings(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -463,7 +463,7 @@ func TestGetRetentionSettings(t *testing.T) {
 
 func TestCompressChunks(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -508,7 +508,7 @@ func TestCompressChunks(t *testing.T) {
 
 func TestDecompressChunks(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -553,7 +553,7 @@ func TestDecompressChunks(t *testing.T) {
 
 func TestGetChunkCompressionStats(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}

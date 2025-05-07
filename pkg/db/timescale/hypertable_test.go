@@ -8,7 +8,7 @@ import (
 
 func TestCreateHypertable(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -93,7 +93,7 @@ func TestCreateHypertable(t *testing.T) {
 
 func TestAddDimension(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -131,7 +131,7 @@ func TestAddDimension(t *testing.T) {
 
 func TestListHypertables(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -218,7 +218,7 @@ func TestListHypertables(t *testing.T) {
 
 func TestGetHypertable(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -305,7 +305,7 @@ func TestGetHypertable(t *testing.T) {
 
 func TestDropHypertable(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -350,7 +350,7 @@ func TestDropHypertable(t *testing.T) {
 
 func TestCheckIfHypertable(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
@@ -413,7 +413,7 @@ func TestCheckIfHypertable(t *testing.T) {
 
 func TestRecentChunks(t *testing.T) {
 	mockDB := NewMockDB()
-	tsdb := &TimescaleDB{
+	tsdb := &DB{
 		Database:      mockDB,
 		isTimescaleDB: true,
 	}
