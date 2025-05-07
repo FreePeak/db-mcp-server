@@ -1,5 +1,28 @@
-.env
-logs/
-bin/
+# Specific binary files
 server
 server-linux
+multidb
+multidb-linux
+/bin/*
+
+# Build & test output
+*.out
+*.test
+coverage.out
+
+# Dependency directories
+vendor/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Log files
+logs/
+*.log
+
+# OS specific files
+.DS_Store
+.idea/
+.vscode/
