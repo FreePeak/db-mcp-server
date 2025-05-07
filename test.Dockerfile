@@ -10,14 +10,12 @@ USER service-user
 
 WORKDIR /app
 
-# RUN git clone https://github.com/FreePeak/db-mcp-server . && git checkout 43eb9c1247a0495952b45ac6223af1a9a207edbf
+RUN git clone https://github.com/FreePeak/db-mcp-server . && git checkout 71ffa5b5f5bb197a4732e03889b47da7ef09d819
 
-COPY ./multidb-linux /app/multidb-linux
-COPY ./docker-wrapper.sh /app/docker-wrapper.sh
+RUN (chmod +x /app/docker-wrapper.sh)
 
-# Setting environment variables to disable logging in the container
-ENV MCP_DISABLE_LOGGING=true \
-    DISABLE_LOGGING=true \
-    TRANSPORT_MODE=stdio
+RUN ls -la
+
+RUN cat /app/docker-wrapper.sh
 
 CMD ["mcp-proxy", "/app/docker-wrapper.sh"]
