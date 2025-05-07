@@ -3,6 +3,7 @@ package timescale
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -30,7 +31,7 @@ type Hypertable struct {
 }
 
 // CreateHypertable converts a regular PostgreSQL table to a TimescaleDB hypertable
-func (t *TimescaleDB) CreateHypertable(ctx context.Context, config HypertableConfig) error {
+func (t *DB) CreateHypertable(ctx context.Context, config HypertableConfig) error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -75,7 +76,7 @@ func (t *TimescaleDB) CreateHypertable(ctx context.Context, config HypertableCon
 }
 
 // AddDimension adds a new dimension (partitioning key) to a hypertable
-func (t *TimescaleDB) AddDimension(ctx context.Context, tableName, columnName string, numPartitions int) error {
+func (t *DB) AddDimension(ctx context.Context, tableName, columnName string, numPartitions int) error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -92,7 +93,7 @@ func (t *TimescaleDB) AddDimension(ctx context.Context, tableName, columnName st
 }
 
 // ListHypertables returns a list of all hypertables in the database
-func (t *TimescaleDB) ListHypertables(ctx context.Context) ([]Hypertable, error) {
+func (t *DB) ListHypertables(ctx context.Context) ([]Hypertable, error) {
 	if !t.isTimescaleDB {
 		return nil, fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -176,7 +177,7 @@ func (t *TimescaleDB) ListHypertables(ctx context.Context) ([]Hypertable, error)
 }
 
 // GetHypertable gets information about a specific hypertable
-func (t *TimescaleDB) GetHypertable(ctx context.Context, tableName string) (*Hypertable, error) {
+func (t *DB) GetHypertable(ctx context.Context, tableName string) (*Hypertable, error) {
 	if !t.isTimescaleDB {
 		return nil, fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -256,13 +257,13 @@ func (t *TimescaleDB) GetHypertable(ctx context.Context, tableName string) (*Hyp
 	return ht, nil
 }
 
-// DropHypertable drops a hypertable and all of its chunks
-func (t *TimescaleDB) DropHypertable(ctx context.Context, tableName string, cascade bool) error {
+// DropHypertable drops a hypertable
+func (t *DB) DropHypertable(ctx context.Context, tableName string, cascade bool) error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
 
-	// Use DROP TABLE with CASCADE if requested
+	// Build the DROP TABLE query
 	query := fmt.Sprintf("DROP TABLE %s", tableName)
 	if cascade {
 		query += " CASCADE"
@@ -277,14 +278,14 @@ func (t *TimescaleDB) DropHypertable(ctx context.Context, tableName string, casc
 }
 
 // CheckIfHypertable checks if a table is a hypertable
-func (t *TimescaleDB) CheckIfHypertable(ctx context.Context, tableName string) (bool, error) {
+func (t *DB) CheckIfHypertable(ctx context.Context, tableName string) (bool, error) {
 	if !t.isTimescaleDB {
 		return false, fmt.Errorf("TimescaleDB extension not available")
 	}
 
 	query := fmt.Sprintf(`
-		SELECT COUNT(*) > 0 as is_hypertable 
-		FROM _timescaledb_catalog.hypertable 
+		SELECT COUNT(*) as count
+		FROM _timescaledb_catalog.hypertable
 		WHERE table_name = '%s'
 	`, tableName)
 
@@ -298,27 +299,32 @@ func (t *TimescaleDB) CheckIfHypertable(ctx context.Context, tableName string) (
 		return false, fmt.Errorf("unexpected result from database query")
 	}
 
-	isHypertable, ok := rows[0]["is_hypertable"].(bool)
-	if !ok {
-		return false, fmt.Errorf("unexpected result type from database query")
+	var count int
+	switch c := rows[0]["count"].(type) {
+	case int:
+		count = c
+	case int64:
+		count = int(c)
+	case string:
+		if n, err := strconv.Atoi(c); err == nil {
+			count = n
+		}
 	}
 
-	return isHypertable, nil
+	return count > 0, nil
 }
 
-// RecentChunks returns information about recent chunks for a hypertable
-func (t *TimescaleDB) RecentChunks(ctx context.Context, tableName string, limit int) (interface{}, error) {
+// RecentChunks returns information about the most recent chunks
+func (t *DB) RecentChunks(ctx context.Context, tableName string, limit int) (interface{}, error) {
 	if !t.isTimescaleDB {
 		return nil, fmt.Errorf("TimescaleDB extension not available")
 	}
 
-	// Default limit if not provided
-	if limit <= 0 {
-		limit = 10
-	}
-
 	query := fmt.Sprintf(`
-		SELECT chunk_name, range_start, range_end, is_compressed
+		SELECT 
+			chunk_name,
+			range_start,
+			range_end
 		FROM timescaledb_information.chunks
 		WHERE hypertable_name = '%s'
 		ORDER BY range_end DESC
@@ -327,8 +333,54 @@ func (t *TimescaleDB) RecentChunks(ctx context.Context, tableName string, limit 
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get chunk information: %w", err)
+		return nil, fmt.Errorf("failed to get recent chunks: %w", err)
 	}
 
 	return result, nil
+}
+
+// Helper function to create hypertable (needed by other packages)
+func CreateHypertable(ctx context.Context, db *DB, table, timeColumn string, opts ...HypertableOption) error {
+	config := HypertableConfig{
+		TableName:  table,
+		TimeColumn: timeColumn,
+	}
+
+	// Apply any options
+	for _, opt := range opts {
+		opt(&config)
+	}
+
+	return db.CreateHypertable(ctx, config)
+}
+
+// HypertableOption is a functional option for CreateHypertable
+type HypertableOption func(*HypertableConfig)
+
+// WithChunkInterval sets the chunk time interval
+func WithChunkInterval(interval string) HypertableOption {
+	return func(config *HypertableConfig) {
+		config.ChunkTimeInterval = interval
+	}
+}
+
+// WithPartitioningColumn sets the space partitioning column
+func WithPartitioningColumn(column string) HypertableOption {
+	return func(config *HypertableConfig) {
+		config.PartitioningColumn = column
+	}
+}
+
+// WithIfNotExists sets the if_not_exists flag
+func WithIfNotExists(ifNotExists bool) HypertableOption {
+	return func(config *HypertableConfig) {
+		config.IfNotExists = ifNotExists
+	}
+}
+
+// WithMigrateData sets the migrate_data flag
+func WithMigrateData(migrateData bool) HypertableOption {
+	return func(config *HypertableConfig) {
+		config.MigrateData = migrateData
+	}
 }

@@ -12,30 +12,30 @@ import (
 	"github.com/FreePeak/db-mcp-server/pkg/logger"
 )
 
-// TimescaleDB represents a TimescaleDB database connection
-type TimescaleDB struct {
-	db.Database                     // Embed standard Database interface
-	config        TimescaleDBConfig // TimescaleDB-specific configuration
-	extVersion    string            // TimescaleDB extension version
-	isTimescaleDB bool              // Whether the database supports TimescaleDB
+// DB represents a TimescaleDB database connection
+type DB struct {
+	db.Database            // Embed standard Database interface
+	config        DBConfig // TimescaleDB-specific configuration
+	extVersion    string   // TimescaleDB extension version
+	isTimescaleDB bool     // Whether the database supports TimescaleDB
 }
 
 // NewTimescaleDB creates a new TimescaleDB connection
-func NewTimescaleDB(config TimescaleDBConfig) (*TimescaleDB, error) {
+func NewTimescaleDB(config DBConfig) (*DB, error) {
 	// Initialize PostgreSQL connection
 	pgDB, err := db.NewDatabase(config.PostgresConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize PostgreSQL connection: %w", err)
 	}
 
-	return &TimescaleDB{
+	return &DB{
 		Database: pgDB,
 		config:   config,
 	}, nil
 }
 
 // Connect establishes a connection and verifies TimescaleDB availability
-func (t *TimescaleDB) Connect() error {
+func (t *DB) Connect() error {
 	// Connect to PostgreSQL
 	if err := t.Database.Connect(); err != nil {
 		return err
@@ -83,22 +83,22 @@ func isTestEnvironment() bool {
 }
 
 // Close closes the database connection
-func (t *TimescaleDB) Close() error {
+func (t *DB) Close() error {
 	return t.Database.Close()
 }
 
 // ExtVersion returns the TimescaleDB extension version
-func (t *TimescaleDB) ExtVersion() string {
+func (t *DB) ExtVersion() string {
 	return t.extVersion
 }
 
 // IsTimescaleDB returns true if the database has TimescaleDB extension installed
-func (t *TimescaleDB) IsTimescaleDB() bool {
+func (t *DB) IsTimescaleDB() bool {
 	return t.isTimescaleDB
 }
 
 // ApplyConfig applies TimescaleDB-specific configuration options
-func (t *TimescaleDB) ApplyConfig() error {
+func (t *DB) ApplyConfig() error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("cannot apply TimescaleDB configuration: TimescaleDB extension not available")
 	}
@@ -108,7 +108,7 @@ func (t *TimescaleDB) ApplyConfig() error {
 }
 
 // ExecuteSQLWithoutParams executes a SQL query without parameters and returns a result
-func (t *TimescaleDB) ExecuteSQLWithoutParams(ctx context.Context, query string) (interface{}, error) {
+func (t *DB) ExecuteSQLWithoutParams(ctx context.Context, query string) (interface{}, error) {
 	// For non-SELECT queries (that don't return rows), use Exec
 	if !isSelectQuery(query) {
 		result, err := t.Database.Exec(ctx, query)
@@ -136,7 +136,7 @@ func (t *TimescaleDB) ExecuteSQLWithoutParams(ctx context.Context, query string)
 }
 
 // ExecuteSQL executes a SQL query with parameters and returns a result
-func (t *TimescaleDB) ExecuteSQL(ctx context.Context, query string, args ...interface{}) (interface{}, error) {
+func (t *DB) ExecuteSQL(ctx context.Context, query string, args ...interface{}) (interface{}, error) {
 	// For non-SELECT queries (that don't return rows), use Exec
 	if !isSelectQuery(query) {
 		result, err := t.Database.Exec(ctx, query, args...)

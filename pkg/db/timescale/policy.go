@@ -24,7 +24,7 @@ type RetentionSettings struct {
 }
 
 // EnableCompression enables compression on a hypertable
-func (t *TimescaleDB) EnableCompression(ctx context.Context, tableName string, afterInterval string) error {
+func (t *DB) EnableCompression(ctx context.Context, tableName string, afterInterval string) error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -47,7 +47,7 @@ func (t *TimescaleDB) EnableCompression(ctx context.Context, tableName string, a
 }
 
 // DisableCompression disables compression on a hypertable
-func (t *TimescaleDB) DisableCompression(ctx context.Context, tableName string) error {
+func (t *DB) DisableCompression(ctx context.Context, tableName string) error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -69,7 +69,7 @@ func (t *TimescaleDB) DisableCompression(ctx context.Context, tableName string) 
 }
 
 // AddCompressionPolicy adds a compression policy to a hypertable
-func (t *TimescaleDB) AddCompressionPolicy(ctx context.Context, tableName, interval, segmentBy, orderBy string) error {
+func (t *DB) AddCompressionPolicy(ctx context.Context, tableName, interval, segmentBy, orderBy string) error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -120,7 +120,7 @@ func (t *TimescaleDB) AddCompressionPolicy(ctx context.Context, tableName, inter
 }
 
 // RemoveCompressionPolicy removes a compression policy from a hypertable
-func (t *TimescaleDB) RemoveCompressionPolicy(ctx context.Context, tableName string) error {
+func (t *DB) RemoveCompressionPolicy(ctx context.Context, tableName string) error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -159,7 +159,7 @@ func (t *TimescaleDB) RemoveCompressionPolicy(ctx context.Context, tableName str
 }
 
 // GetCompressionSettings gets the compression settings for a hypertable
-func (t *TimescaleDB) GetCompressionSettings(ctx context.Context, tableName string) (*CompressionSettings, error) {
+func (t *DB) GetCompressionSettings(ctx context.Context, tableName string) (*CompressionSettings, error) {
 	if !t.isTimescaleDB {
 		return nil, fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -238,7 +238,7 @@ func (t *TimescaleDB) GetCompressionSettings(ctx context.Context, tableName stri
 }
 
 // AddRetentionPolicy adds a data retention policy to a hypertable
-func (t *TimescaleDB) AddRetentionPolicy(ctx context.Context, tableName, interval string) error {
+func (t *DB) AddRetentionPolicy(ctx context.Context, tableName, interval string) error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -253,7 +253,7 @@ func (t *TimescaleDB) AddRetentionPolicy(ctx context.Context, tableName, interva
 }
 
 // RemoveRetentionPolicy removes a data retention policy from a hypertable
-func (t *TimescaleDB) RemoveRetentionPolicy(ctx context.Context, tableName string) error {
+func (t *DB) RemoveRetentionPolicy(ctx context.Context, tableName string) error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -292,7 +292,7 @@ func (t *TimescaleDB) RemoveRetentionPolicy(ctx context.Context, tableName strin
 }
 
 // GetRetentionSettings gets the retention settings for a hypertable
-func (t *TimescaleDB) GetRetentionSettings(ctx context.Context, tableName string) (*RetentionSettings, error) {
+func (t *DB) GetRetentionSettings(ctx context.Context, tableName string) (*RetentionSettings, error) {
 	if !t.isTimescaleDB {
 		return nil, fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -326,7 +326,7 @@ func (t *TimescaleDB) GetRetentionSettings(ctx context.Context, tableName string
 }
 
 // CompressChunks compresses chunks for a hypertable
-func (t *TimescaleDB) CompressChunks(ctx context.Context, tableName, olderThan string) error {
+func (t *DB) CompressChunks(ctx context.Context, tableName, olderThan string) error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -350,7 +350,7 @@ func (t *TimescaleDB) CompressChunks(ctx context.Context, tableName, olderThan s
 }
 
 // DecompressChunks decompresses chunks for a hypertable
-func (t *TimescaleDB) DecompressChunks(ctx context.Context, tableName, newerThan string) error {
+func (t *DB) DecompressChunks(ctx context.Context, tableName, newerThan string) error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -374,7 +374,7 @@ func (t *TimescaleDB) DecompressChunks(ctx context.Context, tableName, newerThan
 }
 
 // GetChunkCompressionStats gets compression statistics for a hypertable
-func (t *TimescaleDB) GetChunkCompressionStats(ctx context.Context, tableName string) (interface{}, error) {
+func (t *DB) GetChunkCompressionStats(ctx context.Context, tableName string) (interface{}, error) {
 	if !t.isTimescaleDB {
 		return nil, fmt.Errorf("TimescaleDB extension not available")
 	}

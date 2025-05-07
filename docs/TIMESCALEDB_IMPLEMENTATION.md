@@ -164,17 +164,17 @@ As of the current codebase status:
 
 - **Core Infrastructure (100% Complete)**: All core TimescaleDB infrastructure components have been implemented, including configuration structures, connection management, hypertable management, time-series query builder, and policy management.
 
-- **Tool Integration (60% Complete)**: Basic TimescaleDB tool type has been registered, hypertable creation and listing tools are implemented, and both compression and retention policy tools are fully implemented. The remaining tools for time-series queries and continuous aggregates are still pending.
+- **Tool Integration (70% Complete)**: Basic TimescaleDB tool type has been registered, hypertable creation and listing tools are implemented, and both compression and retention policy tools are fully implemented with comprehensive tests. The remaining tools for time-series queries and continuous aggregates are still pending.
 
 - **Context Integration (0% Complete)**: TimescaleDB context integration for editor features has not been implemented yet.
 
-- **Testing (60% Complete)**: Unit tests for connection, hypertable management, policy features, and both compression and retention policy tools have been implemented, but still need TimescaleDB Docker setup for proper testing. Tests for time-series query functions and end-to-end tool tests are pending.
+- **Testing (70% Complete)**: Unit tests for connection, hypertable management, policy features, and both compression and retention policy tools have been implemented, but still need TimescaleDB Docker setup for proper testing. Tests for time-series query functions and end-to-end tool tests are pending.
 
 - **Documentation (0% Complete)**: Documentation for TimescaleDB features, best practices, and usage examples have not been created yet.
 
 - **Deployment (0% Complete)**: TimescaleDB Docker setup, CI/CD integration, and performance testing have not been implemented yet.
 
-**Overall Progress**: Approximately 55% of the planned work has been completed, focusing primarily on the core infrastructure layer and basic tool integration. The next priority is to implement the remaining TimescaleDB tools to expose the full functionality set.
+**Overall Progress**: Approximately 65% of the planned work has been completed, focusing primarily on the core infrastructure layer and basic tool integration. The next priority is to implement the remaining TimescaleDB tools to expose the full functionality set, particularly time-series queries and continuous aggregates.
 
 ## 6. Timeline
 

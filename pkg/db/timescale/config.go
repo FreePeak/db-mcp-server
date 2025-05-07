@@ -4,8 +4,8 @@ import (
 	"github.com/FreePeak/db-mcp-server/pkg/db"
 )
 
-// TimescaleDBConfig extends PostgreSQL configuration with TimescaleDB-specific options
-type TimescaleDBConfig struct {
+// DBConfig extends PostgreSQL configuration with TimescaleDB-specific options
+type DBConfig struct {
 	// Inherit PostgreSQL config
 	PostgresConfig db.Config
 
@@ -32,9 +32,9 @@ type CompressionPolicy struct {
 	CompressChunk bool   // Whether to manually compress chunks
 }
 
-// NewDefaultTimescaleDBConfig creates a TimescaleDBConfig with default values
-func NewDefaultTimescaleDBConfig(pgConfig db.Config) TimescaleDBConfig {
-	return TimescaleDBConfig{
+// NewDefaultTimescaleDBConfig creates a DBConfig with default values
+func NewDefaultTimescaleDBConfig(pgConfig db.Config) DBConfig {
+	return DBConfig{
 		PostgresConfig:    pgConfig,
 		ChunkTimeInterval: "7 days",
 		UseTimescaleDB:    true,
@@ -69,8 +69,8 @@ func IsTimescaleDB(config db.Config) bool {
 	return true
 }
 
-// FromDBConfig converts a standard db.Config to a TimescaleDBConfig
-func FromDBConfig(config db.Config) TimescaleDBConfig {
+// FromDBConfig converts a standard db.Config to a DBConfig
+func FromDBConfig(config db.Config) DBConfig {
 	tsdbConfig := NewDefaultTimescaleDBConfig(config)
 
 	// Override with custom settings from options if present

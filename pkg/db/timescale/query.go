@@ -235,7 +235,7 @@ func (b *TimeseriesQueryBuilder) Build() (string, []interface{}) {
 }
 
 // Execute runs the query against the database
-func (b *TimeseriesQueryBuilder) Execute(ctx context.Context, db *TimescaleDB) ([]map[string]interface{}, error) {
+func (b *TimeseriesQueryBuilder) Execute(ctx context.Context, db *DB) ([]map[string]interface{}, error) {
 	query, args := b.Build()
 	result, err := db.ExecuteSQL(ctx, query, args...)
 	if err != nil {
@@ -263,7 +263,7 @@ type DownsampleOptions struct {
 }
 
 // DownsampleTimeSeries creates downsampled time-series data
-func (t *TimescaleDB) DownsampleTimeSeries(ctx context.Context, options DownsampleOptions) error {
+func (t *DB) DownsampleTimeSeries(ctx context.Context, options DownsampleOptions) error {
 	if !t.isTimescaleDB {
 		return fmt.Errorf("TimescaleDB extension not available")
 	}

@@ -49,7 +49,7 @@ type ContinuousAggregateMetadata struct {
 }
 
 // GetHypertableMetadata returns detailed metadata about a hypertable
-func (t *TimescaleDB) GetHypertableMetadata(ctx context.Context, tableName string) (*HypertableMetadata, error) {
+func (t *DB) GetHypertableMetadata(ctx context.Context, tableName string) (*HypertableMetadata, error) {
 	if !t.isTimescaleDB {
 		return nil, fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -168,7 +168,7 @@ func (t *TimescaleDB) GetHypertableMetadata(ctx context.Context, tableName strin
 }
 
 // GetTableColumns returns metadata about columns in a table
-func (t *TimescaleDB) GetTableColumns(ctx context.Context, tableName string) ([]ColumnMetadata, error) {
+func (t *DB) GetTableColumns(ctx context.Context, tableName string) ([]ColumnMetadata, error) {
 	query := fmt.Sprintf(`
 		SELECT 
 			c.column_name, 
@@ -237,7 +237,7 @@ func (t *TimescaleDB) GetTableColumns(ctx context.Context, tableName string) ([]
 }
 
 // ListContinuousAggregates lists all continuous aggregates
-func (t *TimescaleDB) ListContinuousAggregates(ctx context.Context) ([]ContinuousAggregateMetadata, error) {
+func (t *DB) ListContinuousAggregates(ctx context.Context) ([]ContinuousAggregateMetadata, error) {
 	if !t.isTimescaleDB {
 		return nil, fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -308,7 +308,7 @@ func (t *TimescaleDB) ListContinuousAggregates(ctx context.Context) ([]Continuou
 }
 
 // GetContinuousAggregate gets metadata about a specific continuous aggregate
-func (t *TimescaleDB) GetContinuousAggregate(ctx context.Context, viewName string) (*ContinuousAggregateMetadata, error) {
+func (t *DB) GetContinuousAggregate(ctx context.Context, viewName string) (*ContinuousAggregateMetadata, error) {
 	if !t.isTimescaleDB {
 		return nil, fmt.Errorf("TimescaleDB extension not available")
 	}
@@ -376,7 +376,7 @@ func (t *TimescaleDB) GetContinuousAggregate(ctx context.Context, viewName strin
 }
 
 // GetDatabaseSize gets size information about the database
-func (t *TimescaleDB) GetDatabaseSize(ctx context.Context) (map[string]string, error) {
+func (t *DB) GetDatabaseSize(ctx context.Context) (map[string]string, error) {
 	query := `
 		SELECT 
 			pg_size_pretty(pg_database_size(current_database())) as database_size,
@@ -412,7 +412,7 @@ func (t *TimescaleDB) GetDatabaseSize(ctx context.Context) (map[string]string, e
 }
 
 // DetectTimescaleDBVersion checks if TimescaleDB is installed and returns its version
-func (t *TimescaleDB) DetectTimescaleDBVersion(ctx context.Context) (string, error) {
+func (t *DB) DetectTimescaleDBVersion(ctx context.Context) (string, error) {
 	query := "SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'"
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {
@@ -433,7 +433,7 @@ func (t *TimescaleDB) DetectTimescaleDBVersion(ctx context.Context) (string, err
 }
 
 // GenerateHypertableSchema generates CREATE TABLE and CREATE HYPERTABLE statements for a hypertable
-func (t *TimescaleDB) GenerateHypertableSchema(ctx context.Context, tableName string) (string, error) {
+func (t *DB) GenerateHypertableSchema(ctx context.Context, tableName string) (string, error) {
 	if !t.isTimescaleDB {
 		return "", fmt.Errorf("TimescaleDB extension not available")
 	}
