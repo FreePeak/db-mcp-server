@@ -99,6 +99,7 @@ The server follows Clean Architecture principles with these layers:
 | ---------- | ------------------------- | ------------------------------------------------------------ |
 | MySQL      | ✅ Full Support           | Queries, Transactions, Schema Analysis, Performance Insights |
 | PostgreSQL | ✅ Full Support (v9.6-17) | Queries, Transactions, Schema Analysis, Performance Insights |
+| TimescaleDB| ✅ Full Support           | Hypertables, Time-Series Queries, Continuous Aggregates, Compression, Retention Policies |
 
 ## Quick Start
 
@@ -224,174 +225,47 @@ export DB_CONFIG='{"connections":[...]}'
 
 ## Available Tools
 
-For each connected database, the server creates tools following this format:
+For each connected database, DB MCP Server automatically generates these specialized tools:
 
-```
-<tool_type>_<database_id>
-```
+### Query Tools
 
-Where:
-- `<tool_type>`: One of: query, execute, transaction, schema, performance
-- `<database_id>`: The ID of the database as defined in your configuration
+| Tool Name | Description |
+|-----------|-------------|
+| `query_<db_id>` | Execute SELECT queries and get results as a tabular dataset |
+| `execute_<db_id>` | Run data manipulation statements (INSERT, UPDATE, DELETE) |
+| `transaction_<db_id>` | Begin, commit, and rollback transactions |
 
-### Database-Specific Tools
+### Schema Tools
 
-- `query_<dbid>`: Execute SQL queries on the specified database
-  ```json
-  {
-    "query": "SELECT * FROM users WHERE age > ?",
-    "params": [30]
-  }
-  ```
+| Tool Name | Description |
+|-----------|-------------|
+| `schema_<db_id>` | Get information about tables, columns, indexes, and foreign keys |
+| `generate_schema_<db_id>` | Generate SQL or code from database schema |
 
-- `execute_<dbid>`: Execute SQL statements (INSERT, UPDATE, DELETE)
-  ```json
-  {
-    "statement": "INSERT INTO users (name, email) VALUES (?, ?)",
-    "params": ["John Doe", "john@example.com"]
-  }
-  ```
+### Performance Tools
 
-- `transaction_<dbid>`: Manage database transactions
-  ```json
-  // Begin transaction
-  {
-    "action": "begin",
-    "readOnly": false
-  }
+| Tool Name | Description |
+|-----------|-------------|
+| `performance_<db_id>` | Analyze query performance and get optimization suggestions |
 
-  // Execute within transaction
-  {
-    "action": "execute",
-    "transactionId": "<from begin response>",
-    "statement": "UPDATE users SET active = ? WHERE id = ?",
-    "params": [true, 42]
-  }
+### TimescaleDB Tools
 
-  // Commit transaction
-  {
-    "action": "commit",
-    "transactionId": "<from begin response>"
-  }
-  ```
+For PostgreSQL databases with TimescaleDB extension, these additional specialized tools are available:
 
-- `schema_<dbid>`: Get database schema information
-- `performance_<dbid>`: Analyze query performance
+| Tool Name | Description |
+|-----------|-------------|
+| `timescaledb_<db_id>` | Perform general TimescaleDB operations |
+| `create_hypertable_<db_id>` | Convert a standard table to a TimescaleDB hypertable |
+| `list_hypertables_<db_id>` | List all hypertables in the database |
+| `time_series_query_<db_id>` | Execute optimized time-series queries with bucketing |
+| `time_series_analyze_<db_id>` | Analyze time-series data patterns |
+| `continuous_aggregate_<db_id>` | Create materialized views that automatically update |
+| `refresh_continuous_aggregate_<db_id>` | Manually refresh continuous aggregates |
 
-### Global Tools
-
-- `list_databases`: List all configured database connections
+For detailed documentation on TimescaleDB tools, see [TIMESCALEDB_TOOLS.md](docs/TIMESCALEDB_TOOLS.md).
 
 ## Examples
 
 ### Querying Multiple Databases
 
-```json
-// Query the first database
-{
-  "name": "query_mysql1",
-  "parameters": {
-    "query": "SELECT * FROM users LIMIT 5"
-  }
-}
-
-// Query the second database
-{
-  "name": "query_mysql2",
-  "parameters": {
-    "query": "SELECT * FROM products LIMIT 5"
-  }
-}
 ```
-
-### Executing Transactions
-
-```json
-// Begin transaction
-{
-  "name": "transaction_mysql1",
-  "parameters": {
-    "action": "begin"
-  }
-}
-// Response contains transactionId
-
-// Execute within transaction
-{
-  "name": "transaction_mysql1",
-  "parameters": {
-    "action": "execute",
-    "transactionId": "tx_12345",
-    "statement": "INSERT INTO orders (user_id, product_id) VALUES (?, ?)",
-    "params": [1, 2]
-  }
-}
-
-// Commit transaction
-{
-  "name": "transaction_mysql1",
-  "parameters": {
-    "action": "commit",
-    "transactionId": "tx_12345"
-  }
-}
-```
-
-## Roadmap
-
-Our planned database support:
-
-- **MongoDB, SQLite, MariaDB** (Q3 2025)
-- **Microsoft SQL Server, Oracle Database, Redis** (Q4 2025)
-- **Cassandra, Elasticsearch, CockroachDB, DynamoDB, Neo4j, ClickHouse** (2026)
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Connection Errors**: Verify database connection settings in `config.json`
-2. **Tool Not Found**: Ensure the server is running and check tool name prefixes
-3. **Failed Queries**: Check SQL syntax and database permissions
-
-### Logs
-
-The server writes logs to:
-- STDIO mode: stderr
-- SSE mode: stdout and `./logs/db-mcp-server.log`
-
-Enable debug logging with the `-debug` flag:
-```bash
-./bin/server -t sse -debug -c config.json
-```
-
-## Contributing
-
-1. **Fork** the repository
-2. **Create** a feature branch: `git checkout -b new-feature`
-3. **Commit** your changes: `git commit -am 'Add new feature'`
-4. **Push** to the branch: `git push origin new-feature`
-5. **Submit** a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support & Contact
-
-- For questions or issues, email [mnhatlinh.doan@gmail.com](mailto:mnhatlinh.doan@gmail.com)
-- Open an issue directly: [Issue Tracker](https://github.com/FreePeak/db-mcp-server/issues)
-
-<p align="">
-<a href="https://www.buymeacoffee.com/linhdmn">
-<img src="https://img.buymeacoffee.com/button-api/?text=Support DB MCP Server&emoji=☕&slug=linhdmn&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" 
-alt="Buy Me A Coffee"/>
-</a>
-</p>
-
-## Cursor Integration
-
-For detailed instructions on integrating with Cursor, including tool naming conventions and configuration examples, visit our [documentation site](https://github.com/FreePeak/db-mcp-server/wiki/Cursor-Integration).
-
-## OpenAI Agents SDK Integration
-
-The DB MCP Server fully supports OpenAI's Agents SDK. For integration details and examples, visit our [documentation site](https://github.com/FreePeak/db-mcp-server/wiki/OpenAI-Integration).

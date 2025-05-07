@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -11,16 +12,21 @@ import (
 
 // MockDB simulates a database for testing purposes
 type MockDB struct {
-	mockResults          map[string]MockExecuteResult
-	lastQuery            string
-	lastQueryArgs        []interface{}
-	connectCalled        bool
-	connectError         error
-	closeCalled          bool
-	closeError           error
-	isTimescaleAvailable bool
+	mockResults   map[string]MockExecuteResult
+	resultRows    *sql.Rows
+	lastQuery     string
+	lastQueryArgs []interface{}
+	queryHistory  []string
+	connectCalled bool
+	connectError  error
+	closeCalled   bool
+	closeError    error
+	isTimescaleDB bool
 	// Store the expected scan value for QueryRow
 	queryScanValues map[string]interface{}
+	// Added for additional mock methods
+	queryResult []map[string]interface{}
+	err         error
 }
 
 // MockExecuteResult is used for mocking query results
@@ -29,11 +35,13 @@ type MockExecuteResult struct {
 	Error  error
 }
 
-// NewMockDB creates a new mock DB for testing with predefined results
+// NewMockDB creates a new mock database for testing
 func NewMockDB() *MockDB {
 	return &MockDB{
 		mockResults:     make(map[string]MockExecuteResult),
 		queryScanValues: make(map[string]interface{}),
+		queryHistory:    make([]string, 0),
+		isTimescaleDB:   true, // Default is true
 	}
 }
 
@@ -102,9 +110,9 @@ func (m *MockDB) SetCloseError(err error) {
 	m.closeError = err
 }
 
-// SetTimescaleAvailable sets whether TimescaleDB is available
+// SetTimescaleAvailable sets whether TimescaleDB is available for this mock
 func (m *MockDB) SetTimescaleAvailable(available bool) {
-	m.isTimescaleAvailable = available
+	m.isTimescaleDB = available
 }
 
 // Exec implements db.Database.Exec
@@ -375,4 +383,91 @@ func RunQueryTest(t *testing.T, testFunc func(*DB) error) {
 	if err != nil {
 		t.Errorf("Test failed: %v", err)
 	}
+}
+
+// SetQueryResult sets the mock result for queries
+func (m *MockDB) SetQueryResult(result []map[string]interface{}) {
+	m.queryResult = result
+}
+
+// SetError sets the mock error
+func (m *MockDB) SetError(errMsg string) {
+	m.err = fmt.Errorf(errMsg)
+}
+
+// LastQuery returns the last executed query
+func (m *MockDB) LastQuery() string {
+	return m.lastQuery
+}
+
+// QueryContains checks if the last query contains a substring
+func (m *MockDB) QueryContains(substring string) bool {
+	return strings.Contains(m.lastQuery, substring)
+}
+
+// ExecuteSQL implements db.Database.ExecuteSQL
+func (m *MockDB) ExecuteSQL(ctx context.Context, query string, args ...interface{}) (interface{}, error) {
+	m.lastQuery = query
+	m.lastQueryArgs = args
+	m.queryHistory = append(m.queryHistory, query)
+
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	// If TimescaleDB is not available and the query is for TimescaleDB specific features
+	if !m.isTimescaleDB && (strings.Contains(query, "time_bucket") ||
+		strings.Contains(query, "hypertable") ||
+		strings.Contains(query, "continuous_aggregate") ||
+		strings.Contains(query, "timescaledb_information")) {
+		return nil, fmt.Errorf("TimescaleDB extension not available")
+	}
+
+	if m.queryResult != nil {
+		return m.queryResult, nil
+	}
+
+	// Return an empty result set by default
+	return []map[string]interface{}{}, nil
+}
+
+// ExecuteSQLWithoutParams implements db.Database.ExecuteSQLWithoutParams
+func (m *MockDB) ExecuteSQLWithoutParams(ctx context.Context, query string) (interface{}, error) {
+	m.lastQuery = query
+	m.lastQueryArgs = nil
+	m.queryHistory = append(m.queryHistory, query)
+
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	// If TimescaleDB is not available and the query is for TimescaleDB specific features
+	if !m.isTimescaleDB && (strings.Contains(query, "time_bucket") ||
+		strings.Contains(query, "hypertable") ||
+		strings.Contains(query, "continuous_aggregate") ||
+		strings.Contains(query, "timescaledb_information")) {
+		return nil, fmt.Errorf("TimescaleDB extension not available")
+	}
+
+	if m.queryResult != nil {
+		return m.queryResult, nil
+	}
+
+	// Return an empty result set by default
+	return []map[string]interface{}{}, nil
+}
+
+// QueryHistory returns the complete history of queries executed
+func (m *MockDB) QueryHistory() []string {
+	return m.queryHistory
+}
+
+// AnyQueryContains checks if any query in the history contains the given substring
+func (m *MockDB) AnyQueryContains(substring string) bool {
+	for _, query := range m.queryHistory {
+		if strings.Contains(query, substring) {
+			return true
+		}
+	}
+	return false
 }
