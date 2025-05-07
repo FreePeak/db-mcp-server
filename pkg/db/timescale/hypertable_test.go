@@ -225,22 +225,26 @@ func TestGetHypertable(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Prepare mock data
+	// Prepare mock data - Set up the correct result by using RegisterQueryResult
 	mockResult := []map[string]interface{}{
 		{
 			"table_name":     "test_table",
 			"schema_name":    "public",
 			"time_column":    "time",
-			"num_dimensions": 2,
+			"num_dimensions": int64(2),
 			"space_column":   "device_id",
 		},
 	}
 
-	// Register different result patterns for different queries
-	mockDB.RegisterQueryResult("FROM _timescaledb_catalog.hypertable h", mockResult, nil)
+	// Register the query result pattern for the main query
+	mockDB.RegisterQueryResult("WHERE h.table_name = 'test_table'", mockResult, nil)
+
+	// Register results for the compression check
 	mockDB.RegisterQueryResult("FROM timescaledb_information.compression_settings", []map[string]interface{}{
 		{"is_compressed": true},
 	}, nil)
+
+	// Register results for the retention policy check
 	mockDB.RegisterQueryResult("FROM timescaledb_information.jobs", []map[string]interface{}{
 		{"has_retention": true},
 	}, nil)
@@ -291,12 +295,13 @@ func TestGetHypertable(t *testing.T) {
 		t.Error("Expected query error, got nil")
 	}
 
-	// Test table not found
-	mockDB = NewMockDB() // Create a fresh mock to avoid interference from previous registrations
-	tsdb.Database = mockDB
+	// Test table not found - Create a new mock to avoid interference
+	newMockDB := NewMockDB()
+	newMockDB.SetTimescaleAvailable(true)
+	tsdb.Database = newMockDB
 
 	// Register an empty result for the "not_found" table
-	mockDB.RegisterQueryResult("WHERE h.table_name = 'not_found'", []map[string]interface{}{}, nil)
+	newMockDB.RegisterQueryResult("WHERE h.table_name = 'not_found'", []map[string]interface{}{}, nil)
 	_, err = tsdb.GetHypertable(ctx, "not_found")
 	if err == nil {
 		t.Error("Expected error for non-existent table, got nil")

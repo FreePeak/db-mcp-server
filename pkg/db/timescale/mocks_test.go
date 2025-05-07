@@ -13,7 +13,6 @@ import (
 // MockDB simulates a database for testing purposes
 type MockDB struct {
 	mockResults   map[string]MockExecuteResult
-	resultRows    *sql.Rows
 	lastQuery     string
 	lastQueryArgs []interface{}
 	queryHistory  []string
@@ -392,7 +391,7 @@ func (m *MockDB) SetQueryResult(result []map[string]interface{}) {
 
 // SetError sets the mock error
 func (m *MockDB) SetError(errMsg string) {
-	m.err = fmt.Errorf(errMsg)
+	m.err = fmt.Errorf("%s", errMsg)
 }
 
 // LastQuery returns the last executed query

@@ -263,8 +263,9 @@ func parseTimeInterval(interval string) float64 {
 		parts := strings.Split(interval, "days")
 		if len(parts) > 0 {
 			var days float64
-			fmt.Sscanf(parts[0], "%f", &days)
-			return days * 24
+			if _, err := fmt.Sscanf(parts[0], "%f", &days); err == nil {
+				return days * 24
+			}
 		}
 	}
 	return 0

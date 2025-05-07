@@ -2,24 +2,36 @@ package timescale
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
 
 func TestTimeSeriesQuery(t *testing.T) {
 	t.Run("should build and execute time series query", func(t *testing.T) {
-		// Setup test
-		tsdb, mockDB := MockTimescaleDB(t)
+		// Setup test with a custom mock DB
+		mockDB := NewMockDB()
+		mockDB.SetTimescaleAvailable(true)
+		tsdb := &DB{
+			Database:      mockDB,
+			isTimescaleDB: true,
+			config: DBConfig{
+				UseTimescaleDB: true,
+			},
+		}
 		ctx := context.Background()
 
-		// Set mock behavior with non-empty result
-		mockDB.SetQueryResult([]map[string]interface{}{
+		// Set mock behavior with non-empty result - directly register a mock for ExecuteSQL
+		expectedResult := []map[string]interface{}{
 			{
 				"time_bucket": time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 				"avg_value":   23.5,
-				"count":       10,
+				"count":       int64(10),
 			},
-		})
+		}
+
+		// Register a successful mock result for the query
+		mockDB.RegisterQueryResult("SELECT", expectedResult, nil)
 
 		// Create a time series query
 		result, err := tsdb.TimeSeriesQuery(ctx, TimeSeriesQueryOptions{
@@ -123,12 +135,20 @@ func TestTimeSeriesQuery(t *testing.T) {
 	})
 
 	t.Run("should handle database errors", func(t *testing.T) {
-		// Setup test
-		tsdb, mockDB := MockTimescaleDB(t)
+		// Setup test with a custom mock DB
+		mockDB := NewMockDB()
+		mockDB.SetTimescaleAvailable(true)
+		tsdb := &DB{
+			Database:      mockDB,
+			isTimescaleDB: true,
+			config: DBConfig{
+				UseTimescaleDB: true,
+			},
+		}
 		ctx := context.Background()
 
 		// Set mock to return error
-		mockDB.SetError("query error")
+		mockDB.RegisterQueryResult("SELECT", nil, fmt.Errorf("query error"))
 
 		// Create a time series query
 		_, err := tsdb.TimeSeriesQuery(ctx, TimeSeriesQueryOptions{
