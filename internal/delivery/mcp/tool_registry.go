@@ -103,6 +103,43 @@ func (tr *ToolRegistry) registerDatabaseTools(ctx context.Context, dbID string) 
 			}
 		}
 
+		// Check if TimescaleDB is available for this PostgreSQL database
+		// by executing a simple check query
+		checkQuery := "SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'"
+		result, err := tr.databaseUseCase.ExecuteQuery(ctx, dbID, checkQuery, nil)
+		if err == nil && result != "[]" && result != "" {
+			logger.Info("TimescaleDB extension detected for database %s, registering TimescaleDB tools", dbID)
+
+			// Register TimescaleDB-specific tools
+			timescaleTool := NewTimescaleDBTool()
+
+			// Register time series query tool
+			tsQueryToolName := fmt.Sprintf("timescaledb_timeseries_query_%s", dbID)
+			tsQueryTool := timescaleTool.CreateTimeSeriesQueryTool(tsQueryToolName, dbID)
+			if err := tr.server.AddTool(ctx, tsQueryTool, func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
+				response, err := timescaleTool.HandleRequest(ctx, request, dbID, tr.databaseUseCase)
+				return FormatResponse(response, err)
+			}); err != nil {
+				logger.Error("Error registering TimescaleDB time series query tool: %v", err)
+				registrationErrors++
+			} else {
+				logger.Info("Successfully registered TimescaleDB time series query tool: %s", tsQueryToolName)
+			}
+
+			// Register time series analyze tool
+			tsAnalyzeToolName := fmt.Sprintf("timescaledb_analyze_timeseries_%s", dbID)
+			tsAnalyzeTool := timescaleTool.CreateTimeSeriesAnalyzeTool(tsAnalyzeToolName, dbID)
+			if err := tr.server.AddTool(ctx, tsAnalyzeTool, func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
+				response, err := timescaleTool.HandleRequest(ctx, request, dbID, tr.databaseUseCase)
+				return FormatResponse(response, err)
+			}); err != nil {
+				logger.Error("Error registering TimescaleDB time series analyze tool: %v", err)
+				registrationErrors++
+			} else {
+				logger.Info("Successfully registered TimescaleDB time series analyze tool: %s", tsAnalyzeToolName)
+			}
+		}
+
 		if registrationErrors > 0 {
 			return fmt.Errorf("errors occurred while registering %d tools", registrationErrors)
 		}

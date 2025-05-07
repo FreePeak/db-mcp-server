@@ -243,8 +243,17 @@ func (t *TimescaleDBTool) CreateTimeSeriesQueryTool(name string, dbID string) in
 		cortextools.WithString("group_by",
 			cortextools.Description("Additional GROUP BY columns (comma-separated)"),
 		),
+		cortextools.WithString("order_by",
+			cortextools.Description("Order by clause (default: time_bucket)"),
+		),
+		cortextools.WithString("window_functions",
+			cortextools.Description("Window functions to include (e.g. 'LAG(value) OVER (ORDER BY time_bucket) AS prev_value')"),
+		),
 		cortextools.WithString("limit",
 			cortextools.Description("Maximum number of rows to return"),
+		),
+		cortextools.WithBoolean("format_pretty",
+			cortextools.Description("Whether to format the response in a more readable way"),
 		),
 	)
 }
@@ -1015,7 +1024,10 @@ func (t *TimescaleDBTool) handleTimeSeriesQuery(ctx context.Context, request ser
 	aggregations := getStringParam(request.Parameters, "aggregations")
 	whereCondition := getStringParam(request.Parameters, "where_condition")
 	groupBy := getStringParam(request.Parameters, "group_by")
+	orderBy := getStringParam(request.Parameters, "order_by")
+	windowFunctions := getStringParam(request.Parameters, "window_functions")
 	limitStr := getStringParam(request.Parameters, "limit")
+	formatPretty := getBoolParam(request.Parameters, "format_pretty")
 
 	// Set default values for optional parameters
 	if aggregations == "" {
@@ -1042,6 +1054,11 @@ func (t *TimescaleDBTool) handleTimeSeriesQuery(ctx context.Context, request ser
 		groupBy = fmt.Sprintf("time_bucket, %s", groupBy)
 	}
 
+	// Set default order by if not provided
+	if orderBy == "" {
+		orderBy = "time_bucket"
+	}
+
 	// Set default limit if not provided
 	limit := 1000 // Default limit
 	if limitStr != "" {
@@ -1050,21 +1067,49 @@ func (t *TimescaleDBTool) handleTimeSeriesQuery(ctx context.Context, request ser
 		}
 	}
 
-	// Build the SQL query
-	sql := fmt.Sprintf(`
-		SELECT 
-			time_bucket('%s', %s) as time_bucket,
-			%s
-		FROM 
-			%s
-		WHERE 
-			%s
-		GROUP BY 
-			%s
-		ORDER BY 
-			time_bucket
-		LIMIT %d
-	`, bucketInterval, timeColumn, aggregations, targetTable, whereClause, groupBy, limit)
+	// Build the base SQL query
+	var sql string
+	if windowFunctions == "" {
+		// Simple query without window functions
+		sql = fmt.Sprintf(`
+			SELECT 
+				time_bucket('%s', %s) as time_bucket,
+				%s
+			FROM 
+				%s
+			WHERE 
+				%s
+			GROUP BY 
+				%s
+			ORDER BY 
+				%s
+			LIMIT %d
+		`, bucketInterval, timeColumn, aggregations, targetTable, whereClause, groupBy, orderBy, limit)
+	} else {
+		// Query with window functions - need to use a subquery
+		sql = fmt.Sprintf(`
+			SELECT 
+				time_bucket,
+				%s,
+				%s
+			FROM (
+				SELECT 
+					time_bucket('%s', %s) as time_bucket,
+					%s
+				FROM 
+					%s
+				WHERE 
+					%s
+				GROUP BY 
+					%s
+				ORDER BY 
+					%s
+			) AS sub
+			ORDER BY 
+				%s
+			LIMIT %d
+		`, aggregations, windowFunctions, bucketInterval, timeColumn, aggregations, targetTable, whereClause, groupBy, orderBy, orderBy, limit)
+	}
 
 	// Execute the query
 	result, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
@@ -1072,10 +1117,35 @@ func (t *TimescaleDBTool) handleTimeSeriesQuery(ctx context.Context, request ser
 		return nil, fmt.Errorf("failed to execute time-series query: %w", err)
 	}
 
-	return map[string]interface{}{
+	// Generate the response
+	response := map[string]interface{}{
 		"message": "Successfully retrieved time-series data",
 		"details": result,
-	}, nil
+	}
+
+	// Add metadata if pretty format is requested
+	if formatPretty {
+		// Try to parse the result JSON for better presentation
+		var resultData []map[string]interface{}
+		if err := json.Unmarshal([]byte(result), &resultData); err == nil {
+			// Add statistics about the data
+			numRows := len(resultData)
+			response = addMetadata(response, "num_rows", numRows)
+			response = addMetadata(response, "time_bucket_interval", bucketInterval)
+
+			if numRows > 0 {
+				// Extract time range from the data if available
+				if firstBucket, ok := resultData[0]["time_bucket"].(string); ok {
+					response = addMetadata(response, "first_bucket", firstBucket)
+				}
+				if lastBucket, ok := resultData[numRows-1]["time_bucket"].(string); ok {
+					response = addMetadata(response, "last_bucket", lastBucket)
+				}
+			}
+		}
+	}
+
+	return response, nil
 }
 
 // handleTimeSeriesAnalyze handles the analyze_time_series operation
