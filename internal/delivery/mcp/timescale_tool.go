@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/FreePeak/cortex/pkg/server"
@@ -206,6 +207,139 @@ func (t *TimescaleDBTool) CreateRetentionPolicyTool(name string, dbID string) in
 	)
 }
 
+// CreateTimeSeriesQueryTool creates a specific tool for time-series queries
+func (t *TimescaleDBTool) CreateTimeSeriesQueryTool(name string, dbID string) interface{} {
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(fmt.Sprintf("Execute time-series queries on TimescaleDB %s", dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("Must be 'time_series_query'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("target_table",
+			cortextools.Description("The table to query"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("time_column",
+			cortextools.Description("The timestamp column for time bucketing"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("bucket_interval",
+			cortextools.Description("Time bucket interval (e.g., '1 hour', '1 day')"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("start_time",
+			cortextools.Description("Start of time range (e.g., '2023-01-01')"),
+		),
+		cortextools.WithString("end_time",
+			cortextools.Description("End of time range (e.g., '2023-01-31')"),
+		),
+		cortextools.WithString("aggregations",
+			cortextools.Description("Comma-separated list of aggregations (e.g., 'AVG(temp),MAX(temp),COUNT(*)')"),
+		),
+		cortextools.WithString("where_condition",
+			cortextools.Description("Additional WHERE conditions"),
+		),
+		cortextools.WithString("group_by",
+			cortextools.Description("Additional GROUP BY columns (comma-separated)"),
+		),
+		cortextools.WithString("limit",
+			cortextools.Description("Maximum number of rows to return"),
+		),
+	)
+}
+
+// CreateTimeSeriesAnalyzeTool creates a specific tool for analyzing time-series data
+func (t *TimescaleDBTool) CreateTimeSeriesAnalyzeTool(name string, dbID string) interface{} {
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(fmt.Sprintf("Analyze time-series data patterns on TimescaleDB %s", dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("Must be 'analyze_time_series'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("target_table",
+			cortextools.Description("The table to analyze"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("time_column",
+			cortextools.Description("The timestamp column"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("start_time",
+			cortextools.Description("Start of time range (e.g., '2023-01-01')"),
+		),
+		cortextools.WithString("end_time",
+			cortextools.Description("End of time range (e.g., '2023-01-31')"),
+		),
+	)
+}
+
+// CreateContinuousAggregateTool creates a specific tool for creating continuous aggregates
+func (t *TimescaleDBTool) CreateContinuousAggregateTool(name string, dbID string) interface{} {
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(fmt.Sprintf("Create TimescaleDB continuous aggregate on %s", dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("Must be 'create_continuous_aggregate'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("view_name",
+			cortextools.Description("Name for the continuous aggregate view"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("source_table",
+			cortextools.Description("Source table with raw data"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("time_column",
+			cortextools.Description("Time column to bucket"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("bucket_interval",
+			cortextools.Description("Time bucket interval (e.g., '1 hour', '1 day')"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("aggregations",
+			cortextools.Description("Comma-separated list of aggregations (e.g., 'AVG(temp),MAX(temp),COUNT(*)')"),
+		),
+		cortextools.WithString("where_condition",
+			cortextools.Description("WHERE condition to filter source data"),
+		),
+		cortextools.WithBoolean("with_data",
+			cortextools.Description("Whether to materialize data immediately"),
+		),
+		cortextools.WithBoolean("refresh_policy",
+			cortextools.Description("Whether to add a refresh policy"),
+		),
+		cortextools.WithString("refresh_interval",
+			cortextools.Description("Refresh interval (e.g., '1 day')"),
+		),
+	)
+}
+
+// CreateContinuousAggregateRefreshTool creates a specific tool for refreshing continuous aggregates
+func (t *TimescaleDBTool) CreateContinuousAggregateRefreshTool(name string, dbID string) interface{} {
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(fmt.Sprintf("Refresh TimescaleDB continuous aggregate on %s", dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("Must be 'refresh_continuous_aggregate'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("view_name",
+			cortextools.Description("Name of the continuous aggregate view"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("start_time",
+			cortextools.Description("Start of time range to refresh (e.g., '2023-01-01')"),
+		),
+		cortextools.WithString("end_time",
+			cortextools.Description("End of time range to refresh (e.g., '2023-01-31')"),
+		),
+	)
+}
+
 // HandleRequest handles a tool request
 func (t *TimescaleDBTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// Extract parameters from the request
@@ -240,6 +374,14 @@ func (t *TimescaleDBTool) HandleRequest(ctx context.Context, request server.Tool
 		return t.handleRemoveRetentionPolicy(ctx, request, dbID, useCase)
 	case "get_retention_policy":
 		return t.handleGetRetentionPolicy(ctx, request, dbID, useCase)
+	case "time_series_query":
+		return t.handleTimeSeriesQuery(ctx, request, dbID, useCase)
+	case "analyze_time_series":
+		return t.handleTimeSeriesAnalyze(ctx, request, dbID, useCase)
+	case "create_continuous_aggregate":
+		return t.handleCreateContinuousAggregate(ctx, request, dbID, useCase)
+	case "refresh_continuous_aggregate":
+		return t.handleRefreshContinuousAggregate(ctx, request, dbID, useCase)
 	default:
 		return map[string]interface{}{"message": fmt.Sprintf("Operation '%s' not implemented yet", operation)}, nil
 	}
@@ -846,6 +988,271 @@ func (t *TimescaleDBTool) handleGetRetentionPolicy(ctx context.Context, request 
 	return map[string]interface{}{
 		"message": fmt.Sprintf("Successfully retrieved retention policy for '%s'", targetTable),
 		"details": result,
+	}, nil
+}
+
+// handleTimeSeriesQuery handles the time_series_query operation
+func (t *TimescaleDBTool) handleTimeSeriesQuery(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	// Extract required parameters
+	targetTable, ok := request.Parameters["target_table"].(string)
+	if !ok || targetTable == "" {
+		return nil, fmt.Errorf("target_table parameter is required")
+	}
+
+	timeColumn, ok := request.Parameters["time_column"].(string)
+	if !ok || timeColumn == "" {
+		return nil, fmt.Errorf("time_column parameter is required")
+	}
+
+	bucketInterval, ok := request.Parameters["bucket_interval"].(string)
+	if !ok || bucketInterval == "" {
+		return nil, fmt.Errorf("bucket_interval parameter is required")
+	}
+
+	// Extract optional parameters
+	startTimeStr := getStringParam(request.Parameters, "start_time")
+	endTimeStr := getStringParam(request.Parameters, "end_time")
+	aggregations := getStringParam(request.Parameters, "aggregations")
+	whereCondition := getStringParam(request.Parameters, "where_condition")
+	groupBy := getStringParam(request.Parameters, "group_by")
+	limitStr := getStringParam(request.Parameters, "limit")
+
+	// Set default values for optional parameters
+	if aggregations == "" {
+		aggregations = "count(*) as count"
+	}
+
+	// Build WHERE clause
+	whereClause := ""
+	if startTimeStr != "" && endTimeStr != "" {
+		whereClause = fmt.Sprintf("%s BETWEEN '%s' AND '%s'", timeColumn, startTimeStr, endTimeStr)
+		if whereCondition != "" {
+			whereClause = fmt.Sprintf("%s AND %s", whereClause, whereCondition)
+		}
+	} else if whereCondition != "" {
+		whereClause = whereCondition
+	} else {
+		whereClause = "1=1" // Always true if no conditions
+	}
+
+	// Set default group by if not provided
+	if groupBy == "" {
+		groupBy = "time_bucket"
+	} else {
+		groupBy = fmt.Sprintf("time_bucket, %s", groupBy)
+	}
+
+	// Set default limit if not provided
+	limit := 1000 // Default limit
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	// Build the SQL query
+	sql := fmt.Sprintf(`
+		SELECT 
+			time_bucket('%s', %s) as time_bucket,
+			%s
+		FROM 
+			%s
+		WHERE 
+			%s
+		GROUP BY 
+			%s
+		ORDER BY 
+			time_bucket
+		LIMIT %d
+	`, bucketInterval, timeColumn, aggregations, targetTable, whereClause, groupBy, limit)
+
+	// Execute the query
+	result, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute time-series query: %w", err)
+	}
+
+	return map[string]interface{}{
+		"message": "Successfully retrieved time-series data",
+		"details": result,
+	}, nil
+}
+
+// handleTimeSeriesAnalyze handles the analyze_time_series operation
+func (t *TimescaleDBTool) handleTimeSeriesAnalyze(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	// Extract required parameters
+	targetTable, ok := request.Parameters["target_table"].(string)
+	if !ok || targetTable == "" {
+		return nil, fmt.Errorf("target_table parameter is required")
+	}
+
+	timeColumn, ok := request.Parameters["time_column"].(string)
+	if !ok || timeColumn == "" {
+		return nil, fmt.Errorf("time_column parameter is required")
+	}
+
+	// Extract optional parameters
+	startTimeStr := getStringParam(request.Parameters, "start_time")
+	endTimeStr := getStringParam(request.Parameters, "end_time")
+
+	// Build WHERE clause
+	whereClause := ""
+	if startTimeStr != "" && endTimeStr != "" {
+		whereClause = fmt.Sprintf("WHERE %s BETWEEN '%s' AND '%s'", timeColumn, startTimeStr, endTimeStr)
+	}
+
+	// Build the SQL query for basic time series analysis
+	sql := fmt.Sprintf(`
+		SELECT 
+			COUNT(*) as row_count,
+			MIN(%s) as min_time,
+			MAX(%s) as max_time,
+			(MAX(%s) - MIN(%s)) as time_span,
+			COUNT(DISTINCT date_trunc('day', %s)) as unique_days
+		FROM 
+			%s
+		%s
+	`, timeColumn, timeColumn, timeColumn, timeColumn, timeColumn, targetTable, whereClause)
+
+	// Execute the query
+	result, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to analyze time-series data: %w", err)
+	}
+
+	return map[string]interface{}{
+		"message": "Successfully analyzed time-series data",
+		"details": result,
+	}, nil
+}
+
+// handleCreateContinuousAggregate handles the create_continuous_aggregate operation
+func (t *TimescaleDBTool) handleCreateContinuousAggregate(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	// Extract required parameters
+	viewName, ok := request.Parameters["view_name"].(string)
+	if !ok || viewName == "" {
+		return nil, fmt.Errorf("view_name parameter is required")
+	}
+
+	sourceTable, ok := request.Parameters["source_table"].(string)
+	if !ok || sourceTable == "" {
+		return nil, fmt.Errorf("source_table parameter is required")
+	}
+
+	timeColumn, ok := request.Parameters["time_column"].(string)
+	if !ok || timeColumn == "" {
+		return nil, fmt.Errorf("time_column parameter is required")
+	}
+
+	bucketInterval, ok := request.Parameters["bucket_interval"].(string)
+	if !ok || bucketInterval == "" {
+		return nil, fmt.Errorf("bucket_interval parameter is required")
+	}
+
+	// Extract optional parameters
+	aggregationsStr := getStringParam(request.Parameters, "aggregations")
+	whereCondition := getStringParam(request.Parameters, "where_condition")
+	withData := getBoolParam(request.Parameters, "with_data")
+	refreshPolicy := getBoolParam(request.Parameters, "refresh_policy")
+	refreshInterval := getStringParam(request.Parameters, "refresh_interval")
+
+	// Parse aggregations from comma-separated string
+	var aggregationsParts []string
+	if aggregationsStr != "" {
+		aggregationsParts = strings.Split(aggregationsStr, ",")
+	} else {
+		// Default aggregation if none specified
+		aggregationsParts = []string{"COUNT(*) AS count"}
+	}
+
+	// Build the SQL statement to create a continuous aggregate
+	var builder strings.Builder
+	builder.WriteString("CREATE MATERIALIZED VIEW ")
+	builder.WriteString(viewName)
+	builder.WriteString("\nAS SELECT\n    time_bucket('")
+	builder.WriteString(bucketInterval)
+	builder.WriteString("', ")
+	builder.WriteString(timeColumn)
+	builder.WriteString(") AS time_bucket")
+
+	// Add aggregations
+	for _, agg := range aggregationsParts {
+		builder.WriteString(",\n    ")
+		builder.WriteString(strings.TrimSpace(agg))
+	}
+
+	// Add FROM clause
+	builder.WriteString("\nFROM ")
+	builder.WriteString(sourceTable)
+
+	// Add WHERE clause if specified
+	if whereCondition != "" {
+		builder.WriteString("\nWHERE ")
+		builder.WriteString(whereCondition)
+	}
+
+	// Add GROUP BY clause
+	builder.WriteString("\nGROUP BY time_bucket")
+
+	// Add WITH DATA or WITH NO DATA
+	if withData {
+		builder.WriteString("\nWITH DATA")
+	} else {
+		builder.WriteString("\nWITH NO DATA")
+	}
+
+	// Execute the statement
+	_, err := useCase.ExecuteStatement(ctx, dbID, builder.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create continuous aggregate: %w", err)
+	}
+
+	// Add refresh policy if requested
+	if refreshPolicy && refreshInterval != "" {
+		policySQL := fmt.Sprintf("SELECT add_continuous_aggregate_policy('%s', start_offset => INTERVAL '1 week', end_offset => INTERVAL '1 hour', schedule_interval => INTERVAL '%s')", viewName, refreshInterval)
+		_, err := useCase.ExecuteStatement(ctx, dbID, policySQL, nil)
+		if err != nil {
+			return map[string]interface{}{
+				"message": fmt.Sprintf("Created continuous aggregate '%s' but failed to add refresh policy: %s", viewName, err.Error()),
+			}, nil
+		}
+	}
+
+	return map[string]interface{}{
+		"message": fmt.Sprintf("Successfully created continuous aggregate '%s'", viewName),
+		"sql":     builder.String(),
+	}, nil
+}
+
+// handleRefreshContinuousAggregate handles the refresh_continuous_aggregate operation
+func (t *TimescaleDBTool) handleRefreshContinuousAggregate(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	// Extract required parameters
+	viewName, ok := request.Parameters["view_name"].(string)
+	if !ok || viewName == "" {
+		return nil, fmt.Errorf("view_name parameter is required")
+	}
+
+	// Extract optional parameters
+	startTimeStr := getStringParam(request.Parameters, "start_time")
+	endTimeStr := getStringParam(request.Parameters, "end_time")
+
+	// Build the SQL statement to refresh a continuous aggregate
+	var sql string
+	if startTimeStr != "" && endTimeStr != "" {
+		sql = fmt.Sprintf("CALL refresh_continuous_aggregate('%s', '%s', '%s')",
+			viewName, startTimeStr, endTimeStr)
+	} else {
+		sql = fmt.Sprintf("CALL refresh_continuous_aggregate('%s', NULL, NULL)", viewName)
+	}
+
+	// Execute the statement
+	_, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to refresh continuous aggregate: %w", err)
+	}
+
+	return map[string]interface{}{
+		"message": fmt.Sprintf("Successfully refreshed continuous aggregate '%s'", viewName),
 	}, nil
 }
 
