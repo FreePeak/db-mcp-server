@@ -121,7 +121,7 @@ Extend the editor context provider to include TimescaleDB-specific information:
 | TOOL-3 | Implement hypertable listing tool | 1 day | INFRA-3, TOOL-1 | Completed |
 | TOOL-4 | Implement compression policy tools | 2 days | INFRA-5, TOOL-1 | Completed |
 | TOOL-5 | Implement retention policy tools | 2 days | INFRA-5, TOOL-1 | Completed |
-| TOOL-6 | Implement time-series query tools | 3 days | INFRA-4, TOOL-1 | Pending |
+| TOOL-6 | Implement time-series query tools | 3 days | INFRA-4, TOOL-1 | Completed |
 | TOOL-7 | Implement continuous aggregate tools | 3 days | INFRA-3, TOOL-1 | Pending |
 
 ### 5.3 Context Integration Tasks
@@ -141,7 +141,7 @@ Extend the editor context provider to include TimescaleDB-specific information:
 | TEST-1 | Create TimescaleDB Docker setup for testing | 1 day | None | Pending |
 | TEST-2 | Write unit tests for TimescaleDB connection | 2 days | INFRA-2, TEST-1 | Completed |
 | TEST-3 | Write integration tests for hypertable management | 2 days | INFRA-3, TEST-1 | Completed |
-| TEST-4 | Write tests for time-series query functions | 2 days | INFRA-4, TEST-1 | Pending |
+| TEST-4 | Write tests for time-series query functions | 2 days | INFRA-4, TEST-1 | Completed |
 | TEST-5 | Write tests for compression and retention | 2 days | INFRA-5, TEST-1 | Completed |
 | TEST-6 | Write end-to-end tests for all tools | 3 days | All TOOL tasks, TEST-1 | Pending |
 | DOC-1 | Update configuration documentation | 1 day | INFRA-1 | Pending |
@@ -164,17 +164,17 @@ As of the current codebase status:
 
 - **Core Infrastructure (100% Complete)**: All core TimescaleDB infrastructure components have been implemented, including configuration structures, connection management, hypertable management, time-series query builder, and policy management.
 
-- **Tool Integration (70% Complete)**: Basic TimescaleDB tool type has been registered, hypertable creation and listing tools are implemented, and both compression and retention policy tools are fully implemented with comprehensive tests. The remaining tools for time-series queries and continuous aggregates are still pending.
+- **Tool Integration (85% Complete)**: Basic TimescaleDB tool type has been registered, hypertable creation and listing tools are implemented, and both compression and retention policy tools are fully implemented with comprehensive tests. Time-series query tools have been implemented with advanced features such as window functions and pretty formatting. Only continuous aggregates tools are still pending.
 
 - **Context Integration (0% Complete)**: TimescaleDB context integration for editor features has not been implemented yet.
 
-- **Testing (70% Complete)**: Unit tests for connection, hypertable management, policy features, and both compression and retention policy tools have been implemented, but still need TimescaleDB Docker setup for proper testing. Tests for time-series query functions and end-to-end tool tests are pending.
+- **Testing (75% Complete)**: Unit tests for connection, hypertable management, policy features, and both compression and retention policy tools have been implemented. Tests for time-series query tools have been added, but still need TimescaleDB Docker setup for proper integration testing. Tests for continuous aggregate features and end-to-end tool tests are pending.
 
 - **Documentation (0% Complete)**: Documentation for TimescaleDB features, best practices, and usage examples have not been created yet.
 
 - **Deployment (0% Complete)**: TimescaleDB Docker setup, CI/CD integration, and performance testing have not been implemented yet.
 
-**Overall Progress**: Approximately 65% of the planned work has been completed, focusing primarily on the core infrastructure layer and basic tool integration. The next priority is to implement the remaining TimescaleDB tools to expose the full functionality set, particularly time-series queries and continuous aggregates.
+**Overall Progress**: Approximately 70% of the planned work has been completed, focusing primarily on the core infrastructure layer and tool integration. The next priority is to implement the remaining TimescaleDB tools for continuous aggregates to expose the full functionality set.
 
 ## 6. Timeline
 
