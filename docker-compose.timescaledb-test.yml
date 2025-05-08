@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    environment:
+      POSTGRES_USER: timescale_user
+      POSTGRES_PASSWORD: timescale_password
+      POSTGRES_DB: timescale_test
+    ports:
+      - "15435:5432"
+    volumes:
+      - ./init-scripts/timescaledb:/docker-entrypoint-initdb.d
+      - timescaledb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U timescale_user -d timescale_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - timescale-test-network
+
+  db-mcp-server-test:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - TZ=UTC
+    ports:
+      - "9093:9092"
+    volumes:
+      - ./config.timescaledb-test.json:/app/config.json
+      - ./wait-for-it.sh:/app/wait-for-it.sh
+    command:
+      [
+        "/bin/sh",
+        "-c",
+        "chmod +x /app/wait-for-it.sh && /app/wait-for-it.sh timescaledb 5432 30 && /app/server -t sse -c /app/config.json",
+      ]
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    networks:
+      - timescale-test-network
+
+networks:
+  timescale-test-network:
+    driver: bridge
+
+volumes:
+  timescaledb_data: 
