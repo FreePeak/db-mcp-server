@@ -38,9 +38,10 @@ func (t *TimescaleDBTool) GetDescription(dbID string) string {
 	return fmt.Sprintf("%s on %s", t.description, dbID)
 }
 
-// CreateTool creates a tool instance
+// CreateTool creates the TimescaleDB tool
 func (t *TimescaleDBTool) CreateTool(name string, dbID string) interface{} {
-	return cortextools.NewTool(
+	// Create main tool that describes the available operations
+	mainTool := cortextools.NewTool(
 		name,
 		cortextools.WithDescription(t.GetDescription(dbID)),
 		cortextools.WithString("operation",
@@ -49,9 +50,10 @@ func (t *TimescaleDBTool) CreateTool(name string, dbID string) interface{} {
 		),
 		cortextools.WithString("target_table",
 			cortextools.Description("The table to perform the operation on"),
-			cortextools.Required(),
 		),
 	)
+
+	return mainTool
 }
 
 // CreateHypertableTool creates a specific tool for hypertable creation
@@ -60,7 +62,7 @@ func (t *TimescaleDBTool) CreateHypertableTool(name string, dbID string) interfa
 		name,
 		cortextools.WithDescription(fmt.Sprintf("Create TimescaleDB hypertable on %s", dbID)),
 		cortextools.WithString("operation",
-			cortextools.Description("Must be 'create_hypertable'"),
+			cortextools.Description("The operation must be 'create_hypertable'"),
 			cortextools.Required(),
 		),
 		cortextools.WithString("target_table",
@@ -89,7 +91,7 @@ func (t *TimescaleDBTool) CreateListHypertablesTool(name string, dbID string) in
 		name,
 		cortextools.WithDescription(fmt.Sprintf("List TimescaleDB hypertables on %s", dbID)),
 		cortextools.WithString("operation",
-			cortextools.Description("Must be 'list_hypertables'"),
+			cortextools.Description("The operation must be 'list_hypertables'"),
 			cortextools.Required(),
 		),
 	)
@@ -101,7 +103,7 @@ func (t *TimescaleDBTool) CreateCompressionEnableTool(name string, dbID string) 
 		name,
 		cortextools.WithDescription(fmt.Sprintf("Enable compression on TimescaleDB hypertable on %s", dbID)),
 		cortextools.WithString("operation",
-			cortextools.Description("Must be 'enable_compression'"),
+			cortextools.Description("The operation must be 'enable_compression'"),
 			cortextools.Required(),
 		),
 		cortextools.WithString("target_table",
@@ -120,7 +122,7 @@ func (t *TimescaleDBTool) CreateCompressionDisableTool(name string, dbID string)
 		name,
 		cortextools.WithDescription(fmt.Sprintf("Disable compression on TimescaleDB hypertable on %s", dbID)),
 		cortextools.WithString("operation",
-			cortextools.Description("Must be 'disable_compression'"),
+			cortextools.Description("The operation must be 'disable_compression'"),
 			cortextools.Required(),
 		),
 		cortextools.WithString("target_table",
@@ -136,7 +138,7 @@ func (t *TimescaleDBTool) CreateCompressionPolicyAddTool(name string, dbID strin
 		name,
 		cortextools.WithDescription(fmt.Sprintf("Add compression policy to TimescaleDB hypertable on %s", dbID)),
 		cortextools.WithString("operation",
-			cortextools.Description("Must be 'add_compression_policy'"),
+			cortextools.Description("The operation must be 'add_compression_policy'"),
 			cortextools.Required(),
 		),
 		cortextools.WithString("target_table",
@@ -162,7 +164,7 @@ func (t *TimescaleDBTool) CreateCompressionPolicyRemoveTool(name string, dbID st
 		name,
 		cortextools.WithDescription(fmt.Sprintf("Remove compression policy from TimescaleDB hypertable on %s", dbID)),
 		cortextools.WithString("operation",
-			cortextools.Description("Must be 'remove_compression_policy'"),
+			cortextools.Description("The operation must be 'remove_compression_policy'"),
 			cortextools.Required(),
 		),
 		cortextools.WithString("target_table",
@@ -178,7 +180,7 @@ func (t *TimescaleDBTool) CreateCompressionSettingsTool(name string, dbID string
 		name,
 		cortextools.WithDescription(fmt.Sprintf("Get compression settings for TimescaleDB hypertable on %s", dbID)),
 		cortextools.WithString("operation",
-			cortextools.Description("Must be 'get_compression_settings'"),
+			cortextools.Description("The operation must be 'get_compression_settings'"),
 			cortextools.Required(),
 		),
 		cortextools.WithString("target_table",
@@ -194,7 +196,7 @@ func (t *TimescaleDBTool) CreateRetentionPolicyTool(name string, dbID string) in
 		name,
 		cortextools.WithDescription(fmt.Sprintf("Manage TimescaleDB retention policies on %s", dbID)),
 		cortextools.WithString("operation",
-			cortextools.Description("Operation (add_retention_policy, remove_retention_policy, get_retention_policy)"),
+			cortextools.Description("The operation must be one of: add_retention_policy, remove_retention_policy, get_retention_policy"),
 			cortextools.Required(),
 		),
 		cortextools.WithString("target_table",
@@ -213,7 +215,7 @@ func (t *TimescaleDBTool) CreateTimeSeriesQueryTool(name string, dbID string) in
 		name,
 		cortextools.WithDescription(fmt.Sprintf("Execute time-series queries on TimescaleDB %s", dbID)),
 		cortextools.WithString("operation",
-			cortextools.Description("Must be 'time_series_query'"),
+			cortextools.Description("The operation must be 'time_series_query'"),
 			cortextools.Required(),
 		),
 		cortextools.WithString("target_table",
@@ -264,7 +266,7 @@ func (t *TimescaleDBTool) CreateTimeSeriesAnalyzeTool(name string, dbID string) 
 		name,
 		cortextools.WithDescription(fmt.Sprintf("Analyze time-series data patterns on TimescaleDB %s", dbID)),
 		cortextools.WithString("operation",
-			cortextools.Description("Must be 'analyze_time_series'"),
+			cortextools.Description("The operation must be 'analyze_time_series'"),
 			cortextools.Required(),
 		),
 		cortextools.WithString("target_table",
@@ -290,7 +292,7 @@ func (t *TimescaleDBTool) CreateContinuousAggregateTool(name string, dbID string
 		name,
 		cortextools.WithDescription(fmt.Sprintf("Create TimescaleDB continuous aggregate on %s", dbID)),
 		cortextools.WithString("operation",
-			cortextools.Description("Must be 'create_continuous_aggregate'"),
+			cortextools.Description("The operation must be 'create_continuous_aggregate'"),
 			cortextools.Required(),
 		),
 		cortextools.WithString("view_name",
@@ -333,7 +335,7 @@ func (t *TimescaleDBTool) CreateContinuousAggregateRefreshTool(name string, dbID
 		name,
 		cortextools.WithDescription(fmt.Sprintf("Refresh TimescaleDB continuous aggregate on %s", dbID)),
 		cortextools.WithString("operation",
-			cortextools.Description("Must be 'refresh_continuous_aggregate'"),
+			cortextools.Description("The operation must be 'refresh_continuous_aggregate'"),
 			cortextools.Required(),
 		),
 		cortextools.WithString("view_name",
@@ -345,6 +347,97 @@ func (t *TimescaleDBTool) CreateContinuousAggregateRefreshTool(name string, dbID
 		),
 		cortextools.WithString("end_time",
 			cortextools.Description("End of time range to refresh (e.g., '2023-01-31')"),
+		),
+	)
+}
+
+// CreateContinuousAggregateDropTool creates a specific tool for dropping continuous aggregates
+func (t *TimescaleDBTool) CreateContinuousAggregateDropTool(name string, dbID string) interface{} {
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(fmt.Sprintf("Drop TimescaleDB continuous aggregate on %s", dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("The operation must be 'drop_continuous_aggregate'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("view_name",
+			cortextools.Description("Name of the continuous aggregate view to drop"),
+			cortextools.Required(),
+		),
+		cortextools.WithBoolean("cascade",
+			cortextools.Description("Whether to drop dependent objects as well"),
+		),
+	)
+}
+
+// CreateContinuousAggregateListTool creates a specific tool for listing continuous aggregates
+func (t *TimescaleDBTool) CreateContinuousAggregateListTool(name string, dbID string) interface{} {
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(fmt.Sprintf("List TimescaleDB continuous aggregates on %s", dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("The operation must be 'list_continuous_aggregates'"),
+			cortextools.Required(),
+		),
+	)
+}
+
+// CreateContinuousAggregateInfoTool creates a specific tool for getting continuous aggregate information
+func (t *TimescaleDBTool) CreateContinuousAggregateInfoTool(name string, dbID string) interface{} {
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(fmt.Sprintf("Get information about a TimescaleDB continuous aggregate on %s", dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("The operation must be 'get_continuous_aggregate_info'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("view_name",
+			cortextools.Description("Name of the continuous aggregate view"),
+			cortextools.Required(),
+		),
+	)
+}
+
+// CreateContinuousAggregatePolicyAddTool creates a specific tool for adding a refresh policy
+func (t *TimescaleDBTool) CreateContinuousAggregatePolicyAddTool(name string, dbID string) interface{} {
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(fmt.Sprintf("Add refresh policy to TimescaleDB continuous aggregate on %s", dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("The operation must be 'add_continuous_aggregate_policy'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("view_name",
+			cortextools.Description("Name of the continuous aggregate view"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("start_offset",
+			cortextools.Description("How far to look back for data to refresh (e.g., '1 week')"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("end_offset",
+			cortextools.Description("How recent of data to refresh (e.g., '1 hour')"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("schedule_interval",
+			cortextools.Description("How often to refresh data (e.g., '1 day')"),
+			cortextools.Required(),
+		),
+	)
+}
+
+// CreateContinuousAggregatePolicyRemoveTool creates a specific tool for removing a refresh policy
+func (t *TimescaleDBTool) CreateContinuousAggregatePolicyRemoveTool(name string, dbID string) interface{} {
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(fmt.Sprintf("Remove refresh policy from TimescaleDB continuous aggregate on %s", dbID)),
+		cortextools.WithString("operation",
+			cortextools.Description("The operation must be 'remove_continuous_aggregate_policy'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("view_name",
+			cortextools.Description("Name of the continuous aggregate view"),
+			cortextools.Required(),
 		),
 	)
 }
@@ -391,6 +484,16 @@ func (t *TimescaleDBTool) HandleRequest(ctx context.Context, request server.Tool
 		return t.handleCreateContinuousAggregate(ctx, request, dbID, useCase)
 	case "refresh_continuous_aggregate":
 		return t.handleRefreshContinuousAggregate(ctx, request, dbID, useCase)
+	case "drop_continuous_aggregate":
+		return t.handleDropContinuousAggregate(ctx, request, dbID, useCase)
+	case "list_continuous_aggregates":
+		return t.handleListContinuousAggregates(ctx, request, dbID, useCase)
+	case "get_continuous_aggregate_info":
+		return t.handleGetContinuousAggregateInfo(ctx, request, dbID, useCase)
+	case "add_continuous_aggregate_policy":
+		return t.handleAddContinuousAggregatePolicy(ctx, request, dbID, useCase)
+	case "remove_continuous_aggregate_policy":
+		return t.handleRemoveContinuousAggregatePolicy(ctx, request, dbID, useCase)
 	default:
 		return map[string]interface{}{"message": fmt.Sprintf("Operation '%s' not implemented yet", operation)}, nil
 	}
@@ -1323,6 +1426,193 @@ func (t *TimescaleDBTool) handleRefreshContinuousAggregate(ctx context.Context, 
 
 	return map[string]interface{}{
 		"message": fmt.Sprintf("Successfully refreshed continuous aggregate '%s'", viewName),
+	}, nil
+}
+
+// handleDropContinuousAggregate handles the drop_continuous_aggregate operation
+func (t *TimescaleDBTool) handleDropContinuousAggregate(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	// Extract required parameters
+	viewName, ok := request.Parameters["view_name"].(string)
+	if !ok || viewName == "" {
+		return nil, fmt.Errorf("view_name parameter is required")
+	}
+
+	// Extract optional parameters
+	cascade := getBoolParam(request.Parameters, "cascade")
+
+	// Build the SQL statement to drop a continuous aggregate
+	sql := fmt.Sprintf("DROP MATERIALIZED VIEW %s", viewName)
+
+	if cascade {
+		sql += " CASCADE"
+	}
+
+	// Execute the statement
+	_, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop continuous aggregate: %w", err)
+	}
+
+	return map[string]interface{}{
+		"message": fmt.Sprintf("Successfully dropped continuous aggregate '%s'", viewName),
+	}, nil
+}
+
+// handleListContinuousAggregates handles the list_continuous_aggregates operation
+func (t *TimescaleDBTool) handleListContinuousAggregates(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	// Check if the database is PostgreSQL (TimescaleDB requires PostgreSQL)
+	dbType, err := useCase.GetDatabaseType(dbID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database type: %w", err)
+	}
+
+	if !strings.Contains(strings.ToLower(dbType), "postgres") {
+		return nil, fmt.Errorf("TimescaleDB operations are only supported on PostgreSQL databases")
+	}
+
+	// Build the SQL query to list continuous aggregates
+	sql := `
+		SELECT view_name, source_table, time_column, bucket_interval, aggregations, where_condition, with_data, refresh_policy, refresh_interval
+		FROM timescaledb_information.continuous_aggregates
+	`
+
+	// Execute the statement
+	result, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list continuous aggregates: %w", err)
+	}
+
+	return map[string]interface{}{
+		"message": "Successfully retrieved continuous aggregates list",
+		"details": result,
+	}, nil
+}
+
+// handleGetContinuousAggregateInfo handles the get_continuous_aggregate_info operation
+func (t *TimescaleDBTool) handleGetContinuousAggregateInfo(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	// Extract required parameters
+	viewName, ok := request.Parameters["view_name"].(string)
+	if !ok || viewName == "" {
+		return nil, fmt.Errorf("view_name parameter is required")
+	}
+
+	// Check if the database is PostgreSQL (TimescaleDB requires PostgreSQL)
+	dbType, err := useCase.GetDatabaseType(dbID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database type: %w", err)
+	}
+
+	if !strings.Contains(strings.ToLower(dbType), "postgres") {
+		return nil, fmt.Errorf("TimescaleDB operations are only supported on PostgreSQL databases")
+	}
+
+	// Build the SQL query to get continuous aggregate information
+	sql := fmt.Sprintf(`
+		SELECT 
+			view_name,
+			source_table,
+			time_column,
+			bucket_interval,
+			aggregations,
+			where_condition,
+			with_data,
+			refresh_policy,
+			refresh_interval
+		FROM 
+			timescaledb_information.continuous_aggregates
+		WHERE 
+			view_name = '%s'
+	`, viewName)
+
+	// Execute the statement
+	result, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get continuous aggregate info: %w", err)
+	}
+
+	return map[string]interface{}{
+		"message": fmt.Sprintf("Successfully retrieved continuous aggregate information for '%s'", viewName),
+		"details": result,
+	}, nil
+}
+
+// handleAddContinuousAggregatePolicy handles the add_continuous_aggregate_policy operation
+func (t *TimescaleDBTool) handleAddContinuousAggregatePolicy(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	// Extract required parameters
+	viewName, ok := request.Parameters["view_name"].(string)
+	if !ok || viewName == "" {
+		return nil, fmt.Errorf("view_name parameter is required")
+	}
+
+	startOffset, ok := request.Parameters["start_offset"].(string)
+	if !ok || startOffset == "" {
+		return nil, fmt.Errorf("start_offset parameter is required")
+	}
+
+	endOffset, ok := request.Parameters["end_offset"].(string)
+	if !ok || endOffset == "" {
+		return nil, fmt.Errorf("end_offset parameter is required")
+	}
+
+	scheduleInterval, ok := request.Parameters["schedule_interval"].(string)
+	if !ok || scheduleInterval == "" {
+		return nil, fmt.Errorf("schedule_interval parameter is required")
+	}
+
+	// Check if the database is PostgreSQL (TimescaleDB requires PostgreSQL)
+	dbType, err := useCase.GetDatabaseType(dbID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database type: %w", err)
+	}
+
+	if !strings.Contains(strings.ToLower(dbType), "postgres") {
+		return nil, fmt.Errorf("TimescaleDB operations are only supported on PostgreSQL databases")
+	}
+
+	// Build the SQL statement to add a continuous aggregate policy
+	sql := fmt.Sprintf("SELECT add_continuous_aggregate_policy('%s', start_offset => INTERVAL '%s', end_offset => INTERVAL '%s', schedule_interval => INTERVAL '%s')",
+		viewName, startOffset, endOffset, scheduleInterval)
+
+	// Execute the statement
+	_, err = useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add continuous aggregate policy: %w", err)
+	}
+
+	return map[string]interface{}{
+		"message": fmt.Sprintf("Successfully added continuous aggregate policy to '%s'", viewName),
+	}, nil
+}
+
+// handleRemoveContinuousAggregatePolicy handles the remove_continuous_aggregate_policy operation
+func (t *TimescaleDBTool) handleRemoveContinuousAggregatePolicy(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	// Extract required parameters
+	viewName, ok := request.Parameters["view_name"].(string)
+	if !ok || viewName == "" {
+		return nil, fmt.Errorf("view_name parameter is required")
+	}
+
+	// Check if the database is PostgreSQL (TimescaleDB requires PostgreSQL)
+	dbType, err := useCase.GetDatabaseType(dbID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database type: %w", err)
+	}
+
+	if !strings.Contains(strings.ToLower(dbType), "postgres") {
+		return nil, fmt.Errorf("TimescaleDB operations are only supported on PostgreSQL databases")
+	}
+
+	// Build the SQL statement to remove a continuous aggregate policy
+	sql := fmt.Sprintf("SELECT remove_continuous_aggregate_policy('%s')", viewName)
+
+	// Execute the statement
+	_, err = useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove continuous aggregate policy: %w", err)
+	}
+
+	return map[string]interface{}{
+		"message": fmt.Sprintf("Successfully removed continuous aggregate policy from '%s'", viewName),
 	}, nil
 }
 

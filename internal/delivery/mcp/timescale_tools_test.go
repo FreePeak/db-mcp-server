@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/FreePeak/cortex/pkg/server"
@@ -155,6 +156,339 @@ func TestTimeSeriesQueryTool(t *testing.T) {
 		assert.True(t, ok)
 		assert.Contains(t, metadata, "num_rows")
 		assert.Contains(t, metadata, "time_bucket_interval")
+
+		// Verify the mock expectations
+		mockUseCase.AssertExpectations(t)
+	})
+}
+
+// TestContinuousAggregateTool tests the continuous aggregate operations
+func TestContinuousAggregateTool(t *testing.T) {
+	// Create a context for testing
+	ctx := context.Background()
+
+	// Test case for create_continuous_aggregate operation
+	t.Run("create_continuous_aggregate", func(t *testing.T) {
+		// Create a new mock for this test case
+		mockUseCase := new(MockDatabaseUseCase)
+
+		// Set up the TimescaleDB tool
+		tool := mcp.NewTimescaleDBTool()
+
+		// Set up expectations
+		mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
+
+		// Add mock expectation for the SQL containing CREATE MATERIALIZED VIEW
+		mockUseCase.On("ExecuteStatement",
+			mock.Anything,
+			"test_db",
+			mock.MatchedBy(func(sql string) bool {
+				return strings.Contains(sql, "CREATE MATERIALIZED VIEW")
+			}),
+			mock.Anything).Return(`{"result": "success"}`, nil)
+
+		// Add separate mock expectation for policy SQL if needed
+		mockUseCase.On("ExecuteStatement",
+			mock.Anything,
+			"test_db",
+			mock.MatchedBy(func(sql string) bool {
+				return strings.Contains(sql, "add_continuous_aggregate_policy")
+			}),
+			mock.Anything).Return(`{"result": "success"}`, nil)
+
+		// Create a request
+		request := server.ToolCallRequest{
+			Name: "timescaledb_create_continuous_aggregate_test_db",
+			Parameters: map[string]interface{}{
+				"operation":        "create_continuous_aggregate",
+				"view_name":        "daily_metrics",
+				"source_table":     "sensor_data",
+				"time_column":      "timestamp",
+				"bucket_interval":  "1 day",
+				"aggregations":     "AVG(temperature) as avg_temp, MIN(temperature) as min_temp, MAX(temperature) as max_temp",
+				"with_data":        true,
+				"refresh_policy":   true,
+				"refresh_interval": "1 hour",
+			},
+		}
+
+		// Call the handler
+		result, err := tool.HandleRequest(ctx, request, "test_db", mockUseCase)
+
+		// Verify the result
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Check the result contains expected fields
+		resultMap, ok := result.(map[string]interface{})
+		assert.True(t, ok)
+		assert.Contains(t, resultMap, "message")
+		assert.Contains(t, resultMap, "sql")
+
+		// Verify the mock expectations
+		mockUseCase.AssertExpectations(t)
+	})
+
+	// Test case for refresh_continuous_aggregate operation
+	t.Run("refresh_continuous_aggregate", func(t *testing.T) {
+		// Create a new mock for this test case
+		mockUseCase := new(MockDatabaseUseCase)
+
+		// Set up the TimescaleDB tool
+		tool := mcp.NewTimescaleDBTool()
+
+		// Set up expectations
+		mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
+		mockUseCase.On("ExecuteStatement",
+			mock.Anything,
+			"test_db",
+			mock.MatchedBy(func(sql string) bool {
+				return strings.Contains(sql, "CALL refresh_continuous_aggregate")
+			}),
+			mock.Anything).Return(`{"result": "success"}`, nil)
+
+		// Create a request
+		request := server.ToolCallRequest{
+			Name: "timescaledb_refresh_continuous_aggregate_test_db",
+			Parameters: map[string]interface{}{
+				"operation":  "refresh_continuous_aggregate",
+				"view_name":  "daily_metrics",
+				"start_time": "2023-01-01",
+				"end_time":   "2023-01-31",
+			},
+		}
+
+		// Call the handler
+		result, err := tool.HandleRequest(ctx, request, "test_db", mockUseCase)
+
+		// Verify the result
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Check the result contains expected fields
+		resultMap, ok := result.(map[string]interface{})
+		assert.True(t, ok)
+		assert.Contains(t, resultMap, "message")
+
+		// Verify the mock expectations
+		mockUseCase.AssertExpectations(t)
+	})
+
+	// Test case for drop_continuous_aggregate operation
+	t.Run("drop_continuous_aggregate", func(t *testing.T) {
+		// Create a new mock for this test case
+		mockUseCase := new(MockDatabaseUseCase)
+
+		// Set up the TimescaleDB tool
+		tool := mcp.NewTimescaleDBTool()
+
+		// Set up expectations
+		mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
+		mockUseCase.On("ExecuteStatement",
+			mock.Anything,
+			"test_db",
+			mock.MatchedBy(func(sql string) bool {
+				return strings.Contains(sql, "DROP MATERIALIZED VIEW")
+			}),
+			mock.Anything).Return(`{"result": "success"}`, nil)
+
+		// Create a request
+		request := server.ToolCallRequest{
+			Name: "timescaledb_drop_continuous_aggregate_test_db",
+			Parameters: map[string]interface{}{
+				"operation": "drop_continuous_aggregate",
+				"view_name": "daily_metrics",
+				"cascade":   true,
+			},
+		}
+
+		// Call the handler
+		result, err := tool.HandleRequest(ctx, request, "test_db", mockUseCase)
+
+		// Verify the result
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Check the result contains expected fields
+		resultMap, ok := result.(map[string]interface{})
+		assert.True(t, ok)
+		assert.Contains(t, resultMap, "message")
+
+		// Verify the mock expectations
+		mockUseCase.AssertExpectations(t)
+	})
+
+	// Test case for list_continuous_aggregates operation
+	t.Run("list_continuous_aggregates", func(t *testing.T) {
+		// Create a new mock for this test case
+		mockUseCase := new(MockDatabaseUseCase)
+
+		// Set up the TimescaleDB tool
+		tool := mcp.NewTimescaleDBTool()
+
+		// Set up expectations
+		mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
+		mockUseCase.On("ExecuteStatement",
+			mock.Anything,
+			"test_db",
+			mock.MatchedBy(func(sql string) bool {
+				return strings.Contains(sql, "SELECT") && strings.Contains(sql, "continuous_aggregates")
+			}),
+			mock.Anything).Return(`[{"view_name": "daily_metrics", "source_table": "sensor_data"}]`, nil)
+
+		// Create a request
+		request := server.ToolCallRequest{
+			Name: "timescaledb_list_continuous_aggregates_test_db",
+			Parameters: map[string]interface{}{
+				"operation": "list_continuous_aggregates",
+			},
+		}
+
+		// Call the handler
+		result, err := tool.HandleRequest(ctx, request, "test_db", mockUseCase)
+
+		// Verify the result
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Check the result contains expected fields
+		resultMap, ok := result.(map[string]interface{})
+		assert.True(t, ok)
+		assert.Contains(t, resultMap, "message")
+		assert.Contains(t, resultMap, "details")
+
+		// Verify the mock expectations
+		mockUseCase.AssertExpectations(t)
+	})
+
+	// Test case for get_continuous_aggregate_info operation
+	t.Run("get_continuous_aggregate_info", func(t *testing.T) {
+		// Create a new mock for this test case
+		mockUseCase := new(MockDatabaseUseCase)
+
+		// Set up the TimescaleDB tool
+		tool := mcp.NewTimescaleDBTool()
+
+		// Set up expectations
+		mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
+		mockUseCase.On("ExecuteStatement",
+			mock.Anything,
+			"test_db",
+			mock.MatchedBy(func(sql string) bool {
+				return strings.Contains(sql, "SELECT") && strings.Contains(sql, "continuous_aggregates") && strings.Contains(sql, "WHERE")
+			}),
+			mock.Anything).Return(`[{"view_name": "daily_metrics", "source_table": "sensor_data", "bucket_interval": "1 day"}]`, nil)
+
+		// Create a request
+		request := server.ToolCallRequest{
+			Name: "timescaledb_get_continuous_aggregate_info_test_db",
+			Parameters: map[string]interface{}{
+				"operation": "get_continuous_aggregate_info",
+				"view_name": "daily_metrics",
+			},
+		}
+
+		// Call the handler
+		result, err := tool.HandleRequest(ctx, request, "test_db", mockUseCase)
+
+		// Verify the result
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Check the result contains expected fields
+		resultMap, ok := result.(map[string]interface{})
+		assert.True(t, ok)
+		assert.Contains(t, resultMap, "message")
+		assert.Contains(t, resultMap, "details")
+
+		// Verify the mock expectations
+		mockUseCase.AssertExpectations(t)
+	})
+
+	// Test case for add_continuous_aggregate_policy operation
+	t.Run("add_continuous_aggregate_policy", func(t *testing.T) {
+		// Create a new mock for this test case
+		mockUseCase := new(MockDatabaseUseCase)
+
+		// Set up the TimescaleDB tool
+		tool := mcp.NewTimescaleDBTool()
+
+		// Set up expectations
+		mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
+		mockUseCase.On("ExecuteStatement",
+			mock.Anything,
+			"test_db",
+			mock.MatchedBy(func(sql string) bool {
+				return strings.Contains(sql, "add_continuous_aggregate_policy")
+			}),
+			mock.Anything).Return(`{"result": "success"}`, nil)
+
+		// Create a request
+		request := server.ToolCallRequest{
+			Name: "timescaledb_add_continuous_aggregate_policy_test_db",
+			Parameters: map[string]interface{}{
+				"operation":         "add_continuous_aggregate_policy",
+				"view_name":         "daily_metrics",
+				"start_offset":      "1 month",
+				"end_offset":        "2 hours",
+				"schedule_interval": "6 hours",
+			},
+		}
+
+		// Call the handler
+		result, err := tool.HandleRequest(ctx, request, "test_db", mockUseCase)
+
+		// Verify the result
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Check the result contains expected fields
+		resultMap, ok := result.(map[string]interface{})
+		assert.True(t, ok)
+		assert.Contains(t, resultMap, "message")
+
+		// Verify the mock expectations
+		mockUseCase.AssertExpectations(t)
+	})
+
+	// Test case for remove_continuous_aggregate_policy operation
+	t.Run("remove_continuous_aggregate_policy", func(t *testing.T) {
+		// Create a new mock for this test case
+		mockUseCase := new(MockDatabaseUseCase)
+
+		// Set up the TimescaleDB tool
+		tool := mcp.NewTimescaleDBTool()
+
+		// Set up expectations
+		mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
+		mockUseCase.On("ExecuteStatement",
+			mock.Anything,
+			"test_db",
+			mock.MatchedBy(func(sql string) bool {
+				return strings.Contains(sql, "remove_continuous_aggregate_policy")
+			}),
+			mock.Anything).Return(`{"result": "success"}`, nil)
+
+		// Create a request
+		request := server.ToolCallRequest{
+			Name: "timescaledb_remove_continuous_aggregate_policy_test_db",
+			Parameters: map[string]interface{}{
+				"operation": "remove_continuous_aggregate_policy",
+				"view_name": "daily_metrics",
+			},
+		}
+
+		// Call the handler
+		result, err := tool.HandleRequest(ctx, request, "test_db", mockUseCase)
+
+		// Verify the result
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Check the result contains expected fields
+		resultMap, ok := result.(map[string]interface{})
+		assert.True(t, ok)
+		assert.Contains(t, resultMap, "message")
 
 		// Verify the mock expectations
 		mockUseCase.AssertExpectations(t)
