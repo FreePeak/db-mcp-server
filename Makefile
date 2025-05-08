@@ -140,5 +140,6 @@ deploy-docker:
 	docker buildx rm multiplatform-builder || true
 
 # Default target
-all: build 
+all: build test
+	golangci-lint run ./...
 
