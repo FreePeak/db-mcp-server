@@ -176,7 +176,7 @@ func TestContinuousAggregateTool(t *testing.T) {
 		tool := mcp.NewTimescaleDBTool()
 
 		// Set up expectations
-		mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
+		// Removed GetDatabaseType expectation as it's not called in this handler
 
 		// Add mock expectation for the SQL containing CREATE MATERIALIZED VIEW
 		mockUseCase.On("ExecuteStatement",
@@ -238,7 +238,7 @@ func TestContinuousAggregateTool(t *testing.T) {
 		tool := mcp.NewTimescaleDBTool()
 
 		// Set up expectations
-		mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
+		// Removed GetDatabaseType expectation as it's not called in this handler
 		mockUseCase.On("ExecuteStatement",
 			mock.Anything,
 			"test_db",
@@ -283,7 +283,7 @@ func TestContinuousAggregateTool(t *testing.T) {
 		tool := mcp.NewTimescaleDBTool()
 
 		// Set up expectations
-		mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
+		// Removed GetDatabaseType expectation as it's not called in this handler
 		mockUseCase.On("ExecuteStatement",
 			mock.Anything,
 			"test_db",
