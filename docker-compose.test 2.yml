@@ -1,0 +1,156 @@
+version: "3.8"
+
+services:
+  db-mcp-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "9092:9092"
+    volumes:
+      - ./config.json:/app/config.json
+      - ./wait-for-it.sh:/app/wait-for-it.sh
+    command:
+      [
+        "/bin/sh",
+        "-c",
+        "chmod +x /app/wait-for-it.sh && /app/wait-for-it.sh mysql1 3306 30 && /app/wait-for-it.sh mysql2 3306 30 && /app/wait-for-it.sh postgres1 5432 30 && /app/wait-for-it.sh postgres2 5432 30 && /app/wait-for-it.sh postgres3 5432 30 && /app/server -t sse -c /app/config.json",
+      ]
+    depends_on:
+      mysql1:
+        condition: service_healthy
+      mysql2:
+        condition: service_healthy
+      postgres1:
+        condition: service_healthy
+      postgres3:
+        condition: service_healthy
+    networks:
+      - db-network
+
+  mysql1:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: db1
+      MYSQL_USER: user1
+      MYSQL_PASSWORD: password1
+      MYSQL_AUTHENTICATION_PLUGIN: mysql_native_password
+    ports:
+      - "13306:3306"
+    volumes:
+      - mysql1_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-ppassword",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - db-network
+
+  mysql2:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: db2
+      MYSQL_USER: user2
+      MYSQL_PASSWORD: password2
+      MYSQL_AUTHENTICATION_PLUGIN: mysql_native_password
+    ports:
+      - "13307:3306"
+    volumes:
+      - mysql2_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-ppassword",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - db-network
+
+  postgres1:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user1
+      POSTGRES_PASSWORD: password1
+      POSTGRES_DB: db1
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres1_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user1 -d db1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - db-network
+
+  postgres2:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: user2
+      POSTGRES_PASSWORD: password2
+      POSTGRES_DB: db2
+    ports:
+      - "15433:5432"
+    volumes:
+      - postgres2_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user2 -d db2"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - db-network
+
+  postgres3:
+    image: postgres:16.3-alpine
+    environment:
+      POSTGRES_USER: screener
+      POSTGRES_PASSWORD: screenerpass
+      POSTGRES_DB: screenerdb
+    ports:
+      - "15434:5432"
+    volumes:
+      - postgres3_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U screener -d screenerdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - db-network
+
+networks:
+  db-network:
+    driver: bridge
+
+volumes:
+  mysql1_data:
+  mysql2_data:
+  postgres1_data:
+  postgres2_data:
+  postgres3_data:

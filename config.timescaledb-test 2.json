@@ -1,0 +1,74 @@
+{
+  "log_level": "debug",
+  "databases": [
+    {
+      "id": "timescaledb_test",
+      "type": "postgres",
+      "host": "timescaledb",
+      "port": 5432,
+      "user": "timescale_user",
+      "password": "timescale_password",
+      "database": "timescale_test",
+      "display_name": "TimescaleDB Test",
+      "description": "PostgreSQL with TimescaleDB extension for testing time-series functionality",
+      "pool_max_conn": 10,
+      "max_idle_conn": 5,
+      "conn_max_lifetime": 3600,
+      "enable_user_query": true,
+      "features": {
+        "extensions": [
+          "timescaledb"
+        ]
+      }
+    },
+    {
+      "id": "timescaledb_readonly",
+      "type": "postgres",
+      "host": "timescaledb",
+      "port": 5432,
+      "user": "test_readonly",
+      "password": "readonly_password",
+      "database": "timescale_test",
+      "display_name": "TimescaleDB Read-Only",
+      "description": "Read-only access to TimescaleDB test database",
+      "pool_max_conn": 5,
+      "max_idle_conn": 2,
+      "conn_max_lifetime": 3600,
+      "enable_user_query": true,
+      "features": {
+        "extensions": [
+          "timescaledb"
+        ]
+      }
+    },
+    {
+      "id": "timescaledb_readwrite",
+      "type": "postgres",
+      "host": "timescaledb",
+      "port": 5432,
+      "user": "test_readwrite",
+      "password": "readwrite_password",
+      "database": "timescale_test",
+      "display_name": "TimescaleDB Read-Write",
+      "description": "Read-write access to TimescaleDB test database",
+      "pool_max_conn": 5,
+      "max_idle_conn": 2,
+      "conn_max_lifetime": 3600,
+      "enable_user_query": true,
+      "features": {
+        "extensions": [
+          "timescaledb"
+        ]
+      }
+    }
+  ],
+  "server": {
+    "port": 9092,
+    "host": "0.0.0.0",
+    "cors": {
+      "allowed_origins": ["*"],
+      "allowed_methods": ["GET", "POST", "OPTIONS"],
+      "allowed_headers": ["Content-Type", "Authorization"]
+    }
+  }
+} 

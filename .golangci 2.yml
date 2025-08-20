@@ -1,0 +1,77 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - revive
+
+linters-settings:
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/FreePeak/db-mcp-server
+  govet:
+  revive:
+    rules:
+      - name: var-naming
+        severity: warning
+        disabled: false
+      - name: exported
+        severity: warning
+        disabled: false
+  errcheck:
+    # Report about not checking of errors in type assertions: `a := b.(MyStruct)`.
+    check-type-assertions: true
+    # Report about assignment of errors to blank identifier: `num, _ := strconv.Atoi(numStr)`.
+    check-blank: true
+    # List of functions to exclude from error checking (useful for os.Setenv)
+    exclude-functions:
+      - os.Setenv
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-dirs:
+    - vendor/
+  exclude:
+    - "exported \\w+ (\\S*['.]*)([a-zA-Z'.*]*) should have comment or be unexported"
+  # Excluding the specific errors that are reported but that we can't reproduce locally  
+  exclude-rules:
+    - path: internal/delivery/mcp/tool_registry.go
+      text: "Error return value of `tr.registerTool` is not checked"
+    - path: internal/delivery/mcp/tool_registry.go  
+      text: "Error return value of `tr.createToolAlias` is not checked"
+    - path: cmd/server/main.go
+      text: "Error return value of `os.Setenv` is not checked"
+    - path: _test\.go$
+      linters:
+        - errcheck
+    - path: pkg/dbtools/dbtools.go
+      text: "func `_loadConfigFromFile` is unused"
+      linters:
+        - unused
+    - path: pkg/dbtools/dbtools.go
+      text: "func `_getEnv` is unused"
+      linters:
+        - unused
+    - path: pkg/dbtools/dbtools.go
+      text: "func `_getIntEnv` is unused"
+      linters:
+        - unused
+    - path: pkg/dbtools/dbtools.go
+      text: "func `_loadConfigFromEnv` is unused"
+      linters:
+        - unused 
