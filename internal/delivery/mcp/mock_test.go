@@ -46,3 +46,9 @@ func (m *MockDatabaseUseCase) ListDatabases() []string {
 	args := m.Called()
 	return args.Get(0).([]string)
 }
+
+// IsLazyLoading mocks the IsLazyLoading method
+func (m *MockDatabaseUseCase) IsLazyLoading() bool {
+	args := m.Called()
+	return args.Bool(0)
+}

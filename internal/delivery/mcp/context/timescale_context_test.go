@@ -51,6 +51,12 @@ func (m *MockDatabaseUseCase) ListDatabases() []string {
 	return args.Get(0).([]string)
 }
 
+// IsLazyLoading mocks the IsLazyLoading method
+func (m *MockDatabaseUseCase) IsLazyLoading() bool {
+	args := m.Called()
+	return args.Bool(0)
+}
+
 func TestTimescaleDBContextProvider(t *testing.T) {
 	// Create a mock use case provider
 	mockUseCase := new(MockDatabaseUseCase)

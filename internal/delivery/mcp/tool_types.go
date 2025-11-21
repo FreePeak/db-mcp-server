@@ -68,6 +68,7 @@ type UseCaseProvider interface {
 	GetDatabaseInfo(dbID string) (map[string]interface{}, error)
 	ListDatabases() []string
 	GetDatabaseType(dbID string) (string, error)
+	IsLazyLoading() bool
 }
 
 // BaseToolType provides common functionality for tool types
