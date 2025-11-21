@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"fmt"
 
 	"github.com/FreePeak/db-mcp-server/internal/domain"
 	"github.com/FreePeak/db-mcp-server/pkg/dbtools"
@@ -39,25 +38,15 @@ func (r *DatabaseRepository) ListDatabases() []string {
 
 // GetDatabaseType returns the type of a database by ID
 func (r *DatabaseRepository) GetDatabaseType(id string) (string, error) {
-	// Get the database connection to check its actual driver
-	db, err := dbtools.GetDatabase(id)
-	if err != nil {
-		return "", fmt.Errorf("failed to get database connection for type detection: %w", err)
-	}
+	// Read database type from configuration without establishing a connection
+	// The type is already validated when the connection is created, so we can trust it
+	// This is especially important for lazy loading to avoid unnecessary connections during startup
+	return dbtools.GetDatabaseType(id)
+}
 
-	// Use the actual driver name to determine database type
-	driverName := db.DriverName()
-
-	switch driverName {
-	case "postgres":
-		return "postgres", nil
-	case "mysql":
-		return "mysql", nil
-	default:
-		// Unknown database type - return the actual driver name and let the caller handle it
-		// Never default to MySQL as that can cause SQL dialect issues
-		return driverName, nil
-	}
+// IsLazyLoading returns whether lazy loading mode is enabled
+func (r *DatabaseRepository) IsLazyLoading() bool {
+	return dbtools.IsLazyLoading()
 }
 
 // DatabaseAdapter adapts the db.Database to the domain.Database interface

@@ -342,3 +342,8 @@ func timeNowUnix() int64 {
 func (uc *DatabaseUseCase) GetDatabaseType(dbID string) (string, error) {
 	return uc.repo.GetDatabaseType(dbID)
 }
+
+// IsLazyLoading returns whether lazy loading mode is enabled
+func (uc *DatabaseUseCase) IsLazyLoading() bool {
+	return uc.repo.IsLazyLoading()
+}

@@ -37,6 +37,7 @@ const (
 type Config struct {
 	ConfigFile  string
 	Connections []ConnectionConfig
+	LazyLoading bool // Enable lazy loading: connections established on first use
 }
 
 // ConnectionConfig represents a single database connection configuration
@@ -93,11 +94,6 @@ func InitDatabase(cfg *Config) error {
 				// Don't return error, try other methods
 			} else {
 				logger.Info("Loaded database config from file: %s", cfg.ConfigFile)
-				// Debug logging of connection details
-				for i, conn := range multiDBConfig.Connections {
-					logger.Info("Connection [%d]: ID=%s, Type=%s, Host=%s, Port=%d, Name=%s",
-						i, conn.ID, conn.Type, conn.Host, conn.Port, conn.Name)
-				}
 			}
 		}
 	}
@@ -178,14 +174,23 @@ func InitDatabase(cfg *Config) error {
 		return fmt.Errorf("failed to load database config: %w", err)
 	}
 
-	// Connect to all databases
+	// Enable lazy loading if requested
+	if cfg != nil && cfg.LazyLoading {
+		dbManager.SetLazyLoading(true)
+	}
+
+	// Connect to all databases (unless lazy loading is enabled)
 	if err := dbManager.Connect(); err != nil {
 		return fmt.Errorf("failed to connect to databases: %w", err)
 	}
 
-	// Log connected databases
+	// Log database configuration
 	dbs := dbManager.ListDatabases()
-	logger.Info("Connected to %d databases: %v", len(dbs), dbs)
+	if cfg != nil && cfg.LazyLoading {
+		logger.Info("Configured %d databases with lazy loading enabled", len(dbs))
+	} else {
+		logger.Info("Connected to %d databases: %v", len(dbs), dbs)
+	}
 
 	return nil
 }
@@ -212,6 +217,22 @@ func ListDatabases() []string {
 		return nil
 	}
 	return dbManager.ListDatabases()
+}
+
+// IsLazyLoading returns whether lazy loading mode is currently enabled
+func IsLazyLoading() bool {
+	if dbManager == nil {
+		return false
+	}
+	return dbManager.IsLazyLoading()
+}
+
+// GetDatabaseType returns the type of a database by its ID without establishing a connection
+func GetDatabaseType(id string) (string, error) {
+	if dbManager == nil {
+		return "", fmt.Errorf("database manager not initialized")
+	}
+	return dbManager.GetDatabaseType(id)
 }
 
 // showConnectedDatabases returns information about all connected databases

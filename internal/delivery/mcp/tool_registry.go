@@ -75,8 +75,9 @@ func (tr *ToolRegistry) registerDatabaseTools(ctx context.Context, dbID string) 
 
 	logger.Info("Registering tools for database %s", dbID)
 
-	// Special case for postgres - skip the database info call that's failing
+	// Get database type to determine registration approach
 	dbType, err := tr.databaseUseCase.GetDatabaseType(dbID)
+
 	if err == nil && dbType == "postgres" {
 		// For PostgreSQL, we'll manually create a minimal info structure
 		// rather than calling the problematic method
@@ -104,40 +105,44 @@ func (tr *ToolRegistry) registerDatabaseTools(ctx context.Context, dbID string) 
 		}
 
 		// Check if TimescaleDB is available for this PostgreSQL database
-		// by executing a simple check query
-		checkQuery := "SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'"
-		result, err := tr.databaseUseCase.ExecuteQuery(ctx, dbID, checkQuery, nil)
-		if err == nil && result != "[]" && result != "" {
-			logger.Info("TimescaleDB extension detected for database %s, registering TimescaleDB tools", dbID)
+		// Skip this check if lazy loading is enabled to avoid establishing connections during startup
+		if !tr.databaseUseCase.IsLazyLoading() {
+			checkQuery := "SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'"
+			result, err := tr.databaseUseCase.ExecuteQuery(ctx, dbID, checkQuery, nil)
+			if err == nil && result != "[]" && result != "" {
+				logger.Info("TimescaleDB extension detected for database %s, registering TimescaleDB tools", dbID)
 
-			// Register TimescaleDB-specific tools
-			timescaleTool := NewTimescaleDBTool()
+				// Register TimescaleDB-specific tools
+				timescaleTool := NewTimescaleDBTool()
 
-			// Register time series query tool
-			tsQueryToolName := fmt.Sprintf("timescaledb_timeseries_query_%s", dbID)
-			tsQueryTool := timescaleTool.CreateTimeSeriesQueryTool(tsQueryToolName, dbID)
-			if err := tr.server.AddTool(ctx, tsQueryTool, func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
-				response, err := timescaleTool.HandleRequest(ctx, request, dbID, tr.databaseUseCase)
-				return FormatResponse(response, err)
-			}); err != nil {
-				logger.Error("Error registering TimescaleDB time series query tool: %v", err)
-				registrationErrors++
-			} else {
-				logger.Info("Successfully registered TimescaleDB time series query tool: %s", tsQueryToolName)
+				// Register time series query tool
+				tsQueryToolName := fmt.Sprintf("timescaledb_timeseries_query_%s", dbID)
+				tsQueryTool := timescaleTool.CreateTimeSeriesQueryTool(tsQueryToolName, dbID)
+				if err := tr.server.AddTool(ctx, tsQueryTool, func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
+					response, err := timescaleTool.HandleRequest(ctx, request, dbID, tr.databaseUseCase)
+					return FormatResponse(response, err)
+				}); err != nil {
+					logger.Error("Error registering TimescaleDB time series query tool: %v", err)
+					registrationErrors++
+				} else {
+					logger.Info("Successfully registered TimescaleDB time series query tool: %s", tsQueryToolName)
+				}
+
+				// Register time series analyze tool
+				tsAnalyzeToolName := fmt.Sprintf("timescaledb_analyze_timeseries_%s", dbID)
+				tsAnalyzeTool := timescaleTool.CreateTimeSeriesAnalyzeTool(tsAnalyzeToolName, dbID)
+				if err := tr.server.AddTool(ctx, tsAnalyzeTool, func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
+					response, err := timescaleTool.HandleRequest(ctx, request, dbID, tr.databaseUseCase)
+					return FormatResponse(response, err)
+				}); err != nil {
+					logger.Error("Error registering TimescaleDB time series analyze tool: %v", err)
+					registrationErrors++
+				} else {
+					logger.Info("Successfully registered TimescaleDB time series analyze tool: %s", tsAnalyzeToolName)
+				}
 			}
-
-			// Register time series analyze tool
-			tsAnalyzeToolName := fmt.Sprintf("timescaledb_analyze_timeseries_%s", dbID)
-			tsAnalyzeTool := timescaleTool.CreateTimeSeriesAnalyzeTool(tsAnalyzeToolName, dbID)
-			if err := tr.server.AddTool(ctx, tsAnalyzeTool, func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
-				response, err := timescaleTool.HandleRequest(ctx, request, dbID, tr.databaseUseCase)
-				return FormatResponse(response, err)
-			}); err != nil {
-				logger.Error("Error registering TimescaleDB time series analyze tool: %v", err)
-				registrationErrors++
-			} else {
-				logger.Info("Successfully registered TimescaleDB time series analyze tool: %s", tsAnalyzeToolName)
-			}
+		} else {
+			logger.Info("Skipping TimescaleDB detection for database %s (lazy loading enabled)", dbID)
 		}
 
 		if registrationErrors > 0 {
@@ -148,14 +153,9 @@ func (tr *ToolRegistry) registerDatabaseTools(ctx context.Context, dbID string) 
 		return nil
 	}
 
-	// For other database types, continue with the normal approach
-	// Check if this database actually exists
-	dbInfo, err := tr.databaseUseCase.GetDatabaseInfo(dbID)
-	if err != nil {
-		return fmt.Errorf("failed to get database info for %s: %w", dbID, err)
-	}
-
-	logger.Info("Database %s info: %+v", dbID, dbInfo)
+	// For other database types, use the same simplified approach
+	// to avoid establishing connections during startup when lazy loading is enabled
+	logger.Info("Using simplified handling for database: %s (type: %s)", dbID, dbType)
 
 	// Register each tool type for this database
 	registrationErrors := 0

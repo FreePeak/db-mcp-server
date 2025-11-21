@@ -66,6 +66,7 @@ func main() {
 	serverHost := flag.String("h", "localhost", "Server host for SSE transport")
 	dbConfigJSON := flag.String("db-config", "", "JSON string with database configuration")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	lazyLoading := flag.Bool("lazy-loading", false, "Enable lazy loading: connections established on first use (recommended for 10+ databases)")
 	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
 	flag.Parse()
 
@@ -126,11 +127,15 @@ func main() {
 
 	// Initialize database connection from config
 	dbConfig := &dbtools.Config{
-		ConfigFile: cfg.ConfigPath,
+		ConfigFile:  cfg.ConfigPath,
+		LazyLoading: *lazyLoading,
 	}
 
 	// Ensure database configuration exists
 	logger.Info("Using database configuration from: %s", cfg.ConfigPath)
+	if *lazyLoading {
+		logger.Info("Lazy loading enabled: database connections will be established on first use")
+	}
 
 	// Try to initialize database from config
 	if err := dbtools.InitDatabase(dbConfig); err != nil {

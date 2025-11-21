@@ -53,6 +53,12 @@ func (m *MockDatabaseUseCase) ListDatabases() []string {
 	return args.Get(0).([]string)
 }
 
+// IsLazyLoading mocks the IsLazyLoading method
+func (m *MockDatabaseUseCase) IsLazyLoading() bool {
+	args := m.Called()
+	return args.Bool(0)
+}
+
 func TestTimescaleDBTool(t *testing.T) {
 	tool := mcp.NewTimescaleDBTool()
 	assert.Equal(t, "timescaledb", tool.GetName())
