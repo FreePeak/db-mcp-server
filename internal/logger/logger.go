@@ -40,6 +40,12 @@ var (
 	logMutex sync.Mutex
 )
 
+// Config represents logger configuration
+type Config struct {
+	Level  string // Log level (debug, info, warn, error)
+	LogDir string // Directory for log files (optional, defaults to ./logs)
+}
+
 // safeStdioWriter is a writer that ensures no output goes to stdout in stdio mode
 type safeStdioWriter struct {
 	file *os.File
@@ -70,9 +76,9 @@ func (w *safeStdioWriter) Sync() error {
 	return nil
 }
 
-// Initialize sets up the logger with the specified level
-func Initialize(level string) {
-	setLogLevel(level)
+// Initialize sets up the logger with the specified configuration
+func Initialize(cfg Config) {
+	setLogLevel(cfg.Level)
 
 	// Check if we're in stdio mode
 	transportMode := os.Getenv("TRANSPORT_MODE")
@@ -81,10 +87,15 @@ func Initialize(level string) {
 	if isStdioMode {
 		// In stdio mode, we need to avoid ANY JSON output to stdout
 
-		// Create a log file in logs directory
-		logsDir := "logs"
+		// Use provided log directory or default to "logs" in current directory
+		logsDir := cfg.LogDir
+		if logsDir == "" {
+			logsDir = "logs"
+		}
+
+		// Create log directory if it doesn't exist
 		if _, err := os.Stat(logsDir); os.IsNotExist(err) {
-			if err := os.Mkdir(logsDir, 0755); err != nil {
+			if err := os.MkdirAll(logsDir, 0755); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to create logs directory: %v\n", err)
 			}
 		}

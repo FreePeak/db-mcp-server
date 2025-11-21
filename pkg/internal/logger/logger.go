@@ -31,5 +31,5 @@ func ErrorWithStack(err error) {
 
 // Initialize initializes the logger with specified level
 func Initialize(level string) {
-	logger.Initialize(level)
+	logger.Initialize(logger.Config{Level: level})
 }

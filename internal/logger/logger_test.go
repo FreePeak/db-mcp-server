@@ -3,6 +3,7 @@ package logger
 import (
 	"bytes"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -189,4 +190,61 @@ func TestRequestResponseLog(t *testing.T) {
 	assert.NotPanics(t, func() {
 		RequestResponseLog("RPC", "session123", `{"method":"getData"}`, `{"result":"data"}`)
 	})
+}
+
+func TestInitializeWithCustomLogDir(t *testing.T) {
+	// Save original TRANSPORT_MODE
+	originalMode := os.Getenv("TRANSPORT_MODE")
+	defer os.Setenv("TRANSPORT_MODE", originalMode)
+
+	// Create temp directory for testing
+	tmpDir := t.TempDir()
+	customLogDir := tmpDir + "/custom-logs"
+
+	// Set stdio mode to trigger file logging
+	os.Setenv("TRANSPORT_MODE", "stdio")
+
+	// Initialize with custom log directory
+	Initialize(Config{Level: "info", LogDir: customLogDir})
+
+	// Verify directory was created
+	if _, err := os.Stat(customLogDir); os.IsNotExist(err) {
+		t.Errorf("custom log directory was not created: %s", customLogDir)
+	}
+
+	// Clean up
+	if stdioLogFile != nil {
+		stdioLogFile.Close()
+		stdioLogFile = nil
+	}
+}
+
+func TestInitializeWithDefaultLogDir(t *testing.T) {
+	// Save original TRANSPORT_MODE
+	originalMode := os.Getenv("TRANSPORT_MODE")
+	defer os.Setenv("TRANSPORT_MODE", originalMode)
+
+	// Create temp working directory
+	tmpDir := t.TempDir()
+	originalWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(originalWd)
+
+	// Set stdio mode to trigger file logging
+	os.Setenv("TRANSPORT_MODE", "stdio")
+
+	// Initialize with empty log directory (should use default "logs")
+	Initialize(Config{Level: "info"})
+
+	// Verify default "logs" directory was created
+	logsDir := tmpDir + "/logs"
+	if _, err := os.Stat(logsDir); os.IsNotExist(err) {
+		t.Errorf("default logs directory was not created: %s", logsDir)
+	}
+
+	// Clean up
+	if stdioLogFile != nil {
+		stdioLogFile.Close()
+		stdioLogFile = nil
+	}
 }
