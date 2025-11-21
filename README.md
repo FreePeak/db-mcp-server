@@ -212,6 +212,9 @@ Create a `config.json` file with your database connections:
 # SSE transport options
 ./bin/server -t sse -host <hostname> -port <port> -c <config-file>
 
+# Customize log directory (useful for multi-project setups)
+./bin/server -t stdio -c <config-file> -log-dir /tmp/db-mcp-logs
+
 # Inline database configuration
 ./bin/server -t stdio -db-config '{"connections":[...]}'
 
@@ -219,6 +222,15 @@ Create a `config.json` file with your database connections:
 export DB_CONFIG='{"connections":[...]}'
 ./bin/server -t stdio
 ```
+
+**Available Flags:**
+- `-t, -transport`: Transport mode (`stdio` or `sse`)
+- `-c, -config`: Path to database configuration file
+- `-p, -port`: Server port for SSE mode (default: 9092)
+- `-h, -host`: Server host for SSE mode (default: localhost)
+- `-log-level`: Log level (`debug`, `info`, `warn`, `error`)
+- `-log-dir`: Directory for log files (default: `./logs` in current directory)
+- `-db-config`: Inline JSON database configuration
 
 ## Available Tools
 

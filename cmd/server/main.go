@@ -66,10 +66,11 @@ func main() {
 	serverHost := flag.String("h", "localhost", "Server host for SSE transport")
 	dbConfigJSON := flag.String("db-config", "", "JSON string with database configuration")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
 	flag.Parse()
 
-	// Initialize logger
-	logger.Initialize(*logLevel)
+	// Initialize logger with custom log directory
+	logger.Initialize(logger.Config{Level: *logLevel, LogDir: *logDir})
 	pkgLogger.Initialize(*logLevel)
 
 	// Prioritize flags with actual values
