@@ -114,7 +114,7 @@ func main() {
 	}
 
 	// Load configuration after environment variables are set
-	cfg, err := config.LoadConfig()
+	cfg, err := config.LoadConfig(*logDir)
 	if err != nil {
 		logger.Warn("Warning: Failed to load configuration: %v", err)
 		// Create a default config if loading fails
@@ -267,8 +267,11 @@ func main() {
 		// We can only log to stderr in stdio mode - NEVER stdout
 		fmt.Fprintln(os.Stderr, "Starting STDIO server - all logging redirected to log files")
 
-		// Create logs directory if not exists
-		logsDir := "logs"
+		// Use custom log directory if provided, otherwise default to "logs"
+		logsDir := *logDir
+		if logsDir == "" {
+			logsDir = "logs"
+		}
 		if err := os.MkdirAll(logsDir, 0755); err != nil {
 			// Can't use logger.Warn as it might go to stdout
 			fmt.Fprintf(os.Stderr, "Failed to create logs directory: %v\n", err)
