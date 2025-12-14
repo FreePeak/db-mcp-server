@@ -71,7 +71,7 @@ func TestLoadConfig(t *testing.T) {
 	}
 
 	// Test with default values (no .env file and no environment variables)
-	config, err := LoadConfig()
+	config, err := LoadConfig("")
 	assert.NoError(t, err)
 	assert.Equal(t, 9090, config.ServerPort)
 	assert.Equal(t, "sse", config.TransportMode)
@@ -129,7 +129,7 @@ func TestLoadConfig(t *testing.T) {
 		}
 	}()
 
-	config, err = LoadConfig()
+	config, err = LoadConfig("")
 	assert.NoError(t, err)
 	assert.Equal(t, 8080, config.ServerPort)
 	assert.Equal(t, "stdio", config.TransportMode)

@@ -35,9 +35,10 @@ type DatabaseConfig struct {
 }
 
 // LoadConfig loads the configuration from environment variables and optional JSON config
-func LoadConfig() (*Config, error) {
-	// Initialize logger with default level first to avoid nil pointer
-	logger.Initialize(logger.Config{Level: "info"})
+func LoadConfig(logDir string) (*Config, error) {
+	// Reinitialize logger with info level and custom log directory
+	// This ensures consistent logging throughout config loading regardless of initial setup
+	logger.Initialize(logger.Config{Level: "info", LogDir: logDir})
 
 	// Load .env file if it exists
 	err := godotenv.Load()
