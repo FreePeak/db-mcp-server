@@ -88,14 +88,12 @@ The server follows Clean Architecture principles with these layers:
 ## Features
 
 - **Simultaneous Multi-Database Support**: Connect to multiple MySQL and PostgreSQL databases concurrently
-- **Lazy Loading Mode**: Defer connection establishment until first use - perfect for setups with 10+ databases (enable with `--lazy-loading` flag)
 - **Database-Specific Tool Generation**: Auto-creates specialized tools for each connected database
 - **Clean Architecture**: Modular design with clear separation of concerns
 - **OpenAI Agents SDK Compatibility**: Full compatibility for seamless AI assistant integration
 - **Dynamic Database Tools**: Execute queries, run statements, manage transactions, explore schemas, analyze performance
 - **Unified Interface**: Consistent interaction patterns across different database types
 - **Connection Management**: Simple configuration for multiple database connections
-- **Health Check**: Automatic validation of database connectivity on startup
 
 ## Supported Databases
 
@@ -216,12 +214,6 @@ Create a `config.json` file with your database connections:
 # SSE transport options
 ./bin/server -t sse -host <hostname> -port <port> -c <config-file>
 
-# Lazy loading mode (recommended for 10+ databases)
-./bin/server -t stdio -c <config-file> --lazy-loading
-
-# Customize log directory (useful for multi-project setups)
-./bin/server -t stdio -c <config-file> -log-dir /tmp/db-mcp-logs
-
 # Inline database configuration
 ./bin/server -t stdio -db-config '{"connections":[...]}'
 
@@ -229,15 +221,6 @@ Create a `config.json` file with your database connections:
 export DB_CONFIG='{"connections":[...]}'
 ./bin/server -t stdio
 ```
-
-**Available Flags:**
-- `-t, -transport`: Transport mode (`stdio` or `sse`)
-- `-c, -config`: Path to database configuration file
-- `-p, -port`: Server port for SSE mode (default: 9092)
-- `-h, -host`: Server host for SSE mode (default: localhost)
-- `-log-level`: Log level (`debug`, `info`, `warn`, `error`)
-- `-log-dir`: Directory for log files (default: `./logs` in current directory)
-- `-db-config`: Inline JSON database configuration
 
 ## Available Tools
 
