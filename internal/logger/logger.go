@@ -1,3 +1,4 @@
+// Package logger provides structured logging functionality with support for multiple output modes.
 package logger
 
 import (
@@ -139,9 +140,9 @@ func Initialize(cfg Config) {
 	if isStdioMode {
 		zapLogger = zap.NewNop()
 		return
-	} else {
-		config.OutputPaths = []string{"stdout"}
 	}
+
+	config.OutputPaths = []string{"stdout"}
 
 	config.Level = getZapLevel(logLevel)
 

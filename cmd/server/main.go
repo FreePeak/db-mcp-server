@@ -1,3 +1,6 @@
+// Package main implements the DB MCP Server, a multi-database server providing
+// AI assistants with structured access to multiple database systems through
+// the Model Context Protocol (MCP).
 package main
 
 // TODO: Refactor main.go to separate server initialization logic from configuration loading
@@ -278,8 +281,8 @@ func main() {
 		}
 
 		// Export environment variables for the stdio server
-		os.Setenv("MCP_DISABLE_LOGGING", "true")
-		os.Setenv("DISABLE_LOGGING", "true")
+		_ = os.Setenv("MCP_DISABLE_LOGGING", "true")
+		_ = os.Setenv("DISABLE_LOGGING", "true")
 
 		// Ensure standard logger doesn't output to stdout for any imported libraries
 		// that use the standard log package

@@ -1,3 +1,4 @@
+// Package mcp provides Model Context Protocol delivery implementations.
 package mcp
 
 import (

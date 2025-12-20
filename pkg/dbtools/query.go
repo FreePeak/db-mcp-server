@@ -142,7 +142,7 @@ func createMockQueryTool() *tools.Tool {
 // handleMockQuery is a mock implementation of the query handler
 //
 //nolint:unused // Retained for future use
-func handleMockQuery(ctx context.Context, params map[string]interface{}) (interface{}, error) {
+func handleMockQuery(_ context.Context, params map[string]interface{}) (interface{}, error) {
 	// Extract parameters
 	query, ok := getStringParam(params, "query")
 	if !ok {

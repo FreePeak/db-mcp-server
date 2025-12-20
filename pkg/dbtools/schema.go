@@ -13,9 +13,9 @@ import (
 
 // DatabaseStrategy defines the interface for database-specific query strategies
 type DatabaseStrategy interface {
-	GetTablesQueries() []queryWithArgs
-	GetColumnsQueries(table string) []queryWithArgs
-	GetRelationshipsQueries(table string) []queryWithArgs
+	GetTablesQueries() []QueryWithArgs
+	GetColumnsQueries(table string) []QueryWithArgs
+	GetRelationshipsQueries(table string) []QueryWithArgs
 }
 
 // NewDatabaseStrategy creates the appropriate strategy for the given database type
@@ -25,6 +25,8 @@ func NewDatabaseStrategy(driverName string) DatabaseStrategy {
 		return &PostgresStrategy{}
 	case "mysql":
 		return &MySQLStrategy{}
+	case "sqlite", "sqlite3":
+		return &SQLiteStrategy{}
 	default:
 		logger.Warn("Unknown database driver: %s, will use generic strategy", driverName)
 		return &GenericStrategy{}
@@ -35,36 +37,36 @@ func NewDatabaseStrategy(driverName string) DatabaseStrategy {
 type PostgresStrategy struct{}
 
 // GetTablesQueries returns queries for retrieving tables in PostgreSQL
-func (s *PostgresStrategy) GetTablesQueries() []queryWithArgs {
-	return []queryWithArgs{
+func (s *PostgresStrategy) GetTablesQueries() []QueryWithArgs {
+	return []QueryWithArgs{
 		// Primary: pg_catalog approach
-		{query: "SELECT tablename as table_name FROM pg_catalog.pg_tables WHERE schemaname = 'public'"},
+		{Query: "SELECT tablename as table_name FROM pg_catalog.pg_tables WHERE schemaname = 'public'"},
 		// Secondary: information_schema approach
-		{query: "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"},
+		{Query: "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"},
 		// Tertiary: pg_class approach
-		{query: "SELECT relname as table_name FROM pg_catalog.pg_class WHERE relkind = 'r' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = 'public')"},
+		{Query: "SELECT relname as table_name FROM pg_catalog.pg_class WHERE relkind = 'r' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = 'public')"},
 	}
 }
 
 // GetColumnsQueries returns queries for retrieving columns in PostgreSQL
-func (s *PostgresStrategy) GetColumnsQueries(table string) []queryWithArgs {
-	return []queryWithArgs{
+func (s *PostgresStrategy) GetColumnsQueries(table string) []QueryWithArgs {
+	return []QueryWithArgs{
 		// Primary: information_schema approach for PostgreSQL
 		{
-			query: `
-				SELECT column_name, data_type, 
+			Query: `
+				SELECT column_name, data_type,
 				CASE WHEN is_nullable = 'YES' THEN 'YES' ELSE 'NO' END as is_nullable,
 				column_default
-				FROM information_schema.columns 
+				FROM information_schema.columns
 				WHERE table_name = $1 AND table_schema = 'public'
 				ORDER BY ordinal_position
 			`,
-			args: []interface{}{table},
+			Args: []interface{}{table},
 		},
 		// Secondary: pg_catalog approach for PostgreSQL
 		{
-			query: `
-				SELECT a.attname as column_name, 
+			Query: `
+				SELECT a.attname as column_name,
 				pg_catalog.format_type(a.atttypid, a.atttypmod) as data_type,
 				CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END as is_nullable,
 				pg_catalog.pg_get_expr(d.adbin, d.adrelid) as column_default
@@ -74,17 +76,17 @@ func (s *PostgresStrategy) GetColumnsQueries(table string) []queryWithArgs {
 				AND a.attnum > 0 AND NOT a.attisdropped
 				ORDER BY a.attnum
 			`,
-			args: []interface{}{table},
+			Args: []interface{}{table},
 		},
 	}
 }
 
 // GetRelationshipsQueries returns queries for retrieving relationships in PostgreSQL
-func (s *PostgresStrategy) GetRelationshipsQueries(table string) []queryWithArgs {
-	baseQueries := []queryWithArgs{
+func (s *PostgresStrategy) GetRelationshipsQueries(table string) []QueryWithArgs {
+	baseQueries := []QueryWithArgs{
 		// Primary: Standard information_schema approach for PostgreSQL
 		{
-			query: `
+			Query: `
 				SELECT
 					tc.table_schema,
 					tc.constraint_name,
@@ -103,11 +105,11 @@ func (s *PostgresStrategy) GetRelationshipsQueries(table string) []queryWithArgs
 				WHERE tc.constraint_type = 'FOREIGN KEY'
 					AND tc.table_schema = 'public'
 			`,
-			args: []interface{}{},
+			Args: []interface{}{},
 		},
 		// Alternate: Using pg_catalog for older PostgreSQL versions
 		{
-			query: `
+			Query: `
 				SELECT
 					ns.nspname AS table_schema,
 					c.conname AS constraint_name,
@@ -126,7 +128,7 @@ func (s *PostgresStrategy) GetRelationshipsQueries(table string) []queryWithArgs
 				WHERE c.contype = 'f'
 				AND ns.nspname = 'public'
 			`,
-			args: []interface{}{},
+			Args: []interface{}{},
 		},
 	}
 
@@ -134,17 +136,17 @@ func (s *PostgresStrategy) GetRelationshipsQueries(table string) []queryWithArgs
 		return baseQueries
 	}
 
-	queries := make([]queryWithArgs, len(baseQueries))
+	queries := make([]QueryWithArgs, len(baseQueries))
 
 	// Add table filter
-	queries[0] = queryWithArgs{
-		query: baseQueries[0].query + " AND (tc.table_name = $1 OR ccu.table_name = $1)",
-		args:  []interface{}{table},
+	queries[0] = QueryWithArgs{
+		Query: baseQueries[0].Query + " AND (tc.table_name = $1 OR ccu.table_name = $1)",
+		Args:  []interface{}{table},
 	}
 
-	queries[1] = queryWithArgs{
-		query: baseQueries[1].query + " AND (cl.relname = $1 OR cl2.relname = $1)",
-		args:  []interface{}{table},
+	queries[1] = QueryWithArgs{
+		Query: baseQueries[1].Query + " AND (cl.relname = $1 OR cl2.relname = $1)",
+		Args:  []interface{}{table},
 	}
 
 	return queries
@@ -154,42 +156,42 @@ func (s *PostgresStrategy) GetRelationshipsQueries(table string) []queryWithArgs
 type MySQLStrategy struct{}
 
 // GetTablesQueries returns queries for retrieving tables in MySQL
-func (s *MySQLStrategy) GetTablesQueries() []queryWithArgs {
-	return []queryWithArgs{
+func (s *MySQLStrategy) GetTablesQueries() []QueryWithArgs {
+	return []QueryWithArgs{
 		// Primary: information_schema approach
-		{query: "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()"},
+		{Query: "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()"},
 		// Secondary: SHOW TABLES approach
-		{query: "SHOW TABLES"},
+		{Query: "SHOW TABLES"},
 	}
 }
 
 // GetColumnsQueries returns queries for retrieving columns in MySQL
-func (s *MySQLStrategy) GetColumnsQueries(table string) []queryWithArgs {
-	return []queryWithArgs{
+func (s *MySQLStrategy) GetColumnsQueries(table string) []QueryWithArgs {
+	return []QueryWithArgs{
 		// MySQL query for columns
 		{
-			query: `
+			Query: `
 				SELECT column_name, data_type, is_nullable, column_default
 				FROM information_schema.columns
 				WHERE table_name = ? AND table_schema = DATABASE()
 				ORDER BY ordinal_position
 			`,
-			args: []interface{}{table},
+			Args: []interface{}{table},
 		},
 		// Fallback for older MySQL versions
 		{
-			query: `SHOW COLUMNS FROM ` + table,
-			args:  []interface{}{},
+			Query: `SHOW COLUMNS FROM ` + table,
+			Args:  []interface{}{},
 		},
 	}
 }
 
 // GetRelationshipsQueries returns queries for retrieving relationships in MySQL
-func (s *MySQLStrategy) GetRelationshipsQueries(table string) []queryWithArgs {
-	baseQueries := []queryWithArgs{
+func (s *MySQLStrategy) GetRelationshipsQueries(table string) []QueryWithArgs {
+	baseQueries := []QueryWithArgs{
 		// Primary approach for MySQL
 		{
-			query: `
+			Query: `
 				SELECT
 					tc.table_schema,
 					tc.constraint_name,
@@ -205,11 +207,11 @@ func (s *MySQLStrategy) GetRelationshipsQueries(table string) []queryWithArgs {
 				WHERE tc.constraint_type = 'FOREIGN KEY'
 					AND tc.table_schema = DATABASE()
 			`,
-			args: []interface{}{},
+			Args: []interface{}{},
 		},
 		// Fallback using simpler query for older MySQL versions
 		{
-			query: `
+			Query: `
 				SELECT
 					kcu.constraint_schema AS table_schema,
 					kcu.constraint_name,
@@ -222,7 +224,7 @@ func (s *MySQLStrategy) GetRelationshipsQueries(table string) []queryWithArgs {
 				WHERE kcu.referenced_table_name IS NOT NULL
 					AND kcu.constraint_schema = DATABASE()
 			`,
-			args: []interface{}{},
+			Args: []interface{}{},
 		},
 	}
 
@@ -230,64 +232,175 @@ func (s *MySQLStrategy) GetRelationshipsQueries(table string) []queryWithArgs {
 		return baseQueries
 	}
 
-	queries := make([]queryWithArgs, len(baseQueries))
+	queries := make([]QueryWithArgs, len(baseQueries))
 
 	// Add table filter
-	queries[0] = queryWithArgs{
-		query: baseQueries[0].query + " AND (tc.table_name = ? OR kcu.referenced_table_name = ?)",
-		args:  []interface{}{table, table},
+	queries[0] = QueryWithArgs{
+		Query: baseQueries[0].Query + " AND (tc.table_name = ? OR kcu.referenced_table_name = ?)",
+		Args:  []interface{}{table, table},
 	}
 
-	queries[1] = queryWithArgs{
-		query: baseQueries[1].query + " AND (kcu.table_name = ? OR kcu.referenced_table_name = ?)",
-		args:  []interface{}{table, table},
+	queries[1] = QueryWithArgs{
+		Query: baseQueries[1].Query + " AND (kcu.table_name = ? OR kcu.referenced_table_name = ?)",
+		Args:  []interface{}{table, table},
 	}
 
 	return queries
+}
+
+// SQLiteStrategy implements DatabaseStrategy for SQLite
+type SQLiteStrategy struct{}
+
+// GetTablesQueries returns queries for retrieving tables in SQLite
+func (s *SQLiteStrategy) GetTablesQueries() []QueryWithArgs {
+	return []QueryWithArgs{
+		// Primary: sqlite_master approach
+		{Query: "SELECT name as table_name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"},
+		// Secondary: sqlite_master with different filter
+		{Query: "SELECT name as table_name FROM sqlite_master WHERE type='table' AND name NOT IN ('sqlite_sequence', 'sqlite_stat1')"},
+		// Tertiary: PRAGMA approach
+		{Query: "SELECT name as table_name FROM pragma_table_list() WHERE type='table' AND schema='main' AND name NOT LIKE 'sqlite_%'"},
+	}
+}
+
+// GetColumnsQueries returns queries for retrieving columns in SQLite
+func (s *SQLiteStrategy) GetColumnsQueries(table string) []QueryWithArgs {
+	return []QueryWithArgs{
+		// Primary: PRAGMA table_info approach
+		{
+			Query: "PRAGMA table_info(" + table + ")",
+			Args:  []interface{}{},
+		},
+		// Secondary: sqlite_master approach for column info
+		{
+			Query: `
+				SELECT p.name as column_name, p.type as data_type,
+				CASE WHEN p."notnull" = 0 THEN 'YES' ELSE 'NO' END as is_nullable,
+				p.dflt_value as column_default
+				FROM pragma_table_info(?) p
+				ORDER BY p.cid
+			`,
+			Args: []interface{}{table},
+		},
+		// Tertiary: Using sqlite_master with parsing
+		{
+			Query: `
+				SELECT
+					CASE
+						WHEN sql LIKE 'CREATE TABLE % (' THEN
+							SUBSTR(SUBSTR(sql, INSTR(sql, '(') + 1),
+								INSTR(SUBSTR(sql, INSTR(sql, '(') + 1), ',') + 1)
+					END as column_info
+				FROM sqlite_master
+				WHERE type='table' AND name=?
+			`,
+			Args: []interface{}{table},
+		},
+	}
+}
+
+// GetRelationshipsQueries returns queries for retrieving relationships in SQLite
+func (s *SQLiteStrategy) GetRelationshipsQueries(table string) []QueryWithArgs {
+	baseQueries := []QueryWithArgs{
+		// Primary: PRAGMA foreign_key_list approach
+		{
+			Query: `
+				SELECT
+					'main' as table_schema,
+					'fk_' || m.name || '_' || f.id as constraint_name,
+					m.name as table_name,
+					f."from" as column_name,
+					'main' as foreign_table_schema,
+					f."table" as foreign_table_name,
+					f."to" as foreign_column_name
+				FROM sqlite_master m
+				JOIN pragma_foreign_key_list(m.name) f
+				WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'
+			`,
+			Args: []interface{}{},
+		},
+		// Secondary: Using sqlite_master with foreign_key_list
+		{
+			Query: `
+				SELECT
+					'main' as table_schema,
+					'fk_' || name || '_' || id as constraint_name,
+					name as table_name,
+					"from" as column_name,
+					'main' as foreign_table_schema,
+					"table" as foreign_table_name,
+					"to" as foreign_column_name
+				FROM pragma_foreign_key_list(?)
+			`,
+			Args: []interface{}{table},
+		},
+		// Tertiary: Using table_info to check for foreign keys
+		{
+			Query: `
+				SELECT
+					'main' as table_schema,
+					'fk_check_' || name as constraint_name,
+					name as table_name,
+					name as column_name,
+					'main' as foreign_table_schema,
+					'' as foreign_table_name,
+					'' as foreign_column_name
+				FROM pragma_table_info(?)
+				WHERE pk > 0
+			`,
+			Args: []interface{}{table},
+		},
+	}
+
+	if table == "" {
+		return baseQueries[:1] // Only use the first query for all tables
+	}
+
+	return baseQueries
 }
 
 // GenericStrategy implements DatabaseStrategy for unknown database types
 type GenericStrategy struct{}
 
 // GetTablesQueries returns generic queries for retrieving tables
-func (s *GenericStrategy) GetTablesQueries() []queryWithArgs {
-	return []queryWithArgs{
-		{query: "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"},
-		{query: "SELECT table_name FROM information_schema.tables"},
-		{query: "SHOW TABLES"}, // Last resort
+func (s *GenericStrategy) GetTablesQueries() []QueryWithArgs {
+	return []QueryWithArgs{
+		{Query: "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"},
+		{Query: "SELECT table_name FROM information_schema.tables"},
+		{Query: "SHOW TABLES"}, // Last resort
 	}
 }
 
 // GetColumnsQueries returns generic queries for retrieving columns
-func (s *GenericStrategy) GetColumnsQueries(table string) []queryWithArgs {
-	return []queryWithArgs{
+func (s *GenericStrategy) GetColumnsQueries(table string) []QueryWithArgs {
+	return []QueryWithArgs{
 		// Try PostgreSQL-style query first
 		{
-			query: `
+			Query: `
 				SELECT column_name, data_type, is_nullable, column_default
 				FROM information_schema.columns
 				WHERE table_name = $1
 				ORDER BY ordinal_position
 			`,
-			args: []interface{}{table},
+			Args: []interface{}{table},
 		},
 		// Try MySQL-style query
 		{
-			query: `
+			Query: `
 				SELECT column_name, data_type, is_nullable, column_default
 				FROM information_schema.columns
 				WHERE table_name = ?
 				ORDER BY ordinal_position
 			`,
-			args: []interface{}{table},
+			Args: []interface{}{table},
 		},
 	}
 }
 
 // GetRelationshipsQueries returns generic queries for retrieving relationships
-func (s *GenericStrategy) GetRelationshipsQueries(table string) []queryWithArgs {
-	pgQuery := queryWithArgs{
-		query: `
+func (s *GenericStrategy) GetRelationshipsQueries(table string) []QueryWithArgs {
+	pgQuery := QueryWithArgs{
+		Query: `
 			SELECT
 				tc.table_schema,
 				tc.constraint_name,
@@ -305,11 +418,11 @@ func (s *GenericStrategy) GetRelationshipsQueries(table string) []queryWithArgs 
 				AND ccu.table_schema = tc.table_schema
 			WHERE tc.constraint_type = 'FOREIGN KEY'
 		`,
-		args: []interface{}{},
+		Args: []interface{}{},
 	}
 
-	mysqlQuery := queryWithArgs{
-		query: `
+	mysqlQuery := QueryWithArgs{
+		Query: `
 			SELECT
 				kcu.constraint_schema AS table_schema,
 				kcu.constraint_name,
@@ -321,18 +434,18 @@ func (s *GenericStrategy) GetRelationshipsQueries(table string) []queryWithArgs 
 			FROM information_schema.key_column_usage kcu
 			WHERE kcu.referenced_table_name IS NOT NULL
 		`,
-		args: []interface{}{},
+		Args: []interface{}{},
 	}
 
 	if table != "" {
-		pgQuery.query += " AND (tc.table_name = $1 OR ccu.table_name = $1)"
-		pgQuery.args = append(pgQuery.args, table)
+		pgQuery.Query += " AND (tc.table_name = $1 OR ccu.table_name = $1)"
+		pgQuery.Args = append(pgQuery.Args, table)
 
-		mysqlQuery.query += " AND (kcu.table_name = ? OR kcu.referenced_table_name = ?)"
-		mysqlQuery.args = append(mysqlQuery.args, table, table)
+		mysqlQuery.Query += " AND (kcu.table_name = ? OR kcu.referenced_table_name = ?)"
+		mysqlQuery.Args = append(mysqlQuery.Args, table, table)
 	}
 
-	return []queryWithArgs{pgQuery, mysqlQuery}
+	return []QueryWithArgs{pgQuery, mysqlQuery}
 }
 
 // createSchemaExplorerTool creates a tool for exploring database schema
@@ -424,24 +537,25 @@ func handleSchemaExplorer(ctx context.Context, params map[string]interface{}) (i
 	}
 }
 
-// executeWithFallbacks executes a series of database queries with fallbacks
-// Returns the first successful result or the last error encountered
-type queryWithArgs struct {
-	query string
-	args  []interface{}
+// QueryWithArgs represents a query with its arguments
+type QueryWithArgs struct {
+	Query string
+	Args  []interface{}
 }
 
-func executeWithFallbacks(ctx context.Context, db db.Database, queries []queryWithArgs, operationName string) (*sql.Rows, error) {
+// executeWithFallbacks executes a series of database queries with fallbacks
+// Returns the first successful result or the last error encountered
+func executeWithFallbacks(ctx context.Context, db db.Database, queries []QueryWithArgs, operationName string) (*sql.Rows, error) {
 	var lastErr error
 
 	for i, q := range queries {
-		rows, err := db.Query(ctx, q.query, q.args...)
+		rows, err := db.Query(ctx, q.Query, q.Args...)
 		if err == nil {
 			return rows, nil
 		}
 
 		lastErr = err
-		logger.Warn("%s fallback query %d failed: %v - Error: %v", operationName, i+1, q.query, err)
+		logger.Warn("%s fallback query %d failed: %v - Error: %v", operationName, i+1, q.Query, err)
 	}
 
 	// All queries failed, return the last error

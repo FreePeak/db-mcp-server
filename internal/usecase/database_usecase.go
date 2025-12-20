@@ -1,3 +1,4 @@
+// Package usecase provides business logic for database operations and queries.
 package usecase
 
 import (
@@ -24,6 +25,7 @@ type QueryFactory interface {
 // PostgresQueryFactory creates queries for PostgreSQL
 type PostgresQueryFactory struct{}
 
+// GetTablesQueries returns table queries for PostgreSQL
 func (f *PostgresQueryFactory) GetTablesQueries() []string {
 	return []string{
 		// Primary PostgreSQL query using pg_catalog (most reliable)
@@ -38,6 +40,7 @@ func (f *PostgresQueryFactory) GetTablesQueries() []string {
 // MySQLQueryFactory creates queries for MySQL
 type MySQLQueryFactory struct{}
 
+// GetTablesQueries returns table queries for MySQL
 func (f *MySQLQueryFactory) GetTablesQueries() []string {
 	return []string{
 		// Primary MySQL query
@@ -50,6 +53,7 @@ func (f *MySQLQueryFactory) GetTablesQueries() []string {
 // GenericQueryFactory creates generic queries for unknown database types
 type GenericQueryFactory struct{}
 
+// GetTablesQueries returns generic table queries for unknown database types
 func (f *GenericQueryFactory) GetTablesQueries() []string {
 	return []string{
 		"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
@@ -288,8 +292,8 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 }
 
 // ExecuteTransaction executes operations in a transaction
-func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action string, txID string,
-	statement string, params []interface{}, readOnly bool) (string, map[string]interface{}, error) {
+func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action string, _ string,
+	_ string, _ []interface{}, readOnly bool) (string, map[string]interface{}, error) {
 
 	switch action {
 	case "begin":

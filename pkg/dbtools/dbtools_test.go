@@ -122,7 +122,7 @@ func TestQuery(t *testing.T) {
 	mockDB := new(MockDB)
 
 	// Use nil for rows since we can't easily create a real *sql.Rows
-	var nilRows *sql.Rows = nil
+	var nilRows *sql.Rows
 
 	ctx := context.Background()
 	sqlQuery := "SELECT * FROM test_table WHERE id = ?"

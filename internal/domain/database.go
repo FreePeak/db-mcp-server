@@ -1,3 +1,4 @@
+// Package domain defines core domain interfaces and types for database operations.
 package domain
 
 import (

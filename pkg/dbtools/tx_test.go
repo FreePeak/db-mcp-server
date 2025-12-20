@@ -56,7 +56,7 @@ func TestBeginTx(t *testing.T) {
 	mockDB := new(MockDB)
 
 	// Use nil for tx since we can't easily create a real *sql.Tx
-	var nilTx *sql.Tx = nil
+	var nilTx *sql.Tx
 
 	ctx := context.Background()
 	opts := &sql.TxOptions{ReadOnly: true}

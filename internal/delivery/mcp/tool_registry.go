@@ -243,7 +243,7 @@ func (tr *ToolRegistry) RegisterMockTools(ctx context.Context) error {
 
 // RegisterCursorCompatibleTools is kept for backward compatibility but does nothing
 // as we now register tools with simple names directly
-func (tr *ToolRegistry) RegisterCursorCompatibleTools(ctx context.Context) error {
+func (tr *ToolRegistry) RegisterCursorCompatibleTools(_ context.Context) error {
 	// This function is intentionally empty as we now register tools with simple names directly
 	return nil
 }

@@ -109,7 +109,7 @@ func (b *TimeseriesQueryBuilder) Where(clause string, args ...interface{}) *Time
 	for i := 1; i <= len(args); i++ {
 		oldParam := fmt.Sprintf("$%d", i)
 		newParam := fmt.Sprintf("$%d", i+paramCount)
-		clause = strings.Replace(clause, oldParam, newParam, -1)
+		clause = strings.ReplaceAll(clause, oldParam, newParam)
 	}
 
 	b.whereClauses = append(b.whereClauses, clause)

@@ -1,3 +1,4 @@
+// Package tools provides tool registration and execution functionality for the MCP server.
 package tools
 
 import (

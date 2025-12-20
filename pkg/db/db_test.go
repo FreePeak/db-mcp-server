@@ -101,25 +101,25 @@ func NewMockDatabase() *MockDatabase {
 	}
 }
 
-func (m *MockDatabase) Query(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (m *MockDatabase) Query(_ context.Context, query string, args ...interface{}) (*sql.Rows, error) {
 	m.LastQuery = query
 	m.LastArgs = args
 	return m.ReturnRows, m.ReturnErr
 }
 
-func (m *MockDatabase) QueryRow(ctx context.Context, query string, args ...interface{}) *sql.Row {
+func (m *MockDatabase) QueryRow(_ context.Context, query string, args ...interface{}) *sql.Row {
 	m.LastQuery = query
 	m.LastArgs = args
 	return m.ReturnRow
 }
 
-func (m *MockDatabase) Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (m *MockDatabase) Exec(_ context.Context, query string, args ...interface{}) (sql.Result, error) {
 	m.LastQuery = query
 	m.LastArgs = args
 	return m.ReturnResult, m.ReturnErr
 }
 
-func (m *MockDatabase) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+func (m *MockDatabase) BeginTx(_ context.Context, _ *sql.TxOptions) (*sql.Tx, error) {
 	return m.ReturnTx, m.ReturnErr
 }
 
@@ -131,7 +131,7 @@ func (m *MockDatabase) Close() error {
 	return m.ReturnErr
 }
 
-func (m *MockDatabase) Ping(ctx context.Context) error {
+func (m *MockDatabase) Ping(_ context.Context) error {
 	return m.ReturnErr
 }
 

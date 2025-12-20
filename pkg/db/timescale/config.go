@@ -1,3 +1,4 @@
+// Package timescale provides TimescaleDB database implementation
 package timescale
 
 import (
