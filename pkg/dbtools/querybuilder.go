@@ -549,11 +549,12 @@ func calculateQueryComplexity(query string) string {
 	// Determine complexity level
 	if score <= 2 {
 		return "Simple"
-	} else if score <= 6 {
-		return "Moderate"
-	} else {
-		return "Complex"
 	}
+	if score <= 6 {
+		return "Moderate"
+	}
+
+	return "Complex"
 }
 
 // Helper functions to extract error information from error messages

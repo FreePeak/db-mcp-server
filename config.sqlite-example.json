@@ -1,0 +1,60 @@
+{
+    "connections": [
+        {
+            "id": "sqlite_file_db",
+            "type": "sqlite",
+            "database_path": "./data/app.db",
+            "journal_mode": "WAL",
+            "cache_size": 2000,
+            "read_only": false,
+            "use_modernc_driver": true,
+            "query_timeout": 30,
+            "max_open_conns": 1,
+            "max_idle_conns": 1,
+            "conn_max_lifetime_seconds": 300,
+            "conn_max_idle_time_seconds": 60
+        },
+        {
+            "id": "sqlite_encrypted",
+            "type": "sqlite",
+            "database_path": "./data/encrypted.db",
+            "encryption_key": "your-secret-encryption-key-here",
+            "journal_mode": "WAL",
+            "cache_size": 2000,
+            "read_only": false,
+            "use_modernc_driver": false,
+            "query_timeout": 30,
+            "max_open_conns": 1,
+            "max_idle_conns": 1,
+            "conn_max_lifetime_seconds": 300,
+            "conn_max_idle_time_seconds": 60
+        },
+        {
+            "id": "sqlite_memory",
+            "type": "sqlite",
+            "database_path": ":memory:",
+            "cache_size": 1000,
+            "read_only": false,
+            "use_modernc_driver": true,
+            "query_timeout": 30,
+            "max_open_conns": 1,
+            "max_idle_conns": 1,
+            "conn_max_lifetime_seconds": 300,
+            "conn_max_idle_time_seconds": 60
+        },
+        {
+            "id": "sqlite_readonly",
+            "type": "sqlite",
+            "database_path": "./data/reference.db",
+            "journal_mode": "DELETE",
+            "cache_size": 1000,
+            "read_only": true,
+            "use_modernc_driver": true,
+            "query_timeout": 60,
+            "max_open_conns": 1,
+            "max_idle_conns": 1,
+            "conn_max_lifetime_seconds": 300,
+            "conn_max_idle_time_seconds": 60
+        }
+    ]
+}

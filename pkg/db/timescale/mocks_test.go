@@ -115,7 +115,7 @@ func (m *MockDB) SetTimescaleAvailable(available bool) {
 }
 
 // Exec implements db.Database.Exec
-func (m *MockDB) Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (m *MockDB) Exec(_ context.Context, query string, args ...interface{}) (sql.Result, error) {
 	m.lastQuery = query
 	m.lastQueryArgs = args
 
@@ -132,7 +132,7 @@ func (m *MockDB) Exec(ctx context.Context, query string, args ...interface{}) (s
 }
 
 // Query implements db.Database.Query
-func (m *MockDB) Query(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (m *MockDB) Query(_ context.Context, query string, args ...interface{}) (*sql.Rows, error) {
 	m.lastQuery = query
 	m.lastQueryArgs = args
 
@@ -150,7 +150,7 @@ func (m *MockDB) Query(ctx context.Context, query string, args ...interface{}) (
 }
 
 // QueryRow implements db.Database.QueryRow
-func (m *MockDB) QueryRow(ctx context.Context, query string, args ...interface{}) *sql.Row {
+func (m *MockDB) QueryRow(_ context.Context, query string, args ...interface{}) *sql.Row {
 	m.lastQuery = query
 	m.lastQueryArgs = args
 
@@ -160,17 +160,17 @@ func (m *MockDB) QueryRow(ctx context.Context, query string, args ...interface{}
 }
 
 // BeginTx implements db.Database.BeginTx
-func (m *MockDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+func (m *MockDB) BeginTx(_ context.Context, _ *sql.TxOptions) (*sql.Tx, error) {
 	return nil, nil
 }
 
 // Prepare implements db.Database.Prepare
-func (m *MockDB) Prepare(ctx context.Context, query string) (*sql.Stmt, error) {
+func (m *MockDB) Prepare(_ context.Context, _ string) (*sql.Stmt, error) {
 	return nil, nil
 }
 
 // Ping implements db.Database.Ping
-func (m *MockDB) Ping(ctx context.Context) error {
+func (m *MockDB) Ping(_ context.Context) error {
 	return nil
 }
 
@@ -208,7 +208,7 @@ func (r *MockResult) RowsAffected() (int64, error) {
 }
 
 // MockTimescaleDB creates a TimescaleDB instance with mocked database for testing
-func MockTimescaleDB(t testing.TB) (*DB, *MockDB) {
+func MockTimescaleDB(_ testing.TB) (*DB, *MockDB) {
 	mockDB := NewMockDB()
 	mockDB.SetTimescaleAvailable(true)
 
@@ -259,7 +259,7 @@ func (c *MockConnector) Driver() driver.Driver {
 type MockDriver struct{}
 
 // Open implements driver.Driver
-func (d *MockDriver) Open(name string) (driver.Conn, error) {
+func (d *MockDriver) Open(_ string) (driver.Conn, error) {
 	return &MockConn{}, nil
 }
 
@@ -301,12 +301,12 @@ func (s *MockStmt) NumInput() int {
 }
 
 // Exec implements driver.Stmt
-func (s *MockStmt) Exec(args []driver.Value) (driver.Result, error) {
+func (s *MockStmt) Exec(_ []driver.Value) (driver.Result, error) {
 	return nil, nil
 }
 
 // Query implements driver.Stmt
-func (s *MockStmt) Query(args []driver.Value) (driver.Rows, error) {
+func (s *MockStmt) Query(_ []driver.Value) (driver.Rows, error) {
 	// Return the registered result for this query
 	if s.mockDB != nil {
 		if result, found := s.mockDB.getQueryResult(s.query); found {
@@ -405,7 +405,7 @@ func (m *MockDB) QueryContains(substring string) bool {
 }
 
 // ExecuteSQL implements db.Database.ExecuteSQL
-func (m *MockDB) ExecuteSQL(ctx context.Context, query string, args ...interface{}) (interface{}, error) {
+func (m *MockDB) ExecuteSQL(_ context.Context, query string, args ...interface{}) (interface{}, error) {
 	m.lastQuery = query
 	m.lastQueryArgs = args
 	m.queryHistory = append(m.queryHistory, query)
@@ -431,7 +431,7 @@ func (m *MockDB) ExecuteSQL(ctx context.Context, query string, args ...interface
 }
 
 // ExecuteSQLWithoutParams implements db.Database.ExecuteSQLWithoutParams
-func (m *MockDB) ExecuteSQLWithoutParams(ctx context.Context, query string) (interface{}, error) {
+func (m *MockDB) ExecuteSQLWithoutParams(_ context.Context, query string) (interface{}, error) {
 	m.lastQuery = query
 	m.lastQueryArgs = nil
 	m.queryHistory = append(m.queryHistory, query)

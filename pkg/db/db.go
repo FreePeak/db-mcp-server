@@ -1,3 +1,6 @@
+// Package db provides a unified interface for connecting to and interacting with
+// multiple database types including MySQL, PostgreSQL, SQLite, and TimescaleDB.
+// It implements common database operations with type-specific optimizations.
 package db
 
 import (
@@ -6,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,6 +17,8 @@ import (
 	// Import database drivers
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Common database errors
@@ -36,6 +42,18 @@ const (
 	SSLPrefer     PostgresSSLMode = "prefer"
 )
 
+// SQLiteJournalMode defines the journal mode for SQLite connections
+type SQLiteJournalMode string
+
+// SQLiteJournalMode constants
+const (
+	JournalDelete   SQLiteJournalMode = "DELETE"
+	JournalTruncate SQLiteJournalMode = "TRUNCATE"
+	JournalPersist  SQLiteJournalMode = "PERSIST"
+	JournalWAL      SQLiteJournalMode = "WAL"
+	JournalOff      SQLiteJournalMode = "OFF"
+)
+
 // Config represents database connection configuration
 type Config struct {
 	Type     string
@@ -55,6 +73,14 @@ type Config struct {
 	QueryTimeout       int               // in seconds, default is 30 seconds
 	TargetSessionAttrs string            // for PostgreSQL 10+
 	Options            map[string]string // Extra connection options
+
+	// SQLite specific options
+	DatabasePath     string            // Path to SQLite database file
+	EncryptionKey    string            // Key for SQLCipher encryption
+	ReadOnly         bool              // Open database in read-only mode
+	CacheSize        int               // SQLite cache size (in pages)
+	JournalMode      SQLiteJournalMode // Journal mode for SQLite
+	UseModerncDriver bool              // Use modernc.org/sqlite driver instead of mattn/go-sqlite3
 
 	// Connection pool settings
 	MaxOpenConns    int
@@ -79,6 +105,18 @@ func (c *Config) SetDefaults() {
 	}
 	if c.Type == "postgres" && c.SSLMode == "" {
 		c.SSLMode = SSLDisable
+	}
+	if c.Type == "sqlite" {
+		if c.JournalMode == "" {
+			c.JournalMode = JournalWAL // Default to WAL mode for better concurrency
+		}
+		if c.CacheSize == 0 {
+			c.CacheSize = 2000 // Default cache size
+		}
+		// For SQLite, use modernc driver by default (CGO-free)
+		if c.DatabasePath == "" && c.Name != "" {
+			c.DatabasePath = c.Name
+		}
 	}
 	if c.ConnectTimeout == 0 {
 		c.ConnectTimeout = 10 // Default 10 seconds
@@ -177,6 +215,69 @@ func buildPostgresConnStr(config Config) string {
 	return strings.Join(params, " ")
 }
 
+// buildSQLiteConnStr builds a SQLite connection string with all options
+func buildSQLiteConnStr(config Config) string {
+	// Validate and clean the database path
+	dbPath := config.DatabasePath
+	if dbPath == "" {
+		dbPath = config.Name
+	}
+
+	// Handle special SQLite paths
+	if dbPath == ":memory:" {
+		return ":memory:"
+	}
+
+	// Clean the path
+	dbPath = filepath.Clean(dbPath)
+
+	// Build query parameters
+	params := make(url.Values)
+
+	// Read-only mode
+	if config.ReadOnly {
+		params.Set("mode", "ro")
+	} else {
+		params.Set("mode", "rwc")
+	}
+
+	// Cache size
+	if config.CacheSize > 0 {
+		params.Set("cache", "shared")
+		// Cache size will be set via PRAGMA after connection
+	}
+
+	// Journal mode
+	if config.JournalMode != "" {
+		params.Set("_journal_mode", string(config.JournalMode))
+	}
+
+	// Foreign key constraints
+	params.Set("_foreign_keys", "enabled")
+
+	// SQLCipher encryption key
+	if config.EncryptionKey != "" {
+		params.Set("_pragma_key", config.EncryptionKey)
+		// Set cipher page size for SQLCipher compatibility
+		params.Set("_cipher_page_size", "4096")
+	}
+
+	// Additional options
+	if config.Options != nil {
+		for key, value := range config.Options {
+			params.Set(key, value)
+		}
+	}
+
+	// Build the final connection string
+	connStr := fmt.Sprintf("file:%s", dbPath)
+	if len(params) > 0 {
+		connStr += "?" + params.Encode()
+	}
+
+	return connStr
+}
+
 // NewDatabase creates a new database connection based on the provided configuration
 func NewDatabase(config Config) (Database, error) {
 	// Set default values for the configuration
@@ -194,6 +295,15 @@ func NewDatabase(config Config) (Database, error) {
 	case "postgres":
 		driverName = "postgres"
 		dsn = buildPostgresConnStr(config)
+	case "sqlite":
+		// Choose driver based on configuration
+		if config.UseModerncDriver || config.EncryptionKey == "" {
+			driverName = "sqlite"
+		} else {
+			// Use mattn/go-sqlite3 driver for SQLCipher
+			driverName = "sqlite3"
+		}
+		dsn = buildSQLiteConnStr(config)
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", config.Type)
 	}
@@ -231,7 +341,46 @@ func (d *database) Connect() error {
 	}
 
 	d.db = db
-	logger.Info("Connected to %s database at %s:%d/%s", d.config.Type, d.config.Host, d.config.Port, d.config.Name)
+
+	// SQLite-specific initialization
+	if d.config.Type == "sqlite" {
+		// Set cache size if specified
+		if d.config.CacheSize > 0 {
+			_, err := db.Exec(fmt.Sprintf("PRAGMA cache_size = %d", d.config.CacheSize))
+			if err != nil {
+				logger.Warn("Failed to set SQLite cache size: %v", err)
+			}
+		}
+
+		// Additional SQLite optimizations
+		pragmas := []string{
+			"PRAGMA synchronous = NORMAL",
+			"PRAGMA temp_store = MEMORY",
+			"PRAGMA mmap_size = 268435456", // 256MB
+		}
+
+		for _, pragma := range pragmas {
+			_, err := db.Exec(pragma)
+			if err != nil {
+				logger.Warn("Failed to execute SQLite pragma '%s': %v", pragma, err)
+			}
+		}
+	}
+
+	// Log connection info
+	if d.config.Type == "sqlite" {
+		dbPath := d.config.DatabasePath
+		if dbPath == "" {
+			dbPath = d.config.Name
+		}
+		if dbPath == ":memory:" {
+			logger.Info("Connected to %s in-memory database", d.config.Type)
+		} else {
+			logger.Info("Connected to %s database at %s", d.config.Type, dbPath)
+		}
+	} else {
+		logger.Info("Connected to %s database at %s:%d/%s", d.config.Type, d.config.Host, d.config.Port, d.config.Name)
+	}
 
 	return nil
 }
@@ -324,6 +473,20 @@ func (d *database) ConnectionString() string {
 		}
 
 		return strings.Join(params, " ")
+	case "sqlite":
+		dbPath := d.config.DatabasePath
+		if dbPath == "" {
+			dbPath = d.config.Name
+		}
+		if dbPath == ":memory:" {
+			return "SQLite in-memory database"
+		}
+
+		// Mask encryption key if present
+		if d.config.EncryptionKey != "" {
+			return fmt.Sprintf("SQLite database: %s (encrypted)", dbPath)
+		}
+		return fmt.Sprintf("SQLite database: %s", dbPath)
 	default:
 		return "unknown"
 	}

@@ -1,3 +1,4 @@
+// Package jsonrpc provides JSON-RPC 2.0 protocol implementation for the MCP server.
 package jsonrpc
 
 import (

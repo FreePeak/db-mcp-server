@@ -1,3 +1,4 @@
+// Package logger provides a wrapper around the internal logger for external package use.
 package logger
 
 import (

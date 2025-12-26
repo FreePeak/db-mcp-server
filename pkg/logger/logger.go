@@ -1,3 +1,4 @@
+// Package logger provides logging utilities for the public API of the db-mcp-server.
 package logger
 
 import (
@@ -11,7 +12,7 @@ import (
 )
 
 var (
-	initialized bool = false
+	initialized bool
 	level       string
 	logFile     *os.File
 )

@@ -195,14 +195,14 @@ func TestRequestResponseLog(t *testing.T) {
 func TestInitializeWithCustomLogDir(t *testing.T) {
 	// Save original TRANSPORT_MODE
 	originalMode := os.Getenv("TRANSPORT_MODE")
-	defer os.Setenv("TRANSPORT_MODE", originalMode)
+	defer func() { _ = os.Setenv("TRANSPORT_MODE", originalMode) }()
 
 	// Create temp directory for testing
 	tmpDir := t.TempDir()
 	customLogDir := tmpDir + "/custom-logs"
 
 	// Set stdio mode to trigger file logging
-	os.Setenv("TRANSPORT_MODE", "stdio")
+	_ = os.Setenv("TRANSPORT_MODE", "stdio")
 
 	// Initialize with custom log directory
 	Initialize(Config{Level: "info", LogDir: customLogDir})
@@ -214,7 +214,7 @@ func TestInitializeWithCustomLogDir(t *testing.T) {
 
 	// Clean up
 	if stdioLogFile != nil {
-		stdioLogFile.Close()
+		_ = stdioLogFile.Close()
 		stdioLogFile = nil
 	}
 }
@@ -222,16 +222,16 @@ func TestInitializeWithCustomLogDir(t *testing.T) {
 func TestInitializeWithDefaultLogDir(t *testing.T) {
 	// Save original TRANSPORT_MODE
 	originalMode := os.Getenv("TRANSPORT_MODE")
-	defer os.Setenv("TRANSPORT_MODE", originalMode)
+	defer func() { _ = os.Setenv("TRANSPORT_MODE", originalMode) }()
 
 	// Create temp working directory
 	tmpDir := t.TempDir()
 	originalWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(originalWd)
+	_ = os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(originalWd) }()
 
 	// Set stdio mode to trigger file logging
-	os.Setenv("TRANSPORT_MODE", "stdio")
+	_ = os.Setenv("TRANSPORT_MODE", "stdio")
 
 	// Initialize with empty log directory (should use default "logs")
 	Initialize(Config{Level: "info"})
@@ -244,7 +244,7 @@ func TestInitializeWithDefaultLogDir(t *testing.T) {
 
 	// Clean up
 	if stdioLogFile != nil {
-		stdioLogFile.Close()
+		_ = stdioLogFile.Close()
 		stdioLogFile = nil
 	}
 }

@@ -1,3 +1,4 @@
+// Package main provides examples of connecting to PostgreSQL databases using the db-mcp-server library.
 package main
 
 import (
@@ -59,7 +60,7 @@ func connectDirectly() {
 	if err := database.Connect(); err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	fmt.Println("Successfully connected to PostgreSQL")
 	fmt.Println("Connection string (masked): ", database.ConnectionString())
@@ -81,7 +82,7 @@ func connectDirectly() {
 	if err != nil {
 		log.Fatalf("Query failed: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	fmt.Println("\nAvailable databases:")
 	for rows.Next() {
@@ -146,7 +147,7 @@ func connectWithManager() {
 	if err := manager.Connect(); err != nil {
 		log.Fatalf("Failed to connect to databases: %v", err)
 	}
-	defer manager.CloseAll()
+	defer func() { _ = manager.CloseAll() }()
 
 	// Get a specific database connection
 	database, err := manager.GetDatabase("postgres17")

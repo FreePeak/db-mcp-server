@@ -1,3 +1,4 @@
+// Package config provides configuration management for the database MCP server.
 package config
 
 import (

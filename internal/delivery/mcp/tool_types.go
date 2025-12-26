@@ -370,7 +370,7 @@ func (t *PerformanceTool) CreateTool(name string, dbID string) interface{} {
 }
 
 // HandleRequest handles performance tool requests
-func (t *PerformanceTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+func (t *PerformanceTool) HandleRequest(_ context.Context, request server.ToolCallRequest, dbID string, _ UseCaseProvider) (interface{}, error) {
 	// If dbID is not provided, extract it from the tool name
 	if dbID == "" {
 		dbID = extractDatabaseIDFromName(request.Name)
@@ -458,7 +458,7 @@ func (t *SchemaTool) CreateTool(name string, dbID string) interface{} {
 }
 
 // HandleRequest handles schema tool requests
-func (t *SchemaTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+func (t *SchemaTool) HandleRequest(_ context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// If dbID is not provided, extract it from the tool name
 	if dbID == "" {
 		dbID = extractDatabaseIDFromName(request.Name)
@@ -506,7 +506,7 @@ func (t *ListDatabasesTool) CreateTool(name string, dbID string) interface{} {
 }
 
 // HandleRequest handles list databases tool requests
-func (t *ListDatabasesTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+func (t *ListDatabasesTool) HandleRequest(_ context.Context, _ server.ToolCallRequest, _ string, useCase UseCaseProvider) (interface{}, error) {
 	databases := useCase.ListDatabases()
 
 	// Format as text for display

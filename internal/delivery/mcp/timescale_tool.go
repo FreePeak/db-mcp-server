@@ -543,7 +543,7 @@ func (t *TimescaleDBTool) handleCreateHypertable(ctx context.Context, request se
 }
 
 // handleListHypertables handles the list_hypertables operation
-func (t *TimescaleDBTool) handleListHypertables(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+func (t *TimescaleDBTool) handleListHypertables(ctx context.Context, _ server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// Check if the database is PostgreSQL (TimescaleDB requires PostgreSQL)
 	dbType, err := useCase.GetDatabaseType(dbID)
 	if err != nil {
@@ -1459,7 +1459,7 @@ func (t *TimescaleDBTool) handleDropContinuousAggregate(ctx context.Context, req
 }
 
 // handleListContinuousAggregates handles the list_continuous_aggregates operation
-func (t *TimescaleDBTool) handleListContinuousAggregates(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+func (t *TimescaleDBTool) handleListContinuousAggregates(ctx context.Context, _ server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// Check if the database is PostgreSQL (TimescaleDB requires PostgreSQL)
 	dbType, err := useCase.GetDatabaseType(dbID)
 	if err != nil {

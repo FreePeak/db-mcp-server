@@ -111,7 +111,7 @@ func (t *DB) ApplyConfig() error {
 func (t *DB) ExecuteSQLWithoutParams(ctx context.Context, query string) (interface{}, error) {
 	// For non-SELECT queries (that don't return rows), use Exec
 	if !isSelectQuery(query) {
-		result, err := t.Database.Exec(ctx, query)
+		result, err := t.Exec(ctx, query)
 		if err != nil {
 			return nil, fmt.Errorf("failed to execute query: %w", err)
 		}
@@ -119,7 +119,7 @@ func (t *DB) ExecuteSQLWithoutParams(ctx context.Context, query string) (interfa
 	}
 
 	// For SELECT queries, process rows into a map
-	rows, err := t.Database.Query(ctx, query)
+	rows, err := t.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -139,7 +139,7 @@ func (t *DB) ExecuteSQLWithoutParams(ctx context.Context, query string) (interfa
 func (t *DB) ExecuteSQL(ctx context.Context, query string, args ...interface{}) (interface{}, error) {
 	// For non-SELECT queries (that don't return rows), use Exec
 	if !isSelectQuery(query) {
-		result, err := t.Database.Exec(ctx, query, args...)
+		result, err := t.Exec(ctx, query, args...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to execute query: %w", err)
 		}
@@ -147,7 +147,7 @@ func (t *DB) ExecuteSQL(ctx context.Context, query string, args ...interface{}) 
 	}
 
 	// For SELECT queries, process rows into a map
-	rows, err := t.Database.Query(ctx, query, args...)
+	rows, err := t.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}

@@ -12,7 +12,7 @@ import (
 // DatabaseConnectionConfig represents a single database connection configuration
 type DatabaseConnectionConfig struct {
 	ID       string `json:"id"`   // Unique identifier for this connection
-	Type     string `json:"type"` // mysql or postgres
+	Type     string `json:"type"` // mysql, postgres, or sqlite
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	User     string `json:"user"`
@@ -29,6 +29,14 @@ type DatabaseConnectionConfig struct {
 	QueryTimeout       int               `json:"query_timeout,omitempty"` // in seconds
 	TargetSessionAttrs string            `json:"target_session_attrs,omitempty"`
 	Options            map[string]string `json:"options,omitempty"`
+
+	// SQLite specific options
+	DatabasePath     string `json:"database_path,omitempty"`      // Path to SQLite database file
+	EncryptionKey    string `json:"encryption_key,omitempty"`     // Key for SQLCipher encryption
+	ReadOnly         bool   `json:"read_only,omitempty"`          // Open database in read-only mode
+	CacheSize        int    `json:"cache_size,omitempty"`         // SQLite cache size (in pages)
+	JournalMode      string `json:"journal_mode,omitempty"`       // Journal mode for SQLite
+	UseModerncDriver bool   `json:"use_modernc_driver,omitempty"` // Use modernc.org/sqlite driver instead of mattn/go-sqlite3
 
 	// Connection pool settings
 	MaxOpenConns    int `json:"max_open_conns,omitempty"`
@@ -92,9 +100,17 @@ func (m *Manager) LoadConfig(configJSON []byte) error {
 		if conn.ID == "" {
 			return fmt.Errorf("database connection ID cannot be empty")
 		}
-		if conn.Type != "mysql" && conn.Type != "postgres" {
+		if conn.Type != "mysql" && conn.Type != "postgres" && conn.Type != "sqlite" {
 			return fmt.Errorf("unsupported database type for connection %s: %s", conn.ID, conn.Type)
 		}
+
+		// SQLite-specific validation
+		if conn.Type == "sqlite" {
+			if conn.DatabasePath == "" && conn.Name == "" {
+				return fmt.Errorf("SQLite database %s requires either database_path or name to be specified", conn.ID)
+			}
+		}
+
 		m.configs[conn.ID] = conn
 	}
 
@@ -131,8 +147,9 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 		Name:     cfg.Name,
 	}
 
-	// Set PostgreSQL-specific options if this is a PostgreSQL database
-	if cfg.Type == "postgres" {
+	// Set database-specific options based on type
+	switch cfg.Type {
+	case "postgres":
 		dbConfig.SSLMode = PostgresSSLMode(cfg.SSLMode)
 		dbConfig.SSLCert = cfg.SSLCert
 		dbConfig.SSLKey = cfg.SSLKey
@@ -142,10 +159,25 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 		dbConfig.QueryTimeout = cfg.QueryTimeout
 		dbConfig.TargetSessionAttrs = cfg.TargetSessionAttrs
 		dbConfig.Options = cfg.Options
-	} else if cfg.Type == "mysql" {
+	case "mysql":
 		// Set MySQL-specific options
 		dbConfig.ConnectTimeout = cfg.ConnectTimeout
 		dbConfig.QueryTimeout = cfg.QueryTimeout
+	case "sqlite":
+		// Set SQLite-specific options
+		dbConfig.DatabasePath = cfg.DatabasePath
+		dbConfig.EncryptionKey = cfg.EncryptionKey
+		dbConfig.ReadOnly = cfg.ReadOnly
+		dbConfig.CacheSize = cfg.CacheSize
+		if cfg.JournalMode != "" {
+			dbConfig.JournalMode = SQLiteJournalMode(cfg.JournalMode)
+		}
+		dbConfig.UseModerncDriver = cfg.UseModerncDriver
+	default:
+		// Default case - common configuration
+		dbConfig.ConnectTimeout = cfg.ConnectTimeout
+		dbConfig.QueryTimeout = cfg.QueryTimeout
+		dbConfig.Options = cfg.Options
 	}
 
 	// Connection pool settings
@@ -226,7 +258,21 @@ func (m *Manager) Connect() error {
 
 		// Store connected database
 		m.connections[id] = db
-		logger.Info("Successfully connected to database %s (%s at %s:%d/%s)", id, cfg.Type, cfg.Host, cfg.Port, cfg.Name)
+
+		// Log connection info based on database type
+		if cfg.Type == "sqlite" {
+			dbPath := cfg.DatabasePath
+			if dbPath == "" {
+				dbPath = cfg.Name
+			}
+			if dbPath == ":memory:" {
+				logger.Info("Successfully connected to database %s (%s in-memory database)", id, cfg.Type)
+			} else {
+				logger.Info("Successfully connected to database %s (%s at %s)", id, cfg.Type, dbPath)
+			}
+		} else {
+			logger.Info("Successfully connected to database %s (%s at %s:%d/%s)", id, cfg.Type, cfg.Host, cfg.Port, cfg.Name)
+		}
 	}
 
 	return nil
@@ -281,7 +327,21 @@ func (m *Manager) connectOnDemand(id string) (Database, error) {
 
 	// Store connected database
 	m.connections[id] = db
-	logger.Info("Successfully connected to database %s (%s at %s:%d/%s)", id, cfg.Type, cfg.Host, cfg.Port, cfg.Name)
+
+	// Log connection info based on database type
+	if cfg.Type == "sqlite" {
+		dbPath := cfg.DatabasePath
+		if dbPath == "" {
+			dbPath = cfg.Name
+		}
+		if dbPath == ":memory:" {
+			logger.Info("Successfully connected to database %s (%s in-memory database)", id, cfg.Type)
+		} else {
+			logger.Info("Successfully connected to database %s (%s at %s)", id, cfg.Type, dbPath)
+		}
+	} else {
+		logger.Info("Successfully connected to database %s (%s at %s:%d/%s)", id, cfg.Type, cfg.Host, cfg.Port, cfg.Name)
+	}
 
 	return db, nil
 }

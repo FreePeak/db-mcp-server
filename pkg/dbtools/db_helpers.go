@@ -1,3 +1,5 @@
+// Package dbtools provides helper functions and utilities for database operations
+// in the DB MCP Server, including query building, schema exploration, and performance analysis.
 package dbtools
 
 import (

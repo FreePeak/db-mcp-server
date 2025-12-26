@@ -1,27 +1,34 @@
 run:
   timeout: 5m
-  modules-download-mode: readonly
   allow-parallel-runners: true
+  skip-dirs:
+    - vendor
+    - bin
 
 linters:
   disable-all: true
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
     - misspell
     - revive
 
+version: "2"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes: github.com/FreePeak/db-mcp-server
+
 linters-settings:
-  gofmt:
-    simplify: true
-  goimports:
-    local-prefixes: github.com/FreePeak/db-mcp-server
   govet:
   revive:
     rules:

@@ -44,7 +44,7 @@ func TestHandleCreateHypertable(t *testing.T) {
 
 	// Set up expectations
 	mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
-	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.MatchedBy(func(_ string) bool {
 		return true // Accept any SQL for now
 	}), mock.Anything).Return(`{"result": "success"}`, nil)
 
@@ -77,7 +77,7 @@ func TestHandleListHypertables(t *testing.T) {
 
 	// Set up expectations
 	mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
-	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.MatchedBy(func(_ string) bool {
 		return true // Any SQL that contains the relevant query
 	}), mock.Anything).Return(`[{"table_name":"metrics","schema_name":"public","time_column":"time"}]`, nil)
 
@@ -142,7 +142,7 @@ func TestHandleAddRetentionPolicy(t *testing.T) {
 
 	// Set up expectations
 	mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
-	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.MatchedBy(func(_ string) bool {
 		return true // Accept any SQL for now
 	}), mock.Anything).Return(`{"result": "success"}`, nil)
 
@@ -175,7 +175,7 @@ func TestHandleRemoveRetentionPolicy(t *testing.T) {
 
 	// Set up expectations
 	mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
-	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.MatchedBy(func(_ string) bool {
 		return true // Accept any SQL for now
 	}), mock.Anything).Return(`{"result": "success"}`, nil)
 
@@ -207,7 +207,7 @@ func TestHandleGetRetentionPolicy(t *testing.T) {
 
 	// Set up expectations
 	mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
-	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.MatchedBy(func(_ string) bool {
 		return true // Accept any SQL for now
 	}), mock.Anything).Return(`[{"hypertable_name":"metrics","retention_interval":"30 days","retention_enabled":true}]`, nil)
 

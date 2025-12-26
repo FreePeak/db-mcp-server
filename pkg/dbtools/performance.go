@@ -76,7 +76,7 @@ func (pa *PerformanceAnalyzer) LogSlowQuery(query string, params []interface{}, 
 }
 
 // TrackQuery tracks the execution of a query and logs slow queries
-func (pa *PerformanceAnalyzer) TrackQuery(ctx context.Context, query string, params []interface{}, exec func() (interface{}, error)) (interface{}, error) {
+func (pa *PerformanceAnalyzer) TrackQuery(_ context.Context, query string, params []interface{}, exec func() (interface{}, error)) (interface{}, error) {
 	startTime := time.Now()
 	result, err := exec()
 	duration := time.Since(startTime)

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -236,7 +235,7 @@ func GetDatabaseType(id string) (string, error) {
 }
 
 // showConnectedDatabases returns information about all connected databases
-func showConnectedDatabases(ctx context.Context, params map[string]interface{}) (interface{}, error) {
+func showConnectedDatabases(ctx context.Context, _ map[string]interface{}) (interface{}, error) {
 	if dbManager == nil {
 		return nil, fmt.Errorf("database manager not initialized")
 	}
@@ -417,7 +416,7 @@ func RegisterDatabaseTools(registry *tools.Registry) error {
 			},
 			Required: []string{"action"},
 		},
-		Handler: func(ctx context.Context, params map[string]interface{}) (interface{}, error) {
+		Handler: func(_ context.Context, params map[string]interface{}) (interface{}, error) {
 			// Just a placeholder for now
 			actionVal, ok := params["action"].(string)
 			if !ok {
@@ -527,109 +526,6 @@ func getArrayParam(params map[string]interface{}, key string) ([]interface{}, bo
 		return val, true
 	}
 	return nil, false
-}
-
-// _loadConfigFromFile loads database configuration from a file (currently unused)
-func _loadConfigFromFile(cfg *Config) (*db.MultiDBConfig, error) {
-	if cfg.ConfigFile == "" {
-		return nil, fmt.Errorf("no config file specified")
-	}
-
-	// If path is not absolute, make it absolute
-	absPath := cfg.ConfigFile
-	if !filepath.IsAbs(absPath) {
-		var err error
-		absPath, err = filepath.Abs(absPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
-		}
-	}
-
-	// Read configuration file
-	configData, err := os.ReadFile(absPath)
-	if err != nil {
-		logger.Warn("Warning: failed to read config file %s: %v", cfg.ConfigFile, err)
-		return nil, err
-	}
-
-	// Parse JSON
-	var dbConfig db.MultiDBConfig
-	if err := json.Unmarshal(configData, &dbConfig); err != nil {
-		logger.Warn("Warning: failed to parse config file %s: %v", cfg.ConfigFile, err)
-		return nil, err
-	}
-	logger.Info("Loaded database config from file: %s", cfg.ConfigFile)
-	// Debug logging of connection details
-	for i, conn := range dbConfig.Connections {
-		logger.Info("Connection [%d]: ID=%s, Type=%s, Host=%s, Port=%d, Name=%s",
-			i, conn.ID, conn.Type, conn.Host, conn.Port, conn.Name)
-	}
-
-	return &dbConfig, nil
-}
-
-// _getEnv gets an environment variable or returns a default value (currently unused)
-func _getEnv(key, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
-	}
-	return value
-}
-
-// _getIntEnv gets an environment variable as an integer or returns a default value (currently unused)
-func _getIntEnv(key string, defaultValue int) int {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
-	}
-	intValue, err := strconv.Atoi(value)
-	if err != nil {
-		return defaultValue
-	}
-	return intValue
-}
-
-// _loadConfigFromEnv loads database configuration from the environment (currently unused)
-func _loadConfigFromEnv() (*db.MultiDBConfig, error) {
-	// Check if DB_CONFIG environment variable is set
-	dbConfigEnv := os.Getenv("DB_CONFIG")
-	if dbConfigEnv != "" {
-		var dbConfig db.MultiDBConfig
-		if err := json.Unmarshal([]byte(dbConfigEnv), &dbConfig); err != nil {
-			logger.Warn("Warning: failed to parse DB_CONFIG environment variable: %v", err)
-			return nil, err
-		}
-		logger.Info("Loaded database config from DB_CONFIG environment variable")
-		return &dbConfig, nil
-	}
-
-	// Create config from individual environment variables
-	// Load database configuration from environment variables
-	dbType := _getEnv("DB_TYPE", "mysql")
-	dbHost := _getEnv("DB_HOST", "localhost")
-	dbPort := _getIntEnv("DB_PORT", 3306)
-	dbUser := _getEnv("DB_USER", "")
-	dbPass := _getEnv("DB_PASSWORD", "")
-	dbName := _getEnv("DB_NAME", "")
-
-	// Create a default configuration with a single connection
-	dbConfig := &db.MultiDBConfig{
-		Connections: []db.DatabaseConnectionConfig{
-			{
-				ID:       "default",
-				Type:     dbType,
-				Host:     dbHost,
-				Port:     dbPort,
-				User:     dbUser,
-				Password: dbPass,
-				Name:     dbName,
-			},
-		},
-	}
-
-	logger.Info("Created database config from environment variables")
-	return dbConfig, nil
 }
 
 // GetDatabaseQueryTimeout returns the query timeout for a database in milliseconds
@@ -814,7 +710,7 @@ func RegisterMCPDatabaseTools(registry *tools.Registry) error {
 				},
 			},
 		},
-		Handler: func(ctx context.Context, params map[string]interface{}) (interface{}, error) {
+		Handler: func(_ context.Context, _ map[string]interface{}) (interface{}, error) {
 			dbs := ListDatabases()
 			output := "Available databases:\n\n"
 			for i, db := range dbs {
@@ -859,7 +755,7 @@ func registerMCPMockTools(registry *tools.Registry) error {
 			},
 			Required: []string{"query"},
 		},
-		Handler: func(ctx context.Context, params map[string]interface{}) (interface{}, error) {
+		Handler: func(_ context.Context, params map[string]interface{}) (interface{}, error) {
 			query, _ := getStringParam(params, "query")
 			return map[string]interface{}{
 				"content": []map[string]interface{}{
@@ -886,7 +782,7 @@ func registerMCPMockTools(registry *tools.Registry) error {
 				},
 			},
 		},
-		Handler: func(ctx context.Context, params map[string]interface{}) (interface{}, error) {
+		Handler: func(_ context.Context, _ map[string]interface{}) (interface{}, error) {
 			return map[string]interface{}{
 				"content": []map[string]interface{}{
 					{
@@ -1077,7 +973,7 @@ func handleTransactionForDatabase(ctx context.Context, params map[string]interfa
 	}
 }
 
-func handlePerformanceForDatabase(ctx context.Context, params map[string]interface{}, dbID string) (interface{}, error) {
+func handlePerformanceForDatabase(_ context.Context, params map[string]interface{}, dbID string) (interface{}, error) {
 	action, _ := getStringParam(params, "action")
 
 	// Create response with basic info about the action
@@ -1098,7 +994,7 @@ func handlePerformanceForDatabase(ctx context.Context, params map[string]interfa
 	}, nil
 }
 
-func handleSchemaForDatabase(ctx context.Context, params map[string]interface{}, dbID string) (interface{}, error) {
+func handleSchemaForDatabase(ctx context.Context, _ map[string]interface{}, dbID string) (interface{}, error) {
 	// Try to get database schema
 	db, err := GetDatabase(dbID)
 	if err != nil {

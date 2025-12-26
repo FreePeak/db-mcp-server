@@ -1,3 +1,4 @@
+// Package repository provides repository implementations for database operations.
 package repository
 
 import (

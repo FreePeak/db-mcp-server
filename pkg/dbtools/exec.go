@@ -146,7 +146,7 @@ func createMockExecuteTool() *tools.Tool {
 // handleMockExecute is a mock implementation of the execute handler
 //
 //nolint:unused // Retained for future use
-func handleMockExecute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
+func handleMockExecute(_ context.Context, params map[string]interface{}) (interface{}, error) {
 	// Extract parameters
 	statement, ok := getStringParam(params, "statement")
 	if !ok {
