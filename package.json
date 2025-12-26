@@ -1,0 +1,44 @@
+{
+  "name": "@freepeak/db-mcp-server",
+  "version": "1.6.3",
+  "description": "Multi-database MCP server - provides AI assistants with structured database access to MySQL, PostgreSQL, SQLite, and TimescaleDB",
+  "main": "bin/run.js",
+  "bin": {
+    "db-mcp-server": "bin/run.js",
+    "db-mcp-server-windows": "bin/run.cmd"
+  },
+  "scripts": {
+    "preinstall": "node bin/install.js",
+    "postinstall": "node bin/install.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freepeak/db-mcp-server.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "database",
+    "mysql",
+    "postgresql",
+    "sqlite",
+    "timescaledb",
+    "ai",
+    "claude",
+    "cursor"
+  ],
+  "author": "FreePeak",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/freepeak/db-mcp-server/issues"
+  },
+  "homepage": "https://github.com/freepeak/db-mcp-server#readme",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ]
+}
