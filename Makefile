@@ -1,4 +1,4 @@
-.PHONY: build run-stdio run-sse clean test client client-simple test-script build-example docker-build docker-run docker-run-stdio docker-stop docker-build-local docker-build-multiarch docker-pull-platform deploy-docker deploy-docker-simple
+.PHONY: build run-stdio run-sse clean test client client-simple test-script build-example docker-build docker-run docker-run-stdio docker-stop docker-build-local docker-build-multiarch docker-pull-platform deploy-docker deploy-docker-simple npm-release npm-publish version-bump release npm-test-local
 
 # Build the server
 build:
@@ -142,4 +142,78 @@ deploy-docker:
 # Default target
 all: build test
 	golangci-lint run ./...
+
+# NPM targets
+# Build release binaries for all platforms
+# Usage: make npm-release VERSION=v1.6.3
+npm-release:
+	@echo "Building release binaries for all platforms..."
+	@VERSION=$${VERSION:-$$(node -p "require('./package.json').version")}; \
+	echo "Version: $$VERSION"; \
+	mkdir -p release; \
+	GOOS=darwin GOARCH=amd64 go build -o release/db-mcp-server-darwin-amd64 -ldflags="-s -w -X main.version=$$VERSION" ./cmd/server; \
+	GOOS=darwin GOARCH=arm64 go build -o release/db-mcp-server-darwin-arm64 -ldflags="-s -w -X main.version=$$VERSION" ./cmd/server; \
+	GOOS=linux GOARCH=amd64 go build -o release/db-mcp-server-linux-amd64 -ldflags="-s -w -X main.version=$$VERSION" ./cmd/server; \
+	GOOS=linux GOARCH=arm64 go build -o release/db-mcp-server-linux-arm64 -ldflags="-s -w -X main.version=$$VERSION" ./cmd/server; \
+	GOOS=windows GOARCH=amd64 go build -o release/db-mcp-server-windows-amd64.exe -ldflags="-s -w -X main.version=$$VERSION" ./cmd/server; \
+	echo "Release binaries built in release/ directory"
+
+# Publish to npm (requires NPM_TOKEN to be set)
+# Usage: make npm-publish
+npm-publish:
+	@echo "Publishing to npm..."
+	@if [ -z "$$NPM_TOKEN" ]; then \
+		echo "Error: NPM_TOKEN is not set. Please set it with: export NPM_TOKEN=your_token"; \
+		exit 1; \
+	fi
+	echo "//registry.npmjs.org/:_authToken=$$NPM_TOKEN" > .npmrc
+	npm publish --access public
+
+# Bump version in package.json
+# Usage: make version-bump TYPE=patch (or minor, major)
+# TYPE: bump type (default: patch)
+version-bump:
+	@echo "Bumping version..."
+	@TYPE=$${TYPE:-patch}; \
+	NEW_VERSION=$$(npm version $$TYPE --no-git-tag-version | sed 's/^v//'); \
+	echo "New version: $$NEW_VERSION"; \
+	echo "Don't forget to commit and push changes: git add package.json && git commit -m 'chore: bump version to $$NEW_VERSION'"
+
+# Full release workflow: bump version, create git tag, build binaries, publish to npm
+# Usage: make release TYPE=minor
+# TYPE: bump type (default: patch)
+release:
+	@echo "Starting full release workflow..."
+	@TYPE=$${TYPE:-patch}; \
+	NEW_VERSION=$$(npm version $$TYPE --no-git-tag-version | sed 's/^v//'); \
+	echo "Releasing version: $$NEW_VERSION"; \
+	git add package.json; \
+	git commit -m "chore: bump version to $$NEW_VERSION"; \
+	git tag -a "v$$NEW_VERSION" -m "Release v$$NEW_VERSION"; \
+	if $(MAKE) npm-release VERSION=$$NEW_VERSION && $(MAKE) npm-publish; then \
+		git push origin main --tags; \
+		echo "Release v$$NEW_VERSION completed successfully!"; \
+	else \
+		echo "Release v$$NEW_VERSION failed. Cleaning up local git tag..."; \
+		git tag -d "v$$NEW_VERSION" || true; \
+		exit 1; \
+	fi
+
+# Test npm package locally before publishing
+# Usage: make npm-test-local
+npm-test-local:
+	@echo "Testing npm package locally..."
+	@echo "Building local binary first..."
+	@mkdir -p bin; \
+	go build -o bin/db-mcp-server ./cmd/server/main.go; \
+	rm -rf /tmp/db-mcp-test; \
+	mkdir -p /tmp/db-mcp-test; \
+	npm pack; \
+	mv *.tgz /tmp/db-mcp-test/; \
+	cd /tmp/db-mcp-test; \
+	tar -tzf *.tgz | head -20; \
+	echo "\n=== Package created at /tmp/db-mcp-test/ ==="; \
+	echo "To test installation globally, run:"; \
+	echo "  npm install -g /tmp/db-mcp-test/*.tgz"; \
+	echo "  db-mcp-server --help"
 

@@ -1,0 +1,54 @@
+# Go source files
+*.go
+go.mod
+go.sum
+
+# Build artifacts
+bin/
+*.exe
+*.out
+*.test
+
+# Development files
+.env
+*.local
+config.json
+
+# Documentation
+docs/
+*.md
+!README.md
+!CHANGELOG.md
+!LICENSE
+
+# CI/CD
+.github/
+
+# Docker
+Dockerfile
+docker-compose.yml
+
+# IDE
+.vscode/
+.idea/
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+*_test.go
+testdata/
+
+# Examples
+examples/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
