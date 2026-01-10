@@ -166,6 +166,7 @@ npm-publish:
 		echo "Error: NPM_TOKEN is not set. Please set it with: export NPM_TOKEN=your_token"; \
 		exit 1; \
 	fi
+	echo "//registry.npmjs.org/:_authToken=$$NPM_TOKEN" > .npmrc
 	npm publish --access public
 
 # Bump version in package.json
@@ -189,23 +190,30 @@ release:
 	git add package.json; \
 	git commit -m "chore: bump version to $$NEW_VERSION"; \
 	git tag -a "v$$NEW_VERSION" -m "Release v$$NEW_VERSION"; \
-	$(MAKE) npm-release VERSION=$$NEW_VERSION; \
-	$(MAKE) npm-publish; \
-	git push origin main --tags; \
-	echo "Release v$$NEW_VERSION completed successfully!"
+	if $(MAKE) npm-release VERSION=$$NEW_VERSION && $(MAKE) npm-publish; then \
+		git push origin main --tags; \
+		echo "Release v$$NEW_VERSION completed successfully!"; \
+	else \
+		echo "Release v$$NEW_VERSION failed. Cleaning up local git tag..."; \
+		git tag -d "v$$NEW_VERSION" || true; \
+		exit 1; \
+	fi
 
 # Test npm package locally before publishing
 # Usage: make npm-test-local
 npm-test-local:
 	@echo "Testing npm package locally..."
-	@rm -rf /tmp/db-mcp-test; \
+	@echo "Building local binary first..."
+	@mkdir -p bin; \
+	go build -o bin/db-mcp-server ./cmd/server/main.go; \
+	rm -rf /tmp/db-mcp-test; \
 	mkdir -p /tmp/db-mcp-test; \
+	npm pack; \
+	mv *.tgz /tmp/db-mcp-test/; \
 	cd /tmp/db-mcp-test; \
-	npm pack "$(PWD)"; \
-	tar -xzf *.tgz; \
-	echo "Package contents:"; \
-	tar -tzf *.tgz; \
-	echo "To test globally, run:"; \
+	tar -tzf *.tgz | head -20; \
+	echo "\n=== Package created at /tmp/db-mcp-test/ ==="; \
+	echo "To test installation globally, run:"; \
 	echo "  npm install -g /tmp/db-mcp-test/*.tgz"; \
 	echo "  db-mcp-server --help"
 

@@ -42,7 +42,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.23'
+          go-version: '1.22'
           check-latest: true
 
       - name: Install dependencies
@@ -68,7 +68,19 @@ jobs:
           # Windows amd64
           GOOS=windows GOARCH=amd64 go build -o release/db-mcp-server-windows-amd64.exe -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
 
+      - name: Check if release already exists
+        id: check_release
+        run: |
+          VERSION=${{ needs.get-version.outputs.version }}
+          if git ls-remote --tags origin | grep -q "refs/tags/v$VERSION"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release v$VERSION already exists, skipping release creation"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create Release
+        if: steps.check_release.outputs.exists == 'false'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.get-version.outputs.version }}
@@ -102,14 +114,18 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build package
-        run: |
-          # Ensure binaries exist from release step
-          mkdir -p bin
-          # Create placeholder binaries (will be replaced by install script)
-          touch bin/db-mcp-server
-
       - name: Publish to NPM
-        run: npm publish --access public
+        run: |
+          VERSION=${{ needs.get-version.outputs.version }}
+          PKG_NAME=$(node -p "require('./package.json').name")
+          
+          echo "Preparing to publish $PKG_NAME@$VERSION to npm..."
+          
+          if npm view "$PKG_NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "Version $VERSION of $PKG_NAME is already published on npm. Skipping publish."
+            exit 0
+          fi
+          
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

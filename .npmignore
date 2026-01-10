@@ -18,6 +18,8 @@ config.json
 docs/
 *.md
 !README.md
+!CHANGELOG.md
+!LICENSE
 
 # CI/CD
 .github/
