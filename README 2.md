@@ -88,14 +88,12 @@ The server follows Clean Architecture principles with these layers:
 ## Features
 
 - **Simultaneous Multi-Database Support**: Connect to multiple MySQL and PostgreSQL databases concurrently
-- **Lazy Loading Mode**: Defer connection establishment until first use - perfect for setups with 10+ databases (enable with `--lazy-loading` flag)
 - **Database-Specific Tool Generation**: Auto-creates specialized tools for each connected database
 - **Clean Architecture**: Modular design with clear separation of concerns
 - **OpenAI Agents SDK Compatibility**: Full compatibility for seamless AI assistant integration
 - **Dynamic Database Tools**: Execute queries, run statements, manage transactions, explore schemas, analyze performance
 - **Unified Interface**: Consistent interaction patterns across different database types
 - **Connection Management**: Simple configuration for multiple database connections
-- **Health Check**: Automatic validation of database connectivity on startup
 
 ## Supported Databases
 
@@ -103,7 +101,6 @@ The server follows Clean Architecture principles with these layers:
 | ---------- | ------------------------- | ------------------------------------------------------------ |
 | MySQL      | ✅ Full Support           | Queries, Transactions, Schema Analysis, Performance Insights |
 | PostgreSQL | ✅ Full Support (v9.6-17) | Queries, Transactions, Schema Analysis, Performance Insights |
-| SQLite     | ✅ Full Support           | File-based & In-memory databases, SQLCipher encryption support |
 | TimescaleDB| ✅ Full Support           | Hypertables, Time-Series Queries, Continuous Aggregates, Compression, Retention Policies |
 
 ## Deployment Options
@@ -203,33 +200,6 @@ Create a `config.json` file with your database connections:
       "name": "db1",
       "user": "user1",
       "password": "password1"
-    },
-    {
-      "id": "sqlite_app",
-      "type": "sqlite",
-      "database_path": "./data/app.db",
-      "journal_mode": "WAL",
-      "cache_size": 2000,
-      "read_only": false,
-      "use_modernc_driver": true,
-      "query_timeout": 30,
-      "max_open_conns": 1,
-      "max_idle_conns": 1
-    },
-    {
-      "id": "sqlite_encrypted",
-      "type": "sqlite",
-      "database_path": "./data/secure.db",
-      "encryption_key": "your-secret-key-here",
-      "journal_mode": "WAL",
-      "use_modernc_driver": false
-    },
-    {
-      "id": "sqlite_memory",
-      "type": "sqlite",
-      "database_path": ":memory:",
-      "cache_size": 1000,
-      "use_modernc_driver": true
     }
   ]
 }
@@ -244,87 +214,12 @@ Create a `config.json` file with your database connections:
 # SSE transport options
 ./bin/server -t sse -host <hostname> -port <port> -c <config-file>
 
-# Lazy loading mode (recommended for 10+ databases)
-./bin/server -t stdio -c <config-file> --lazy-loading
-
-# Customize log directory (useful for multi-project setups)
-./bin/server -t stdio -c <config-file> -log-dir /tmp/db-mcp-logs
-
 # Inline database configuration
 ./bin/server -t stdio -db-config '{"connections":[...]}'
 
 # Environment variable configuration
 export DB_CONFIG='{"connections":[...]}'
 ./bin/server -t stdio
-```
-
-**Available Flags:**
-- `-t, -transport`: Transport mode (`stdio` or `sse`)
-- `-c, -config`: Path to database configuration file
-- `-p, -port`: Server port for SSE mode (default: 9092)
-- `-h, -host`: Server host for SSE mode (default: localhost)
-- `-log-level`: Log level (`debug`, `info`, `warn`, `error`)
-- `-log-dir`: Directory for log files (default: `./logs` in current directory)
-- `-db-config`: Inline JSON database configuration
-
-## SQLite Configuration Options
-
-When using SQLite databases, you can leverage these additional configuration options:
-
-### SQLite Connection Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `database_path` | string | Required | Path to SQLite database file or `:memory:` for in-memory |
-| `encryption_key` | string | - | Key for SQLCipher encrypted databases |
-| `read_only` | boolean | false | Open database in read-only mode |
-| `cache_size` | integer | 2000 | SQLite cache size in pages |
-| `journal_mode` | string | "WAL" | Journal mode: DELETE, TRUNCATE, PERSIST, WAL, OFF |
-| `use_modernc_driver` | boolean | true | Use modernc.org/sqlite (CGO-free) or mattn/go-sqlite3 |
-
-### SQLite Examples
-
-#### Basic File Database
-```json
-{
-  "id": "my_sqlite_db",
-  "type": "sqlite",
-  "database_path": "./data/myapp.db",
-  "journal_mode": "WAL",
-  "cache_size": 2000
-}
-```
-
-#### Encrypted Database (SQLCipher)
-```json
-{
-  "id": "encrypted_db",
-  "type": "sqlite",
-  "database_path": "./data/secure.db",
-  "encryption_key": "your-secret-encryption-key",
-  "use_modernc_driver": false
-}
-```
-
-#### In-Memory Database
-```json
-{
-  "id": "memory_db",
-  "type": "sqlite",
-  "database_path": ":memory:",
-  "cache_size": 1000
-}
-```
-
-#### Read-Only Database
-```json
-{
-  "id": "reference_data",
-  "type": "sqlite",
-  "database_path": "./data/reference.db",
-  "read_only": true,
-  "journal_mode": "DELETE"
-}
 ```
 
 ## Available Tools
@@ -373,14 +268,11 @@ For detailed documentation on TimescaleDB tools, see [TIMESCALEDB_TOOLS.md](docs
 ### Querying Multiple Databases
 
 ```sql
--- Query the MySQL database
+-- Query the first database
 query_mysql1("SELECT * FROM users LIMIT 10")
 
--- Query the PostgreSQL database in the same context
+-- Query the second database in the same context
 query_postgres1("SELECT * FROM products WHERE price > 100")
-
--- Query the SQLite database
-query_sqlite_app("SELECT * FROM local_data WHERE created_at > datetime('now', '-1 day')")
 ```
 
 ### Managing Transactions
@@ -410,23 +302,6 @@ schema_mysql1("columns", "users")
 
 -- Get constraints
 schema_mysql1("constraints", "orders")
-```
-
-### Working with SQLite-Specific Features
-
-```sql
--- Create a table in SQLite
-execute_sqlite_app("CREATE TABLE IF NOT EXISTS local_cache (key TEXT PRIMARY KEY, value TEXT, timestamp DATETIME)")
-
--- Use SQLite-specific date functions
-query_sqlite_app("SELECT * FROM events WHERE date(created_at) = date('now')")
-
--- Query SQLite master table for schema information
-query_sqlite_app("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-
--- Performance optimization with WAL mode
-execute_sqlite_app("PRAGMA journal_mode = WAL")
-execute_sqlite_app("PRAGMA synchronous = NORMAL")
 ```
 
 ## Troubleshooting

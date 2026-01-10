@@ -1,0 +1,31 @@
+# Git files
+.git
+.gitignore
+
+# Build artifacts
+mcp-server
+mcp-client
+mcp-simple-client
+
+# Development environment files
+.env
+
+# Editor files
+.vscode
+.idea
+
+# Test files
+*_test.go
+*.test
+
+# Database files
+*.db
+
+# Documentation
+README.md
+docs/
+LICENSE
+
+# OS specific
+.DS_Store
+Thumbs.db 

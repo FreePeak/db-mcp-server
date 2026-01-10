@@ -1,0 +1,88 @@
+{
+    "connections": [
+        {
+            "id": "mysql1",
+            "type": "mysql",
+            "host": "mysql1",
+            "port": 3306,
+            "name": "db1",
+            "user": "user1",
+            "password": "password1",
+            "max_open_conns": 20,
+            "max_idle_conns": 5,
+            "conn_max_lifetime_seconds": 300,
+            "conn_max_idle_time_seconds": 60,
+            "query_timeout": 60
+        },
+        {
+            "id": "mysql2",
+            "type": "mysql",
+            "host": "mysql2",
+            "port": 3306,
+            "name": "db2",
+            "user": "user2",
+            "password": "password2",
+            "max_open_conns": 20,
+            "max_idle_conns": 5,
+            "conn_max_lifetime_seconds": 300,
+            "conn_max_idle_time_seconds": 60,
+            "query_timeout": 45
+        },
+        {
+            "id": "postgres1",
+            "type": "postgres",
+            "host": "postgres1",
+            "port": 5432,
+            "name": "db1",
+            "user": "user1",
+            "password": "password1",
+            "ssl_mode": "disable",
+            "application_name": "db-mcp-server",
+            "connect_timeout": 10,
+            "query_timeout": 60,
+            "max_open_conns": 20,
+            "max_idle_conns": 5,
+            "conn_max_lifetime_seconds": 300,
+            "conn_max_idle_time_seconds": 60
+        },
+        {
+            "id": "postgres2",
+            "type": "postgres",
+            "host": "postgres2",
+            "port": 5432,
+            "name": "db2",
+            "user": "user2",
+            "password": "password2",
+            "ssl_mode": "prefer",
+            "application_name": "db-mcp-server",
+            "connect_timeout": 15,
+            "query_timeout": 90,
+            "target_session_attrs": "any",
+            "options": {
+                "application_name": "db-mcp-server",
+                "client_encoding": "UTF8"
+            },
+            "max_open_conns": 25,
+            "max_idle_conns": 5,
+            "conn_max_lifetime_seconds": 300,
+            "conn_max_idle_time_seconds": 60
+        },
+        {
+            "id": "postgres3",
+            "type": "postgres",
+            "host": "postgres3",
+            "port": 5432,
+            "name": "screenerdb",
+            "user": "screener",
+            "password": "screenerpass",
+            "ssl_mode": "disable",
+            "application_name": "db-mcp-server",
+            "connect_timeout": 10,
+            "query_timeout": 120,
+            "max_open_conns": 20,
+            "max_idle_conns": 5,
+            "conn_max_lifetime_seconds": 300,
+            "conn_max_idle_time_seconds": 60
+        }
+    ]
+}

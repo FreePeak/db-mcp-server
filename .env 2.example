@@ -1,0 +1,21 @@
+# Server Configuration
+SERVER_PORT=9090
+TRANSPORT_MODE=sse
+# Logging configuration
+LOG_LEVEL=info
+
+# Legacy Single Database Configuration (optional)
+DB_TYPE=mysql
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=user
+DB_PASSWORD=password
+DB_NAME=dbname
+
+# Multi-Database Configuration
+DB_CONFIG_FILE=config.json
+
+# Additional Settings
+DEBUG=true
+
+# Note: Create a copy of this file as .env and modify it with your own values 
