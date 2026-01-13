@@ -56,6 +56,15 @@ Unlike traditional database connectors, DB MCP Server can connect to and interac
       "name": "db2",
       "user": "user2",
       "password": "password2"
+    },
+    {
+      "id": "oracle1",
+      "type": "oracle",
+      "host": "localhost",
+      "port": 1521,
+      "service_name": "XEPDB1",
+      "user": "user3",
+      "password": "password3"
     }
   ]
 }
@@ -85,7 +94,7 @@ The server follows Clean Architecture principles with these layers:
 
 ## Features
 
-- **Simultaneous Multi-Database Support**: Connect to multiple MySQL and PostgreSQL databases concurrently
+- **Simultaneous Multi-Database Support**: Connect to multiple MySQL, PostgreSQL, SQLite, and Oracle databases concurrently
 - **Lazy Loading Mode**: Defer connection establishment until first use - perfect for setups with 10+ databases (enable with `--lazy-loading` flag)
 - **Database-Specific Tool Generation**: Auto-creates specialized tools for each connected database
 - **Clean Architecture**: Modular design with clear separation of concerns
@@ -102,6 +111,7 @@ The server follows Clean Architecture principles with these layers:
 | MySQL      | ✅ Full Support           | Queries, Transactions, Schema Analysis, Performance Insights |
 | PostgreSQL | ✅ Full Support (v9.6-17) | Queries, Transactions, Schema Analysis, Performance Insights |
 | SQLite     | ✅ Full Support           | File-based & In-memory databases, SQLCipher encryption support |
+| Oracle     | ✅ Full Support (10g-23c) | Queries, Transactions, Schema Analysis, RAC, Cloud Wallet, TNS |
 | TimescaleDB| ✅ Full Support           | Hypertables, Time-Series Queries, Continuous Aggregates, Compression, Retention Policies |
 
 ## Deployment Options
@@ -325,6 +335,120 @@ When using SQLite databases, you can leverage these additional configuration opt
 }
 ```
 
+## Oracle Configuration Options
+
+When using Oracle databases, you can leverage these additional configuration options:
+
+### Oracle Connection Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `host` | string | Required | Oracle database host |
+| `port` | integer | 1521 | Oracle listener port |
+| `service_name` | string | - | Service name (recommended for RAC) |
+| `sid` | string | - | System identifier (legacy, use service_name instead) |
+| `user` | string | Required | Database username |
+| `password` | string | Required | Database password |
+| `wallet_location` | string | - | Path to Oracle Cloud wallet directory |
+| `tns_admin` | string | - | Path to directory containing tnsnames.ora |
+| `tns_entry` | string | - | Named entry from tnsnames.ora |
+| `edition` | string | - | Edition-Based Redefinition edition name |
+| `pooling` | boolean | false | Enable driver-level connection pooling |
+| `standby_sessions` | boolean | false | Allow queries on standby databases |
+| `nls_lang` | string | AMERICAN_AMERICA.AL32UTF8 | Character set configuration |
+
+### Oracle Examples
+
+#### Basic Oracle Connection (Development)
+```json
+{
+  "id": "oracle_dev",
+  "type": "oracle",
+  "host": "localhost",
+  "port": 1521,
+  "service_name": "XEPDB1",
+  "user": "testuser",
+  "password": "testpass",
+  "max_open_conns": 50,
+  "max_idle_conns": 10,
+  "conn_max_lifetime_seconds": 1800
+}
+```
+
+#### Oracle with SID (Legacy)
+```json
+{
+  "id": "oracle_legacy",
+  "type": "oracle",
+  "host": "oracledb.company.com",
+  "port": 1521,
+  "sid": "ORCL",
+  "user": "app_user",
+  "password": "app_password"
+}
+```
+
+#### Oracle Cloud Autonomous Database (with Wallet)
+```json
+{
+  "id": "oracle_cloud",
+  "type": "oracle",
+  "user": "ADMIN",
+  "password": "your-cloud-password",
+  "wallet_location": "/path/to/wallet_DBNAME",
+  "service_name": "dbname_high"
+}
+```
+
+#### Oracle RAC (Real Application Clusters)
+```json
+{
+  "id": "oracle_rac",
+  "type": "oracle",
+  "host": "scan.company.com",
+  "port": 1521,
+  "service_name": "production",
+  "user": "app_user",
+  "password": "app_password",
+  "max_open_conns": 100,
+  "max_idle_conns": 20
+}
+```
+
+#### Oracle with TNS Entry
+```json
+{
+  "id": "oracle_tns",
+  "type": "oracle",
+  "tns_admin": "/opt/oracle/network/admin",
+  "tns_entry": "PROD_DB",
+  "user": "app_user",
+  "password": "app_password"
+}
+```
+
+#### Oracle with Edition-Based Redefinition
+```json
+{
+  "id": "oracle_ebr",
+  "type": "oracle",
+  "host": "oracledb.company.com",
+  "port": 1521,
+  "service_name": "production",
+  "user": "app_user",
+  "password": "app_password",
+  "edition": "v2_0"
+}
+```
+
+### Oracle Connection String Priority
+
+When multiple connection methods are configured, the following priority is used:
+
+1. **TNS Entry** (if `tns_entry` and `tns_admin` are configured)
+2. **Wallet** (if `wallet_location` is configured) - for Oracle Cloud
+3. **Standard** (host:port/service_name) - default method
+
 ## Available Tools
 
 For each connected database, DB MCP Server automatically generates these specialized tools:
@@ -379,6 +503,9 @@ query_postgres1("SELECT * FROM products WHERE price > 100")
 
 -- Query the SQLite database
 query_sqlite_app("SELECT * FROM local_data WHERE created_at > datetime('now', '-1 day')")
+
+-- Query the Oracle database
+query_oracle_dev("SELECT * FROM employees WHERE hire_date > SYSDATE - 30")
 ```
 
 ### Managing Transactions
@@ -425,6 +552,29 @@ query_sqlite_app("SELECT name, sql FROM sqlite_master WHERE type='table' AND nam
 -- Performance optimization with WAL mode
 execute_sqlite_app("PRAGMA journal_mode = WAL")
 execute_sqlite_app("PRAGMA synchronous = NORMAL")
+```
+
+### Working with Oracle-Specific Features
+
+```sql
+-- Query user tables (excludes system schemas)
+query_oracle_dev("SELECT table_name FROM user_tables ORDER BY table_name")
+
+-- Use Oracle-specific date functions
+query_oracle_dev("SELECT employee_id, hire_date FROM employees WHERE hire_date >= TRUNC(SYSDATE, 'YEAR')")
+
+-- Oracle sequence operations
+execute_oracle_dev("CREATE SEQUENCE emp_seq START WITH 1000 INCREMENT BY 1")
+query_oracle_dev("SELECT emp_seq.NEXTVAL FROM DUAL")
+
+-- Oracle-specific data types
+query_oracle_dev("SELECT order_id, TO_CHAR(order_date, 'YYYY-MM-DD HH24:MI:SS') FROM orders")
+
+-- Get schema metadata from Oracle data dictionary
+query_oracle_dev("SELECT column_name, data_type, nullable FROM user_tab_columns WHERE table_name = 'EMPLOYEES'")
+
+-- Use Oracle analytic functions
+query_oracle_dev("SELECT employee_id, salary, RANK() OVER (ORDER BY salary DESC) as salary_rank FROM employees")
 ```
 
 ## Troubleshooting
