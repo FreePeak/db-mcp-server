@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  oracle-xe:
+    image: gvenzl/oracle-xe:21-slim
+    container_name: db-mcp-oracle-test
+    ports:
+      - "1521:1521"
+    environment:
+      # Oracle system password
+      ORACLE_PASSWORD: oracle
+      # Default database name
+      ORACLE_DATABASE: TESTDB
+      # Create application user
+      APP_USER: testuser
+      APP_USER_PASSWORD: testpass
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      - ./scripts/oracle-init:/container-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks:
+      - db-network
+
+volumes:
+  oracle-data:
+    driver: local
+
+networks:
+  db-network:
+    driver: bridge

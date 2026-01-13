@@ -18,6 +18,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/sijms/go-ora/v2"
 	_ "modernc.org/sqlite"
 )
 
@@ -82,6 +83,17 @@ type Config struct {
 	JournalMode      SQLiteJournalMode // Journal mode for SQLite
 	UseModerncDriver bool              // Use modernc.org/sqlite driver instead of mattn/go-sqlite3
 
+	// Oracle specific options
+	ServiceName     string // Oracle service name (preferred over SID)
+	SID             string // Oracle SID (legacy)
+	WalletLocation  string // Path to Oracle Cloud wallet
+	TNSAdmin        string // Path to tnsnames.ora directory
+	TNSEntry        string // TNS entry name from tnsnames.ora
+	Edition         string // Oracle Edition-Based Redefinition
+	Pooling         bool   // Enable connection pooling
+	StandbySessions bool   // Allow connections to standby database
+	NLSLang         string // NLS_LANG setting (e.g., "AMERICAN_AMERICA.AL32UTF8")
+
 	// Connection pool settings
 	MaxOpenConns    int
 	MaxIdleConns    int
@@ -105,6 +117,29 @@ func (c *Config) SetDefaults() {
 	}
 	if c.Type == "postgres" && c.SSLMode == "" {
 		c.SSLMode = SSLDisable
+	}
+	if c.Type == "oracle" {
+		if c.Port == 0 {
+			c.Port = 1521
+		}
+		// Default to service name if both service name and SID are empty
+		if c.ServiceName == "" && c.SID == "" {
+			c.ServiceName = c.Name
+		}
+		// Default NLS settings for UTF-8
+		if c.NLSLang == "" {
+			c.NLSLang = "AMERICAN_AMERICA.AL32UTF8"
+		}
+		// Oracle benefits from larger connection pool
+		if c.MaxOpenConns == 25 {
+			c.MaxOpenConns = 50
+		}
+		if c.MaxIdleConns == 5 {
+			c.MaxIdleConns = 10
+		}
+		if c.ConnMaxLifetime == 5*time.Minute {
+			c.ConnMaxLifetime = 30 * time.Minute
+		}
 	}
 	if c.Type == "sqlite" {
 		if c.JournalMode == "" {
@@ -215,6 +250,117 @@ func buildPostgresConnStr(config Config) string {
 	return strings.Join(params, " ")
 }
 
+// buildOracleConnStr builds an Oracle connection string from the config
+func buildOracleConnStr(config Config) string {
+	// Priority 1: TNS Entry (tnsnames.ora)
+	if config.TNSEntry != "" && config.TNSAdmin != "" {
+		// Use TNS alias with admin directory
+		connStr := fmt.Sprintf("oracle://%s:%s@%s",
+			config.User,
+			config.Password,
+			config.TNSEntry)
+
+		connStr += fmt.Sprintf("?tns admin=%s", config.TNSAdmin)
+
+		return addOracleOptions(connStr, config)
+	}
+
+	// Priority 2: Oracle Cloud Wallet
+	if config.WalletLocation != "" {
+		// For Oracle Cloud Autonomous Database
+		serviceName := config.ServiceName
+		if serviceName == "" {
+			serviceName = config.Name
+		}
+
+		connStr := fmt.Sprintf("oracle://%s:%s@%s",
+			config.User,
+			config.Password,
+			serviceName)
+
+		connStr += fmt.Sprintf("?wallet location=%s", config.WalletLocation)
+
+		return addOracleOptions(connStr, config)
+	}
+
+	// Priority 3: Standard Connection (host:port/service)
+	host := config.Host
+	port := config.Port
+	if port == 0 {
+		port = 1521
+	}
+
+	// Prefer service name over SID
+	databaseIdentifier := config.ServiceName
+	if databaseIdentifier == "" && config.SID != "" {
+		databaseIdentifier = config.SID
+	} else if databaseIdentifier == "" {
+		databaseIdentifier = config.Name
+	}
+
+	// EZ Connect format: oracle://user:password@host:port/service_name
+	connStr := fmt.Sprintf("oracle://%s:%s@%s:%d/%s",
+		config.User,
+		config.Password,
+		host,
+		port,
+		databaseIdentifier)
+
+	return addOracleOptions(connStr, config)
+}
+
+// addOracleOptions adds optional parameters to Oracle connection string
+func addOracleOptions(connStr string, config Config) string {
+	params := make(map[string]string)
+
+	// Connection timeout (in seconds)
+	if config.ConnectTimeout > 0 {
+		params["timeout"] = fmt.Sprintf("%d", config.ConnectTimeout)
+	}
+
+	// NLS Language settings
+	if config.NLSLang != "" {
+		params["language"] = config.NLSLang
+	}
+
+	// Edition-based redefinition
+	if config.Edition != "" {
+		params["edition"] = config.Edition
+	}
+
+	// Connection pooling
+	if config.Pooling {
+		params["pooling"] = "true"
+	}
+
+	// Standby database support (read-only)
+	if config.StandbySessions {
+		params["standby"] = "true"
+	}
+
+	// Additional custom options
+	for key, value := range config.Options {
+		params[key] = value
+	}
+
+	// Append parameters
+	if len(params) > 0 {
+		separator := "?"
+		if strings.Contains(connStr, "?") {
+			separator = "&"
+		}
+
+		var paramPairs []string
+		for key, value := range params {
+			paramPairs = append(paramPairs, fmt.Sprintf("%s=%s", key, value))
+		}
+
+		connStr += separator + strings.Join(paramPairs, "&")
+	}
+
+	return connStr
+}
+
 // buildSQLiteConnStr builds a SQLite connection string with all options
 func buildSQLiteConnStr(config Config) string {
 	// Validate and clean the database path
@@ -295,6 +441,9 @@ func NewDatabase(config Config) (Database, error) {
 	case "postgres":
 		driverName = "postgres"
 		dsn = buildPostgresConnStr(config)
+	case "oracle":
+		driverName = "oracle"
+		dsn = buildOracleConnStr(config)
 	case "sqlite":
 		// Choose driver based on configuration
 		if config.UseModerncDriver || config.EncryptionKey == "" {
@@ -368,7 +517,8 @@ func (d *database) Connect() error {
 	}
 
 	// Log connection info
-	if d.config.Type == "sqlite" {
+	switch d.config.Type {
+	case "sqlite":
 		dbPath := d.config.DatabasePath
 		if dbPath == "" {
 			dbPath = d.config.Name
@@ -378,7 +528,15 @@ func (d *database) Connect() error {
 		} else {
 			logger.Info("Connected to %s database at %s", d.config.Type, dbPath)
 		}
-	} else {
+	case "oracle":
+		if d.config.WalletLocation != "" {
+			logger.Info("Connected to Oracle Cloud database (wallet auth)")
+		} else if d.config.TNSEntry != "" {
+			logger.Info("Connected to Oracle database via TNS: %s", d.config.TNSEntry)
+		} else {
+			logger.Info("Connected to Oracle database at %s:%d/%s", d.config.Host, d.config.Port, d.config.Name)
+		}
+	default:
 		logger.Info("Connected to %s database at %s:%d/%s", d.config.Type, d.config.Host, d.config.Port, d.config.Name)
 	}
 
@@ -473,6 +631,22 @@ func (d *database) ConnectionString() string {
 		}
 
 		return strings.Join(params, " ")
+	case "oracle":
+		// Mask Oracle connection string
+		if d.config.WalletLocation != "" {
+			serviceName := d.config.ServiceName
+			if serviceName == "" {
+				serviceName = d.config.Name
+			}
+			return fmt.Sprintf("oracle://%s:***@%s (wallet: %s)",
+				d.config.User, serviceName, d.config.WalletLocation)
+		}
+		if d.config.TNSEntry != "" {
+			return fmt.Sprintf("oracle://%s:***@%s (TNS)",
+				d.config.User, d.config.TNSEntry)
+		}
+		return fmt.Sprintf("oracle://%s:***@%s:%d/%s",
+			d.config.User, d.config.Host, d.config.Port, d.config.Name)
 	case "sqlite":
 		dbPath := d.config.DatabasePath
 		if dbPath == "" {
