@@ -111,9 +111,6 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Install dependencies
-        run: npm install
-
       - name: Publish to NPM
         run: |
           VERSION=${{ needs.get-version.outputs.version }}
