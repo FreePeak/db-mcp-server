@@ -1,0 +1,131 @@
+name: NPM Publish & Release
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'package.json'
+      - 'go.mod'
+      - '**.go'
+      - 'Makefile'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  get-version:
+    name: Get Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Get version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+  build-and-release:
+    name: Build & Release
+    needs: get-version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+          check-latest: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Build for all platforms
+        run: |
+          VERSION=${{ needs.get-version.outputs.version }}
+          mkdir -p release
+
+          # macOS amd64
+          GOOS=darwin GOARCH=amd64 go build -o release/db-mcp-server-darwin-amd64 -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
+
+          # macOS arm64
+          GOOS=darwin GOARCH=arm64 go build -o release/db-mcp-server-darwin-arm64 -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
+
+          # Linux amd64
+          GOOS=linux GOARCH=amd64 go build -o release/db-mcp-server-linux-amd64 -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
+
+          # Linux arm64
+          GOOS=linux GOARCH=arm64 go build -o release/db-mcp-server-linux-arm64 -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
+
+          # Windows amd64
+          GOOS=windows GOARCH=amd64 go build -o release/db-mcp-server-windows-amd64.exe -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
+
+      - name: Check if release already exists
+        id: check_release
+        run: |
+          VERSION=${{ needs.get-version.outputs.version }}
+          if git ls-remote --tags origin | grep -q "refs/tags/v$VERSION"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release v$VERSION already exists, skipping release creation"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        if: steps.check_release.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.get-version.outputs.version }}
+          name: Release v${{ needs.get-version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            release/db-mcp-server-darwin-amd64
+            release/db-mcp-server-darwin-arm64
+            release/db-mcp-server-linux-amd64
+            release/db-mcp-server-linux-arm64
+            release/db-mcp-server-windows-amd64.exe
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-npm:
+    name: Publish to NPM
+    needs: [get-version, build-and-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Publish to NPM
+        run: |
+          VERSION=${{ needs.get-version.outputs.version }}
+          PKG_NAME=$(node -p "require('./package.json').name")
+          
+          echo "Preparing to publish $PKG_NAME@$VERSION to npm..."
+          
+          if npm view "$PKG_NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "Version $VERSION of $PKG_NAME is already published on npm. Skipping publish."
+            exit 0
+          fi
+          
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
