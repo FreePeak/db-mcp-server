@@ -104,8 +104,13 @@ jobs:
     - name: Wait for Oracle to be ready
       run: |
         echo "Waiting for Oracle to initialize..."
+        ORACLE_CONTAINER=$(docker ps -q --filter ancestor=gvenzl/oracle-xe:21-slim)
+        if [ -z "$ORACLE_CONTAINER" ]; then
+          echo "Error: Oracle container not found"
+          exit 1
+        fi
         for i in {1..60}; do
-          if docker exec $(docker ps -q --filter ancestor=gvenzl/oracle-xe:21-slim) healthcheck.sh 2>/dev/null; then
+          if docker exec $ORACLE_CONTAINER healthcheck.sh 2>/dev/null; then
             echo "Oracle is ready!"
             break
           fi
@@ -116,7 +121,12 @@ jobs:
     - name: Initialize Oracle test schema
       run: |
         echo "Initializing Oracle test schema..."
-        docker exec $(docker ps -q --filter ancestor=gvenzl/oracle-xe:21-slim) sqlplus -s testuser/testpass@TESTDB <<EOF
+        ORACLE_CONTAINER=$(docker ps -q --filter ancestor=gvenzl/oracle-xe:21-slim)
+        if [ -z "$ORACLE_CONTAINER" ]; then
+          echo "Error: Oracle container not found"
+          exit 1
+        fi
+        docker exec $ORACLE_CONTAINER sqlplus -s testuser/testpass@TESTDB <<EOF
         CREATE TABLE test_users (
             id NUMBER(10) PRIMARY KEY,
             username VARCHAR2(50) NOT NULL,

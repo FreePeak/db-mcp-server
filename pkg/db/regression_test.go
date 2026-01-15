@@ -174,15 +174,8 @@ func testExecuteOperations(t *testing.T, database Database, dbType string) {
 		_, _ = database.Exec(ctx, "DROP TABLE "+tableName)
 	}()
 
-	// Insert data
-	var insertSQL string
-	switch dbType {
-	case "oracle":
-		insertSQL = "INSERT INTO " + tableName + " (id, name, value) VALUES (1, 'test', 100)"
-	default:
-		insertSQL = "INSERT INTO " + tableName + " (id, name, value) VALUES (1, 'test', 100)"
-	}
-
+	// Insert data - same SQL works for all database types
+	insertSQL := "INSERT INTO " + tableName + " (id, name, value) VALUES (1, 'test', 100)"
 	result, err := database.Exec(ctx, insertSQL)
 	require.NoError(t, err, "Insert failed")
 
