@@ -354,20 +354,23 @@ func testOraclePerformanceTool(t *testing.T, database db.Database) {
 
 	// Test query with EXPLAIN PLAN
 	// Note: Oracle requires EXPLAIN PLAN to be used differently than other databases
-	_, _ = database.Exec(ctx, "DELETE FROM PLAN_TABLE")
+	// PLAN_TABLE might not exist in all Oracle installations, so we handle errors gracefully
+	
+	// Try to clean up any existing plan data - ignore errors if table doesn't exist
+	_, _ = database.Exec(ctx, "DELETE FROM PLAN_TABLE WHERE statement_id IS NULL OR statement_id = 'test'")
 
-	// Execute EXPLAIN PLAN
+	// Execute EXPLAIN PLAN - this will fail if test_users doesn't exist or PLAN_TABLE isn't available
 	_, err := database.Exec(ctx, `
-		EXPLAIN PLAN FOR
+		EXPLAIN PLAN SET STATEMENT_ID = 'test' FOR
 		SELECT * FROM test_users WHERE id = 1
 	`)
-	// If the table doesn't exist, that's okay for this test
+	// If EXPLAIN PLAN succeeds, verify we can read the plan
 	if err == nil {
 		// Query the plan table
 		rows, err := database.Query(ctx, `
 			SELECT operation, options, object_name
 			FROM PLAN_TABLE
-			WHERE statement_id IS NULL
+			WHERE statement_id = 'test'
 			ORDER BY id
 		`)
 		if err == nil {

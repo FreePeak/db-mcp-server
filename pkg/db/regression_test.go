@@ -147,11 +147,7 @@ func testExecuteOperations(t *testing.T, database Database, dbType string) {
 
 	// Drop table if exists (different syntax per database)
 	switch dbType {
-	case "mysql":
-		_, _ = database.Exec(ctx, "DROP TABLE IF EXISTS "+tableName)
-	case "postgres":
-		_, _ = database.Exec(ctx, "DROP TABLE IF EXISTS "+tableName)
-	case "sqlite":
+	case "mysql", "postgres", "sqlite":
 		_, _ = database.Exec(ctx, "DROP TABLE IF EXISTS "+tableName)
 	case "oracle":
 		_, _ = database.Exec(ctx, "DROP TABLE "+tableName)
@@ -160,9 +156,7 @@ func testExecuteOperations(t *testing.T, database Database, dbType string) {
 	// Create table with appropriate syntax
 	var createSQL string
 	switch dbType {
-	case "mysql":
-		createSQL = "CREATE TABLE " + tableName + " (id INT PRIMARY KEY, name VARCHAR(100), value INT)"
-	case "postgres":
+	case "mysql", "postgres":
 		createSQL = "CREATE TABLE " + tableName + " (id INT PRIMARY KEY, name VARCHAR(100), value INT)"
 	case "sqlite":
 		createSQL = "CREATE TABLE " + tableName + " (id INTEGER PRIMARY KEY, name TEXT, value INTEGER)"
@@ -229,11 +223,7 @@ func testTransactionSupport(t *testing.T, database Database, dbType string) {
 
 	// Drop and create table
 	switch dbType {
-	case "mysql":
-		_, _ = database.Exec(ctx, "DROP TABLE IF EXISTS "+tableName)
-	case "postgres":
-		_, _ = database.Exec(ctx, "DROP TABLE IF EXISTS "+tableName)
-	case "sqlite":
+	case "mysql", "postgres", "sqlite":
 		_, _ = database.Exec(ctx, "DROP TABLE IF EXISTS "+tableName)
 	case "oracle":
 		_, _ = database.Exec(ctx, "DROP TABLE "+tableName)
@@ -241,9 +231,7 @@ func testTransactionSupport(t *testing.T, database Database, dbType string) {
 
 	var createSQL string
 	switch dbType {
-	case "mysql":
-		createSQL = "CREATE TABLE " + tableName + " (id INT PRIMARY KEY, value VARCHAR(50))"
-	case "postgres":
+	case "mysql", "postgres":
 		createSQL = "CREATE TABLE " + tableName + " (id INT PRIMARY KEY, value VARCHAR(50))"
 	case "sqlite":
 		createSQL = "CREATE TABLE " + tableName + " (id INTEGER PRIMARY KEY, value TEXT)"
@@ -307,17 +295,14 @@ func testDataTypeSupport(t *testing.T, database Database, dbType string) {
 
 	// Drop table if exists
 	switch dbType {
-	case "mysql":
-		_, _ = database.Exec(ctx, "DROP TABLE IF EXISTS "+tableName)
-	case "postgres":
-		_, _ = database.Exec(ctx, "DROP TABLE IF EXISTS "+tableName)
-	case "sqlite":
+	case "mysql", "postgres", "sqlite":
 		_, _ = database.Exec(ctx, "DROP TABLE IF EXISTS "+tableName)
 	case "oracle":
 		_, _ = database.Exec(ctx, "DROP TABLE "+tableName)
 	}
 
 	// Create table with various data types
+	// Note: MySQL and PostgreSQL have slight differences in data types but we test them separately
 	var createSQL string
 	switch dbType {
 	case "mysql":
