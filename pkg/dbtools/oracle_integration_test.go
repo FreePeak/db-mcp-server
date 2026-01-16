@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/FreePeak/db-mcp-server/pkg/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/FreePeak/db-mcp-server/pkg/db"
 )
 
 // TestOracleIntegration tests Oracle database integration with dbtools
@@ -227,7 +228,7 @@ func testOracleSchemaTool(t *testing.T, database db.Database) {
 		var colName, dataType, nullable string
 		err = rows.Scan(&colName, &dataType, &nullable)
 		require.NoError(t, err)
-		
+
 		if columnCount < len(expectedColumns) {
 			assert.Equal(t, expectedColumns[columnCount].name, colName)
 			assert.Contains(t, dataType, expectedColumns[columnCount].dataType)
@@ -355,7 +356,7 @@ func testOraclePerformanceTool(t *testing.T, database db.Database) {
 	// Test query with EXPLAIN PLAN
 	// Note: Oracle requires EXPLAIN PLAN to be used differently than other databases
 	// PLAN_TABLE might not exist in all Oracle installations, so we handle errors gracefully
-	
+
 	// Try to clean up any existing plan data - ignore errors if table doesn't exist
 	_, _ = database.Exec(ctx, "DELETE FROM PLAN_TABLE WHERE statement_id IS NULL OR statement_id = 'test'")
 
