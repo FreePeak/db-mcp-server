@@ -146,6 +146,7 @@ jobs:
         MYSQL_TEST_HOST: localhost
         POSTGRES_TEST_HOST: localhost
         ORACLE_TEST_HOST: localhost
+        NLS_LANG: AMERICAN_AMERICA.UTF8
       run: |
         echo "Running database integration tests..."
         go test -v -race -coverprofile=coverage.txt -covermode=atomic ./pkg/db -run TestOracle
@@ -157,6 +158,7 @@ jobs:
         MYSQL_TEST_HOST: localhost
         POSTGRES_TEST_HOST: localhost
         ORACLE_TEST_HOST: localhost
+        NLS_LANG: AMERICAN_AMERICA.UTF8
       run: |
         echo "Running connection pooling tests..."
         go test -v ./pkg/db -run TestConnectionPooling
