@@ -210,6 +210,9 @@ func getZapLevel(level Level) zap.AtomicLevel {
 
 // Debug logs a debug message
 func Debug(format string, v ...interface{}) {
+	if zapLogger == nil {
+		return
+	}
 	if logLevel > LevelDebug {
 		return
 	}
@@ -219,6 +222,9 @@ func Debug(format string, v ...interface{}) {
 
 // Info logs an info message
 func Info(format string, v ...interface{}) {
+	if zapLogger == nil {
+		return
+	}
 	if logLevel > LevelInfo {
 		return
 	}
@@ -228,6 +234,9 @@ func Info(format string, v ...interface{}) {
 
 // Warn logs a warning message
 func Warn(format string, v ...interface{}) {
+	if zapLogger == nil {
+		return
+	}
 	if logLevel > LevelWarn {
 		return
 	}
@@ -237,6 +246,9 @@ func Warn(format string, v ...interface{}) {
 
 // Error logs an error message
 func Error(format string, v ...interface{}) {
+	if zapLogger == nil {
+		return
+	}
 	if logLevel > LevelError {
 		return
 	}

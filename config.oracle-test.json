@@ -1,0 +1,17 @@
+{
+  "connections": [
+    {
+      "id": "oracle_test",
+      "type": "oracle",
+      "host": "localhost",
+      "port": 1521,
+      "service_name": "TESTDB",
+      "user": "testuser",
+      "password": "testpass",
+      "query_timeout": 30,
+      "max_open_conns": 10,
+      "max_idle_conns": 5,
+      "conn_max_lifetime_seconds": 1800
+    }
+  ]
+}

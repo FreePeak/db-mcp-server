@@ -9,6 +9,8 @@ multidb-linux
 *.out
 *.test
 coverage.out
+coverage.txt
+coverage.html
 
 # Dependency directories
 vendor/

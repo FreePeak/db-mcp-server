@@ -12,7 +12,7 @@ import (
 // DatabaseConnectionConfig represents a single database connection configuration
 type DatabaseConnectionConfig struct {
 	ID       string `json:"id"`   // Unique identifier for this connection
-	Type     string `json:"type"` // mysql, postgres, or sqlite
+	Type     string `json:"type"` // mysql, postgres, oracle, or sqlite
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	User     string `json:"user"`
@@ -100,8 +100,8 @@ func (m *Manager) LoadConfig(configJSON []byte) error {
 		if conn.ID == "" {
 			return fmt.Errorf("database connection ID cannot be empty")
 		}
-		if conn.Type != "mysql" && conn.Type != "postgres" && conn.Type != "sqlite" {
-			return fmt.Errorf("unsupported database type for connection %s: %s", conn.ID, conn.Type)
+		if conn.Type != "mysql" && conn.Type != "postgres" && conn.Type != "oracle" && conn.Type != "sqlite" {
+			return fmt.Errorf("unsupported database type for connection %s: %s (must be mysql, postgres, oracle, or sqlite)", conn.ID, conn.Type)
 		}
 
 		// SQLite-specific validation
@@ -158,6 +158,38 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 		dbConfig.ConnectTimeout = cfg.ConnectTimeout
 		dbConfig.QueryTimeout = cfg.QueryTimeout
 		dbConfig.TargetSessionAttrs = cfg.TargetSessionAttrs
+		dbConfig.Options = cfg.Options
+	case "oracle":
+		// Extract Oracle-specific options from Options map
+		if serviceName, ok := cfg.Options["service_name"]; ok {
+			dbConfig.ServiceName = serviceName
+		}
+		if sid, ok := cfg.Options["sid"]; ok {
+			dbConfig.SID = sid
+		}
+		if walletLoc, ok := cfg.Options["wallet_location"]; ok {
+			dbConfig.WalletLocation = walletLoc
+		}
+		if tnsAdmin, ok := cfg.Options["tns_admin"]; ok {
+			dbConfig.TNSAdmin = tnsAdmin
+		}
+		if tnsEntry, ok := cfg.Options["tns_entry"]; ok {
+			dbConfig.TNSEntry = tnsEntry
+		}
+		if edition, ok := cfg.Options["edition"]; ok {
+			dbConfig.Edition = edition
+		}
+		if pooling, ok := cfg.Options["pooling"]; ok {
+			dbConfig.Pooling = pooling == "true"
+		}
+		if standby, ok := cfg.Options["standby_sessions"]; ok {
+			dbConfig.StandbySessions = standby == "true"
+		}
+		if nlsLang, ok := cfg.Options["nls_lang"]; ok {
+			dbConfig.NLSLang = nlsLang
+		}
+		dbConfig.ConnectTimeout = cfg.ConnectTimeout
+		dbConfig.QueryTimeout = cfg.QueryTimeout
 		dbConfig.Options = cfg.Options
 	case "mysql":
 		// Set MySQL-specific options
