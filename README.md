@@ -593,6 +593,99 @@ Enable verbose logging for troubleshooting:
 ./bin/server -t sse -c config.json -v
 ```
 
+## Testing
+
+### Running Tests
+
+The project includes comprehensive unit and integration tests for all supported databases.
+
+#### Unit Tests
+
+Run unit tests (no database required):
+
+```bash
+make test
+# or
+go test -short ./...
+```
+
+#### Integration Tests
+
+Integration tests require running database instances. We provide Docker Compose configurations for easy setup.
+
+**Test All Databases:**
+
+```bash
+# Start test databases
+docker-compose -f docker-compose.test.yml up -d
+
+# Run all integration tests
+go test ./... -v
+
+# Stop test databases
+docker-compose -f docker-compose.test.yml down -v
+```
+
+**Test Oracle Database:**
+
+```bash
+# Start Oracle test environment
+./oracle-test.sh start
+
+# Run Oracle tests
+./oracle-test.sh test
+# or manually
+ORACLE_TEST_HOST=localhost go test -v ./pkg/db -run TestOracle
+ORACLE_TEST_HOST=localhost go test -v ./pkg/dbtools -run TestOracle
+
+# Stop Oracle test environment
+./oracle-test.sh stop
+
+# Full cleanup (removes volumes)
+./oracle-test.sh cleanup
+```
+
+**Test TimescaleDB:**
+
+```bash
+# Start TimescaleDB test environment
+./timescaledb-test.sh start
+
+# Run TimescaleDB tests
+TIMESCALEDB_TEST_HOST=localhost go test -v ./pkg/db/timescale ./internal/delivery/mcp
+
+# Stop TimescaleDB test environment
+./timescaledb-test.sh stop
+```
+
+#### Regression Tests
+
+Run comprehensive regression tests across all database types:
+
+```bash
+# Ensure all test databases are running
+docker-compose -f docker-compose.test.yml up -d
+./oracle-test.sh start
+
+# Run regression tests
+MYSQL_TEST_HOST=localhost \
+POSTGRES_TEST_HOST=localhost \
+ORACLE_TEST_HOST=localhost \
+go test -v ./pkg/db -run TestRegression
+
+# Run connection pooling tests
+go test -v ./pkg/db -run TestConnectionPooling
+```
+
+### Continuous Integration
+
+All tests run automatically on every pull request via GitHub Actions. The CI pipeline includes:
+
+- **Unit Tests**: Fast tests that don't require database connections
+- **Integration Tests**: Tests against MySQL, PostgreSQL, SQLite, and Oracle databases
+- **Regression Tests**: Comprehensive tests ensuring backward compatibility
+- **Linting**: Code quality checks with golangci-lint
+
 ## Contributing
 
 We welcome contributions to the DB MCP Server project! To contribute:
@@ -604,6 +697,15 @@ We welcome contributions to the DB MCP Server project! To contribute:
 5. Open a Pull Request
 
 Please see our [CONTRIBUTING.md](docs/CONTRIBUTING.md) file for detailed guidelines.
+
+### Testing Your Changes
+
+Before submitting a pull request, please ensure:
+
+1. All unit tests pass: `go test -short ./...`
+2. Integration tests pass for affected databases
+3. Code follows the project's style guidelines: `golangci-lint run ./...`
+4. New features include appropriate test coverage
 
 ## License
 
