@@ -10,6 +10,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.24
+	github.com/sijms/go-ora/v2 v2.9.0
 	go.uber.org/zap v1.27.0
 	modernc.org/sqlite v1.33.1
 )

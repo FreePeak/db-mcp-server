@@ -50,6 +50,21 @@ func (f *MySQLQueryFactory) GetTablesQueries() []string {
 	}
 }
 
+// OracleQueryFactory creates queries for Oracle
+type OracleQueryFactory struct{}
+
+// GetTablesQueries returns table queries for Oracle
+func (f *OracleQueryFactory) GetTablesQueries() []string {
+	return []string{
+		// User's own tables (most common)
+		"SELECT table_name FROM user_tables ORDER BY table_name",
+		// All tables accessible to user
+		"SELECT table_name FROM all_tables WHERE owner NOT IN ('SYS', 'SYSTEM', 'OUTLN', 'XDB', 'CTXSYS', 'MDSYS', 'WMSYS', 'ORDSYS', 'ORDDATA', 'APEX_030200', 'APEX_040000', 'APEX_040100', 'APEX_040200') ORDER BY table_name",
+		// All tables with owner prefix
+		"SELECT owner || '.' || table_name AS table_name FROM all_tables WHERE owner NOT IN ('SYS', 'SYSTEM') ORDER BY owner, table_name",
+	}
+}
+
 // GenericQueryFactory creates generic queries for unknown database types
 type GenericQueryFactory struct{}
 
@@ -68,6 +83,8 @@ func NewQueryFactory(dbType string) QueryFactory {
 		return &PostgresQueryFactory{}
 	case "mysql":
 		return &MySQLQueryFactory{}
+	case "oracle":
+		return &OracleQueryFactory{}
 	default:
 		logger.Warn("Unknown database type: %s, will use generic query factory", dbType)
 		return &GenericQueryFactory{}

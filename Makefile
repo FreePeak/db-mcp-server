@@ -37,9 +37,34 @@ test-script:
 test:
 	go test ./... -race -cover -count=1
 
+# Run unit tests only (no database required)
+test-unit:
+	go test -short ./... -race -cover
+
+# Run integration tests (requires databases)
+test-integration:
+	./run-tests.sh integration
+
+# Run Oracle tests only
+test-oracle:
+	./run-tests.sh oracle
+
+# Run regression tests
+test-regression:
+	./run-tests.sh regression
+
+# Run all tests
+test-all:
+	./run-tests.sh all
+
+# Run tests with coverage report
+test-coverage:
+	./run-tests.sh coverage
+
 # Clean build artifacts
 clean:
 	rm -f server server-linux mcp-client mcp-simple-client
+	rm -f coverage.out coverage.html coverage.txt
 	# lsof -i :9090 | grep LISTEN | awk '{print $2}' | xargs kill -9
 
 # Run linter

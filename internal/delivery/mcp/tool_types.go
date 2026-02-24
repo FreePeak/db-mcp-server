@@ -544,6 +544,7 @@ func NewToolTypeFactory() *ToolTypeFactory {
 	factory.Register(NewPerformanceTool())
 	factory.Register(NewSchemaTool())
 	factory.Register(NewListDatabasesTool())
+	factory.Register(NewListDirectoryTool())
 
 	return factory
 }

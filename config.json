@@ -83,6 +83,19 @@
             "max_idle_conns": 5,
             "conn_max_lifetime_seconds": 300,
             "conn_max_idle_time_seconds": 60
+        },
+        {
+            "id": "oracle_dev",
+            "type": "oracle",
+            "host": "localhost",
+            "port": 1521,
+            "service_name": "XEPDB1",
+            "user": "testuser",
+            "password": "testpass",
+            "max_open_conns": 50,
+            "max_idle_conns": 10,
+            "conn_max_lifetime_seconds": 1800,
+            "query_timeout": 60
         }
     ]
 }

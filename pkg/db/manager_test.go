@@ -565,3 +565,177 @@ func TestConfigMarshaling(t *testing.T) {
 		t.Errorf("MaxOpenConns mismatch: expected %d, got %d", original.MaxOpenConns, unmarshaled.MaxOpenConns)
 	}
 }
+
+// TestOracleConfigValidation tests Oracle-specific configuration validation
+func TestOracleConfigValidation(t *testing.T) {
+	manager := NewDBManager()
+
+	tests := []struct {
+		name      string
+		config    string
+		shouldErr bool
+		errMsg    string
+	}{
+		{
+			name: "valid oracle config with service name",
+			config: `{
+				"connections": [{
+					"id": "oracle1",
+					"type": "oracle",
+					"host": "localhost",
+					"port": 1521,
+					"user": "testuser",
+					"password": "testpass",
+					"name": "TESTDB",
+					"options": {
+						"service_name": "TESTDB"
+					}
+				}]
+			}`,
+			shouldErr: false,
+		},
+		{
+			name: "valid oracle config with wallet",
+			config: `{
+				"connections": [{
+					"id": "oracle_cloud",
+					"type": "oracle",
+					"user": "ADMIN",
+					"password": "pass123",
+					"name": "mydb_high",
+					"options": {
+						"wallet_location": "/app/wallet",
+						"service_name": "mydb_high"
+					}
+				}]
+			}`,
+			shouldErr: false,
+		},
+		{
+			name: "valid oracle config with TNS",
+			config: `{
+				"connections": [{
+					"id": "oracle_tns",
+					"type": "oracle",
+					"user": "user",
+					"password": "pass",
+					"options": {
+						"tns_entry": "PROD_DB",
+						"tns_admin": "/opt/oracle/admin"
+					}
+				}]
+			}`,
+			shouldErr: false,
+		},
+		{
+			name: "invalid database type",
+			config: `{
+				"connections": [{
+					"id": "invalid",
+					"type": "oracledb",
+					"host": "localhost",
+					"port": 1521,
+					"user": "test",
+					"password": "test",
+					"name": "test"
+				}]
+			}`,
+			shouldErr: true,
+			errMsg:    "unsupported database type",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := manager.LoadConfig([]byte(tt.config))
+			if tt.shouldErr {
+				if err == nil {
+					t.Error("expected error but got nil")
+				} else if tt.errMsg != "" && err.Error() == "" {
+					t.Errorf("expected error containing '%s', got '%s'", tt.errMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestBuildOracleConfig tests Oracle-specific config building
+func TestBuildOracleConfig(t *testing.T) {
+	input := DatabaseConnectionConfig{
+		ID:       "oracle-test",
+		Type:     "oracle",
+		Host:     "localhost",
+		Port:     1521,
+		User:     "testuser",
+		Password: "testpass",
+		Name:     "TESTDB",
+		Options: map[string]string{
+			"service_name":     "TESTDB",
+			"nls_lang":         "AMERICAN_AMERICA.AL32UTF8",
+			"wallet_location":  "/app/wallet",
+			"tns_admin":        "/opt/oracle/admin",
+			"tns_entry":        "PROD_DB",
+			"edition":          "ORA$BASE",
+			"pooling":          "true",
+			"standby_sessions": "true",
+		},
+		ConnectTimeout:  30,
+		QueryTimeout:    60,
+		MaxOpenConns:    50,
+		MaxIdleConns:    10,
+		ConnMaxLifetime: 1800,
+		ConnMaxIdleTime: 300,
+	}
+
+	cfg := buildDatabaseConfig(input)
+
+	if cfg.Type != "oracle" {
+		t.Errorf("expected type 'oracle', got '%s'", cfg.Type)
+	}
+	if cfg.ServiceName != "TESTDB" {
+		t.Errorf("expected ServiceName 'TESTDB', got '%s'", cfg.ServiceName)
+	}
+	if cfg.NLSLang != "AMERICAN_AMERICA.AL32UTF8" {
+		t.Errorf("expected NLSLang 'AMERICAN_AMERICA.AL32UTF8', got '%s'", cfg.NLSLang)
+	}
+	if cfg.WalletLocation != "/app/wallet" {
+		t.Errorf("expected WalletLocation '/app/wallet', got '%s'", cfg.WalletLocation)
+	}
+	if cfg.TNSAdmin != "/opt/oracle/admin" {
+		t.Errorf("expected TNSAdmin '/opt/oracle/admin', got '%s'", cfg.TNSAdmin)
+	}
+	if cfg.TNSEntry != "PROD_DB" {
+		t.Errorf("expected TNSEntry 'PROD_DB', got '%s'", cfg.TNSEntry)
+	}
+	if cfg.Edition != "ORA$BASE" {
+		t.Errorf("expected Edition 'ORA$BASE', got '%s'", cfg.Edition)
+	}
+	if !cfg.Pooling {
+		t.Error("expected Pooling to be true")
+	}
+	if !cfg.StandbySessions {
+		t.Error("expected StandbySessions to be true")
+	}
+	if cfg.ConnectTimeout != 30 {
+		t.Errorf("expected ConnectTimeout 30, got %d", cfg.ConnectTimeout)
+	}
+	if cfg.QueryTimeout != 60 {
+		t.Errorf("expected QueryTimeout 60, got %d", cfg.QueryTimeout)
+	}
+	if cfg.MaxOpenConns != 50 {
+		t.Errorf("expected MaxOpenConns 50, got %d", cfg.MaxOpenConns)
+	}
+	if cfg.MaxIdleConns != 10 {
+		t.Errorf("expected MaxIdleConns 10, got %d", cfg.MaxIdleConns)
+	}
+	if cfg.ConnMaxLifetime != 1800*time.Second {
+		t.Errorf("expected ConnMaxLifetime 1800s, got %v", cfg.ConnMaxLifetime)
+	}
+	if cfg.ConnMaxIdleTime != 300*time.Second {
+		t.Errorf("expected ConnMaxIdleTime 300s, got %v", cfg.ConnMaxIdleTime)
+	}
+}
