@@ -48,6 +48,31 @@ type ConnectionConfig struct {
 	Name     string       `json:"name"`
 	User     string       `json:"user"`
 	Password string       `json:"password"`
+
+	// PostgreSQL specific options
+	SSLMode            string            `json:"ssl_mode,omitempty"`
+	SSLCert            string            `json:"ssl_cert,omitempty"`
+	SSLKey             string            `json:"ssl_key,omitempty"`
+	SSLRootCert        string            `json:"ssl_root_cert,omitempty"`
+	ApplicationName    string            `json:"application_name,omitempty"`
+	ConnectTimeout     int               `json:"connect_timeout,omitempty"`
+	QueryTimeout       int               `json:"query_timeout,omitempty"` // in seconds
+	TargetSessionAttrs string            `json:"target_session_attrs,omitempty"`
+	Options            map[string]string `json:"options,omitempty"`
+
+	// SQLite specific options
+	DatabasePath     string `json:"database_path,omitempty"`      // Path to SQLite database file
+	EncryptionKey    string `json:"encryption_key,omitempty"`     // Key for SQLCipher encryption
+	ReadOnly         bool   `json:"read_only,omitempty"`          // Open database in read-only mode
+	CacheSize        int    `json:"cache_size,omitempty"`         // SQLite cache size (in pages)
+	JournalMode      string `json:"journal_mode,omitempty"`       // Journal mode for SQLite
+	UseModerncDriver bool   `json:"use_modernc_driver,omitempty"` // Use modernc.org/sqlite driver instead of mattn/go-sqlite3
+
+	// Connection pool settings
+	MaxOpenConns    int `json:"max_open_conns,omitempty"`
+	MaxIdleConns    int `json:"max_idle_conns,omitempty"`
+	ConnMaxLifetime int `json:"conn_max_lifetime_seconds,omitempty"`  // in seconds
+	ConnMaxIdleTime int `json:"conn_max_idle_time_seconds,omitempty"` // in seconds
 }
 
 // MultiDBConfig represents configuration for multiple database connections
