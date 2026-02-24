@@ -96,29 +96,6 @@
             "max_idle_conns": 10,
             "conn_max_lifetime_seconds": 1800,
             "query_timeout": 60
-        },
-        {
-            "id": "oracle_cloud",
-            "type": "oracle",
-            "user": "ADMIN",
-            "password": "your-cloud-password",
-            "wallet_location": "/path/to/wallet_DBNAME",
-            "service_name": "dbname_high",
-            "max_open_conns": 50,
-            "max_idle_conns": 10,
-            "conn_max_lifetime_seconds": 1800
-        },
-        {
-            "id": "oracle_rac",
-            "type": "oracle",
-            "host": "scan.company.com",
-            "port": 1521,
-            "service_name": "production",
-            "user": "app_user",
-            "password": "app_password",
-            "max_open_conns": 100,
-            "max_idle_conns": 20,
-            "conn_max_lifetime_seconds": 1800
         }
     ]
 }
