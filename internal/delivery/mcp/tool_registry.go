@@ -208,6 +208,18 @@ func (tr *ToolRegistry) registerCommonTools(ctx context.Context) {
 			logger.Info("Successfully registered tool %s", listDbName)
 		}
 	}
+
+	// Register the list tool with simple name
+	_, ok = tr.factory.GetToolType("list")
+	if ok {
+		// Use simple name for list tool
+		listDirName := "list"
+		if err := tr.registerTool(ctx, "list", listDirName, ""); err != nil {
+			logger.Error("Error registering %s tool: %v", listDirName, err)
+		} else {
+			logger.Info("Successfully registered tool %s", listDirName)
+		}
+	}
 }
 
 // RegisterMockTools registers mock tools with the server when no db connections available

@@ -319,9 +319,10 @@ func addOracleOptions(connStr string, config Config) string {
 	}
 
 	// NLS Language settings
-	if config.NLSLang != "" {
-		params["language"] = config.NLSLang
-	}
+	// Disabled: Oracle XE in Docker doesn't support NLS_LANG parameter
+	// if config.NLSLang != "" {
+	// 	params["language"] = config.NLSLang
+	// }
 
 	// Edition-based redefinition
 	if config.Edition != "" {
@@ -338,9 +339,22 @@ func addOracleOptions(connStr string, config Config) string {
 		params["standby"] = "true"
 	}
 
-	// Additional custom options
+	// Additional custom options (excluding those already handled)
+	excludedOptions := map[string]bool{
+		"service_name":     true,
+		"sid":              true,
+		"wallet_location":  true,
+		"tns_admin":        true,
+		"tns_entry":        true,
+		"edition":          true,
+		"pooling":          true,
+		"standby_sessions": true,
+		"nls_lang":         true,
+	}
 	for key, value := range config.Options {
-		params[key] = value
+		if !excludedOptions[key] {
+			params[key] = value
+		}
 	}
 
 	// Append parameters
