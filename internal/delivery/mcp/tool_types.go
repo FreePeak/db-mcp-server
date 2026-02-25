@@ -56,6 +56,9 @@ type ToolType interface {
 	// The returned tool must be compatible with server.MCPServer.AddTool's first parameter
 	CreateTool(name string, dbID string) interface{}
 
+	// CreateUnifiedTool creates a unified tool with a database parameter instead of per-database tools
+	CreateUnifiedTool(name string, dbList []string) interface{}
+
 	// HandleRequest handles tool requests for this tool type
 	HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error)
 }
@@ -87,6 +90,12 @@ func (b *BaseToolType) GetDescription(dbID string) string {
 	return fmt.Sprintf("%s on %s database", b.description, dbID)
 }
 
+// GetUnifiedDescription returns a description for unified mode with available databases listed
+func (b *BaseToolType) GetUnifiedDescription(dbList []string) string {
+	return fmt.Sprintf("%s on specified database. Available databases: %s",
+		b.description, strings.Join(dbList, ", "))
+}
+
 //------------------------------------------------------------------------------
 // QueryTool implementation
 //------------------------------------------------------------------------------
@@ -111,6 +120,26 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 	return tools.NewTool(
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
+		tools.WithString("query",
+			tools.Description("SQL query to execute"),
+			tools.Required(),
+		),
+		tools.WithArray("params",
+			tools.Description("Query parameters"),
+			tools.Items(map[string]interface{}{"type": "string"}),
+		),
+	)
+}
+
+// CreateUnifiedTool creates a unified query tool with database parameter
+func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetUnifiedDescription(dbList)),
+		tools.WithString("database",
+			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			tools.Required(),
+		),
 		tools.WithString("query",
 			tools.Description("SQL query to execute"),
 			tools.Required(),
@@ -196,6 +225,26 @@ func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 	)
 }
 
+// CreateUnifiedTool creates a unified execute tool with database parameter
+func (t *ExecuteTool) CreateUnifiedTool(name string, dbList []string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetUnifiedDescription(dbList)),
+		tools.WithString("database",
+			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			tools.Required(),
+		),
+		tools.WithString("statement",
+			tools.Description("SQL statement to execute (INSERT, UPDATE, DELETE, etc.)"),
+			tools.Required(),
+		),
+		tools.WithArray("params",
+			tools.Description("Statement parameters"),
+			tools.Items(map[string]interface{}{"type": "string"}),
+		),
+	)
+}
+
 // HandleRequest handles execute tool requests
 func (t *ExecuteTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// If dbID is not provided, extract it from the tool name
@@ -247,6 +296,35 @@ func (t *TransactionTool) CreateTool(name string, dbID string) interface{} {
 	return tools.NewTool(
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
+		tools.WithString("action",
+			tools.Description("Transaction action (begin, commit, rollback, execute)"),
+			tools.Required(),
+		),
+		tools.WithString("transactionId",
+			tools.Description("Transaction ID (required for commit, rollback, execute)"),
+		),
+		tools.WithString("statement",
+			tools.Description("SQL statement to execute within transaction (required for execute)"),
+		),
+		tools.WithArray("params",
+			tools.Description("Statement parameters"),
+			tools.Items(map[string]interface{}{"type": "string"}),
+		),
+		tools.WithBoolean("readOnly",
+			tools.Description("Whether the transaction is read-only (for begin)"),
+		),
+	)
+}
+
+// CreateUnifiedTool creates a unified transaction tool with database parameter
+func (t *TransactionTool) CreateUnifiedTool(name string, dbList []string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetUnifiedDescription(dbList)),
+		tools.WithString("database",
+			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			tools.Required(),
+		),
 		tools.WithString("action",
 			tools.Description("Transaction action (begin, commit, rollback, execute)"),
 			tools.Required(),
@@ -369,6 +447,31 @@ func (t *PerformanceTool) CreateTool(name string, dbID string) interface{} {
 	)
 }
 
+// CreateUnifiedTool creates a unified performance tool with database parameter
+func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetUnifiedDescription(dbList)),
+		tools.WithString("database",
+			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			tools.Required(),
+		),
+		tools.WithString("action",
+			tools.Description("Action (getSlowQueries, getMetrics, analyzeQuery, reset, setThreshold)"),
+			tools.Required(),
+		),
+		tools.WithString("query",
+			tools.Description("SQL query to analyze (required for analyzeQuery)"),
+		),
+		tools.WithNumber("limit",
+			tools.Description("Maximum number of results to return"),
+		),
+		tools.WithNumber("threshold",
+			tools.Description("Slow query threshold in milliseconds (required for setThreshold)"),
+		),
+	)
+}
+
 // HandleRequest handles performance tool requests
 func (t *PerformanceTool) HandleRequest(_ context.Context, request server.ToolCallRequest, dbID string, _ UseCaseProvider) (interface{}, error) {
 	// If dbID is not provided, extract it from the tool name
@@ -457,6 +560,21 @@ func (t *SchemaTool) CreateTool(name string, dbID string) interface{} {
 	)
 }
 
+// CreateUnifiedTool creates a unified schema tool with database parameter
+func (t *SchemaTool) CreateUnifiedTool(name string, dbList []string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetUnifiedDescription(dbList)),
+		tools.WithString("database",
+			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			tools.Required(),
+		),
+		tools.WithString("random_string",
+			tools.Description("Dummy parameter (optional)"),
+		),
+	)
+}
+
 // HandleRequest handles schema tool requests
 func (t *SchemaTool) HandleRequest(_ context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// If dbID is not provided, extract it from the tool name
@@ -503,6 +621,11 @@ func (t *ListDatabasesTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Dummy parameter (optional)"),
 		),
 	)
+}
+
+// CreateUnifiedTool creates a unified list databases tool (same as regular, no database parameter needed)
+func (t *ListDatabasesTool) CreateUnifiedTool(name string, _ []string) interface{} {
+	return t.CreateTool(name, "")
 }
 
 // HandleRequest handles list databases tool requests
