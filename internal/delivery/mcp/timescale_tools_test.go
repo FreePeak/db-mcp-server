@@ -59,6 +59,12 @@ func (m *MockDatabaseUseCase) IsLazyLoading() bool {
 	return args.Bool(0)
 }
 
+// FilterTableNames mocks the FilterTableNames method
+func (m *MockDatabaseUseCase) FilterTableNames(ctx context.Context, dbID, pattern string) ([]string, error) {
+	args := m.Called(ctx, dbID, pattern)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func TestTimescaleDBTool(t *testing.T) {
 	tool := mcp.NewTimescaleDBTool()
 	assert.Equal(t, "timescaledb", tool.GetName())

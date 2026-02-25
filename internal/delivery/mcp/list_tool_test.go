@@ -51,6 +51,11 @@ func (m *MockUseCaseProvider) IsLazyLoading() bool {
 	return args.Bool(0)
 }
 
+func (m *MockUseCaseProvider) FilterTableNames(ctx context.Context, dbID, pattern string) ([]string, error) {
+	args := m.Called(ctx, dbID, pattern)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func TestListDirectoryTool(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "list_tool_test")

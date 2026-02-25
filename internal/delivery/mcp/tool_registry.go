@@ -70,7 +70,7 @@ func (tr *ToolRegistry) RegisterAllTools(ctx context.Context, useCase UseCasePro
 func (tr *ToolRegistry) registerDatabaseTools(ctx context.Context, dbID string) error {
 	// Get all tool types from the factory
 	toolTypeNames := []string{
-		"query", "execute", "transaction", "performance", "schema",
+		"query", "execute", "transaction", "performance", "schema", "filter_table_names",
 	}
 
 	logger.Info("Registering tools for database %s", dbID)

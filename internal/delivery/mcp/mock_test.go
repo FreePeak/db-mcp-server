@@ -52,3 +52,9 @@ func (m *MockDatabaseUseCase) IsLazyLoading() bool {
 	args := m.Called()
 	return args.Bool(0)
 }
+
+// FilterTableNames mocks the FilterTableNames method
+func (m *MockDatabaseUseCase) FilterTableNames(ctx context.Context, dbID, pattern string) ([]string, error) {
+	args := m.Called(ctx, dbID, pattern)
+	return args.Get(0).([]string), args.Error(1)
+}

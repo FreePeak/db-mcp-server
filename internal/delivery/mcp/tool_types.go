@@ -69,6 +69,7 @@ type UseCaseProvider interface {
 	ListDatabases() []string
 	GetDatabaseType(dbID string) (string, error)
 	IsLazyLoading() bool
+	FilterTableNames(ctx context.Context, dbID, pattern string) ([]string, error)
 }
 
 // BaseToolType provides common functionality for tool types
@@ -523,6 +524,66 @@ func (t *ListDatabasesTool) HandleRequest(_ context.Context, _ server.ToolCallRe
 }
 
 //------------------------------------------------------------------------------
+// FilterTableNamesTool implementation
+//------------------------------------------------------------------------------
+
+// FilterTableNamesTool handles table name filtering by substring
+type FilterTableNamesTool struct {
+	BaseToolType
+}
+
+// NewFilterTableNamesTool creates a new filter table names tool type
+func NewFilterTableNamesTool() *FilterTableNamesTool {
+	return &FilterTableNamesTool{
+		BaseToolType: BaseToolType{
+			name:        "filter_table_names",
+			description: "Filter table names by substring pattern",
+		},
+	}
+}
+
+// CreateTool creates a filter table names tool
+func (t *FilterTableNamesTool) CreateTool(name string, dbID string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetDescription(dbID)),
+		tools.WithString("pattern",
+			tools.Description("Substring pattern to search for in table names (case-insensitive)"),
+			tools.Required(),
+		),
+	)
+}
+
+// HandleRequest handles filter table names tool requests
+func (t *FilterTableNamesTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	if dbID == "" {
+		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	pattern, ok := request.Parameters["pattern"].(string)
+	if !ok || pattern == "" {
+		return nil, fmt.Errorf("pattern parameter is required")
+	}
+
+	matchingTables, err := useCase.FilterTableNames(ctx, dbID, pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	var output strings.Builder
+	if len(matchingTables) == 0 {
+		output.WriteString(fmt.Sprintf("No tables found matching pattern '%s'\n", pattern))
+	} else {
+		output.WriteString(fmt.Sprintf("Found %d tables matching '%s':\n\n", len(matchingTables), pattern))
+		for i, table := range matchingTables {
+			output.WriteString(fmt.Sprintf("%d. %s\n", i+1, table))
+		}
+	}
+
+	return createTextResponse(output.String()), nil
+}
+
+//------------------------------------------------------------------------------
 // ToolTypeFactory provides a factory for creating tool types
 //------------------------------------------------------------------------------
 
@@ -545,6 +606,7 @@ func NewToolTypeFactory() *ToolTypeFactory {
 	factory.Register(NewSchemaTool())
 	factory.Register(NewListDatabasesTool())
 	factory.Register(NewListDirectoryTool())
+	factory.Register(NewFilterTableNamesTool())
 
 	return factory
 }

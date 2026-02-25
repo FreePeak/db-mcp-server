@@ -368,3 +368,31 @@ func (uc *DatabaseUseCase) GetDatabaseType(dbID string) (string, error) {
 func (uc *DatabaseUseCase) IsLazyLoading() bool {
 	return uc.repo.IsLazyLoading()
 }
+
+// FilterTableNames returns table names matching the given pattern
+func (uc *DatabaseUseCase) FilterTableNames(_ context.Context, dbID, pattern string) ([]string, error) {
+	info, err := uc.GetDatabaseInfo(dbID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database info: %w", err)
+	}
+
+	tables, ok := info["tables"].([]map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid tables data format")
+	}
+
+	patternLower := strings.ToLower(pattern)
+	var matches []string
+
+	for _, table := range tables {
+		tableName, ok := table["table_name"].(string)
+		if !ok {
+			tableName, ok = table["TABLE_NAME"].(string)
+		}
+		if ok && strings.Contains(strings.ToLower(tableName), patternLower) {
+			matches = append(matches, tableName)
+		}
+	}
+
+	return matches, nil
+}
