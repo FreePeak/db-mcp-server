@@ -442,6 +442,113 @@ func (t *TimescaleDBTool) CreateContinuousAggregatePolicyRemoveTool(name string,
 	)
 }
 
+// CreateUnifiedTool creates a unified TimescaleDB tool (delegates to CreateTool with empty dbID)
+func (t *TimescaleDBTool) CreateUnifiedTool(name string, dbList []string) interface{} {
+	desc := fmt.Sprintf("%s. Available databases: %s", t.description, strings.Join(dbList, ", "))
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(desc),
+		cortextools.WithString("database",
+			cortextools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			cortextools.Required(),
+		),
+		cortextools.WithString("operation",
+			cortextools.Description("TimescaleDB operation to perform"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("target_table",
+			cortextools.Description("The table to perform the operation on"),
+		),
+	)
+}
+
+// CreateUnifiedTimeSeriesQueryTool creates a unified time-series query tool with database parameter
+func (t *TimescaleDBTool) CreateUnifiedTimeSeriesQueryTool(name string, dbList []string) interface{} {
+	desc := fmt.Sprintf("Execute time-series queries on TimescaleDB. Available databases: %s", strings.Join(dbList, ", "))
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(desc),
+		cortextools.WithString("database",
+			cortextools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			cortextools.Required(),
+		),
+		cortextools.WithString("operation",
+			cortextools.Description("The operation must be 'time_series_query'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("target_table",
+			cortextools.Description("The table to query"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("time_column",
+			cortextools.Description("The timestamp column for time bucketing"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("bucket_interval",
+			cortextools.Description("Time bucket interval (e.g., '1 hour', '1 day')"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("start_time",
+			cortextools.Description("Start of time range (e.g., '2023-01-01')"),
+		),
+		cortextools.WithString("end_time",
+			cortextools.Description("End of time range (e.g., '2023-01-31')"),
+		),
+		cortextools.WithString("aggregations",
+			cortextools.Description("Comma-separated list of aggregations (e.g., 'AVG(temp),MAX(temp),COUNT(*)')"),
+		),
+		cortextools.WithString("where_condition",
+			cortextools.Description("Additional WHERE conditions"),
+		),
+		cortextools.WithString("group_by",
+			cortextools.Description("Additional GROUP BY columns (comma-separated)"),
+		),
+		cortextools.WithString("order_by",
+			cortextools.Description("Order by clause (default: time_bucket)"),
+		),
+		cortextools.WithString("window_functions",
+			cortextools.Description("Window functions to include (e.g. 'LAG(value) OVER (ORDER BY time_bucket) AS prev_value')"),
+		),
+		cortextools.WithString("limit",
+			cortextools.Description("Maximum number of rows to return"),
+		),
+		cortextools.WithBoolean("format_pretty",
+			cortextools.Description("Whether to format the response in a more readable way"),
+		),
+	)
+}
+
+// CreateUnifiedTimeSeriesAnalyzeTool creates a unified time-series analyze tool with database parameter
+func (t *TimescaleDBTool) CreateUnifiedTimeSeriesAnalyzeTool(name string, dbList []string) interface{} {
+	desc := fmt.Sprintf("Analyze time-series data patterns on TimescaleDB. Available databases: %s", strings.Join(dbList, ", "))
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(desc),
+		cortextools.WithString("database",
+			cortextools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			cortextools.Required(),
+		),
+		cortextools.WithString("operation",
+			cortextools.Description("The operation must be 'analyze_time_series'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("target_table",
+			cortextools.Description("The table to analyze"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("time_column",
+			cortextools.Description("The timestamp column"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("start_time",
+			cortextools.Description("Start of time range (e.g., '2023-01-01')"),
+		),
+		cortextools.WithString("end_time",
+			cortextools.Description("End of time range (e.g., '2023-01-31')"),
+		),
+	)
+}
+
 // HandleRequest handles a tool request
 func (t *TimescaleDBTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// Extract parameters from the request

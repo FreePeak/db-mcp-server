@@ -71,6 +71,7 @@ func main() {
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	lazyLoading := flag.Bool("lazy-loading", false, "Enable lazy loading: connections established on first use (recommended for 10+ databases)")
 	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
+	unifiedTools := flag.Bool("unified-tools", false, "Register unified tools with database parameter instead of per-database tools")
 	flag.Parse()
 
 	// Initialize logger with custom log directory
@@ -159,7 +160,7 @@ func main() {
 	// Set up Clean Architecture layers
 	dbRepo := repository.NewDatabaseRepository()
 	dbUseCase := usecase.NewDatabaseUseCase(dbRepo)
-	toolRegistry := mcp.NewToolRegistry(mcpServer)
+	toolRegistry := mcp.NewToolRegistry(mcpServer, *unifiedTools)
 
 	// Set the database use case in the tool registry
 	ctx := context.Background()
@@ -186,17 +187,28 @@ func main() {
 
 	// If we have databases, display the available tools
 	if len(dbIDs) > 0 {
-		logger.Info("Available database tools:")
-		for _, dbID := range dbIDs {
-			logger.Info("  Database %s:", dbID)
-			logger.Info("    - query_%s: Execute SQL queries", dbID)
-			logger.Info("    - execute_%s: Execute SQL statements", dbID)
-			logger.Info("    - transaction_%s: Manage transactions", dbID)
-			logger.Info("    - performance_%s: Analyze query performance", dbID)
-			logger.Info("    - schema_%s: Get database schema", dbID)
+		if *unifiedTools {
+			logger.Info("Available unified tools:")
+			logger.Info("  - query: Execute SQL queries")
+			logger.Info("  - execute: Execute SQL statements")
+			logger.Info("  - transaction: Manage transactions")
+			logger.Info("  - performance: Analyze query performance")
+			logger.Info("  - schema: Get database schema")
+			logger.Info("  - list_databases: List all available databases")
+			logger.Info("  Available databases: %v", dbIDs)
+		} else {
+			logger.Info("Available database tools:")
+			for _, dbID := range dbIDs {
+				logger.Info("  Database %s:", dbID)
+				logger.Info("    - query_%s: Execute SQL queries", dbID)
+				logger.Info("    - execute_%s: Execute SQL statements", dbID)
+				logger.Info("    - transaction_%s: Manage transactions", dbID)
+				logger.Info("    - performance_%s: Analyze query performance", dbID)
+				logger.Info("    - schema_%s: Get database schema", dbID)
+			}
+			logger.Info("  Common tools:")
+			logger.Info("    - list_databases: List all available databases")
 		}
-		logger.Info("  Common tools:")
-		logger.Info("    - list_databases: List all available databases")
 	}
 
 	// If no database connections, register mock tools to ensure at least some tools are available

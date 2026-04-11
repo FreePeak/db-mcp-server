@@ -9,6 +9,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/FreePeak/cortex/pkg/server"
 
@@ -21,15 +22,17 @@ type ToolRegistry struct {
 	mcpServer       *server.MCPServer
 	databaseUseCase UseCaseProvider
 	factory         *ToolTypeFactory
+	unifiedMode     bool
 }
 
 // NewToolRegistry creates a new tool registry
-func NewToolRegistry(mcpServer *server.MCPServer) *ToolRegistry {
+func NewToolRegistry(mcpServer *server.MCPServer, unifiedMode bool) *ToolRegistry {
 	factory := NewToolTypeFactory()
 	return &ToolRegistry{
-		server:    NewServerWrapper(mcpServer),
-		mcpServer: mcpServer,
-		factory:   factory,
+		server:      NewServerWrapper(mcpServer),
+		mcpServer:   mcpServer,
+		factory:     factory,
+		unifiedMode: unifiedMode,
 	}
 }
 
@@ -44,6 +47,10 @@ func (tr *ToolRegistry) RegisterAllTools(ctx context.Context, useCase UseCasePro
 	if len(dbList) == 0 {
 		logger.Info("No databases available, registering mock tools")
 		return tr.RegisterMockTools(ctx)
+	}
+
+	if tr.unifiedMode {
+		return tr.registerUnifiedTools(ctx)
 	}
 
 	// Register database-specific tools
@@ -193,6 +200,111 @@ func (tr *ToolRegistry) registerTool(ctx context.Context, toolTypeName string, n
 		response, err := toolTypeImpl.HandleRequest(ctx, request, dbID, tr.databaseUseCase)
 		return FormatResponse(response, err)
 	})
+}
+
+// registerUnifiedTools registers unified tools with a database parameter
+func (tr *ToolRegistry) registerUnifiedTools(ctx context.Context) error {
+	dbList := tr.databaseUseCase.ListDatabases()
+
+	toolTypeNames := []string{"query", "execute", "transaction", "performance", "schema"}
+
+	registrationErrors := 0
+	for _, typeName := range toolTypeNames {
+		if err := tr.registerUnifiedTool(ctx, typeName, typeName, dbList); err != nil {
+			logger.Error("Error registering unified tool %s: %v", typeName, err)
+			registrationErrors++
+		} else {
+			logger.Info("Successfully registered unified tool %s", typeName)
+		}
+	}
+
+	// Check for TimescaleDB on any PostgreSQL database
+	if !tr.databaseUseCase.IsLazyLoading() {
+		for _, dbID := range dbList {
+			dbType, err := tr.databaseUseCase.GetDatabaseType(dbID)
+			if err != nil || dbType != "postgres" {
+				continue
+			}
+
+			checkQuery := "SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'"
+			result, err := tr.databaseUseCase.ExecuteQuery(ctx, dbID, checkQuery, nil)
+			if err == nil && result != "[]" && result != "" {
+				logger.Info("TimescaleDB extension detected, registering unified TimescaleDB tools")
+				timescaleTool := NewTimescaleDBTool()
+
+				tsQueryTool := timescaleTool.CreateUnifiedTimeSeriesQueryTool("timescaledb_timeseries_query", dbList)
+				if err := tr.server.AddTool(ctx, tsQueryTool, func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
+					database, err := extractAndValidateDatabase(request, dbList)
+					if err != nil {
+						return FormatResponse(nil, err)
+					}
+					response, err := timescaleTool.HandleRequest(ctx, request, database, tr.databaseUseCase)
+					return FormatResponse(response, err)
+				}); err != nil {
+					logger.Error("Error registering unified TimescaleDB time series query tool: %v", err)
+					registrationErrors++
+				}
+
+				tsAnalyzeTool := timescaleTool.CreateUnifiedTimeSeriesAnalyzeTool("timescaledb_analyze_timeseries", dbList)
+				if err := tr.server.AddTool(ctx, tsAnalyzeTool, func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
+					database, err := extractAndValidateDatabase(request, dbList)
+					if err != nil {
+						return FormatResponse(nil, err)
+					}
+					response, err := timescaleTool.HandleRequest(ctx, request, database, tr.databaseUseCase)
+					return FormatResponse(response, err)
+				}); err != nil {
+					logger.Error("Error registering unified TimescaleDB time series analyze tool: %v", err)
+					registrationErrors++
+				}
+
+				break
+			}
+		}
+	}
+
+	// Register common tools
+	tr.registerCommonTools(ctx)
+
+	if registrationErrors > 0 {
+		return fmt.Errorf("errors occurred while registering %d unified tools", registrationErrors)
+	}
+	return nil
+}
+
+// registerUnifiedTool registers a single unified tool
+func (tr *ToolRegistry) registerUnifiedTool(ctx context.Context, toolTypeName string, name string, dbList []string) error {
+	toolTypeImpl, ok := tr.factory.GetToolType(toolTypeName)
+	if !ok {
+		return fmt.Errorf("failed to get tool type for '%s'", toolTypeName)
+	}
+
+	tool := toolTypeImpl.CreateUnifiedTool(name, dbList)
+
+	return tr.server.AddTool(ctx, tool, func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
+		database, err := extractAndValidateDatabase(request, dbList)
+		if err != nil {
+			return FormatResponse(nil, err)
+		}
+		response, err := toolTypeImpl.HandleRequest(ctx, request, database, tr.databaseUseCase)
+		return FormatResponse(response, err)
+	})
+}
+
+// extractAndValidateDatabase extracts and validates the database parameter from a request
+func extractAndValidateDatabase(request server.ToolCallRequest, dbList []string) (string, error) {
+	database, ok := request.Parameters["database"].(string)
+	if !ok || database == "" {
+		return "", fmt.Errorf("database parameter is required. Available databases: %s", strings.Join(dbList, ", "))
+	}
+
+	for _, db := range dbList {
+		if db == database {
+			return database, nil
+		}
+	}
+
+	return "", fmt.Errorf("database '%s' not found. Available databases: %s", database, strings.Join(dbList, ", "))
 }
 
 // registerCommonTools registers tools that are not specific to a database
