@@ -1,9 +1,10 @@
 run:
   timeout: 5m
   allow-parallel-runners: true
-  skip-dirs:
-    - vendor
-    - bin
+  issues:
+    exclude-dirs:
+      - vendor
+      - bin
 
 linters:
   disable-all: true
@@ -15,8 +16,6 @@ linters:
     - unused
     - misspell
     - revive
-
-version: "2"
 
 formatters:
   enable:

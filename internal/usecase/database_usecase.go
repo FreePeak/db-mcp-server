@@ -65,6 +65,19 @@ func (f *OracleQueryFactory) GetTablesQueries() []string {
 	}
 }
 
+// SQLiteQueryFactory creates queries for SQLite (including CozoDB with SQLite storage)
+type SQLiteQueryFactory struct{}
+
+// GetTablesQueries returns table queries for SQLite
+func (f *SQLiteQueryFactory) GetTablesQueries() []string {
+	return []string{
+		// Primary: sqlite_master approach for user tables
+		"SELECT name AS table_name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+		// Fallback: pragma_table_list approach
+		"SELECT name AS table_name FROM pragma_table_list() WHERE type='table' AND schema='main' AND name NOT LIKE 'sqlite_%'",
+	}
+}
+
 // GenericQueryFactory creates generic queries for unknown database types
 type GenericQueryFactory struct{}
 
@@ -85,6 +98,8 @@ func NewQueryFactory(dbType string) QueryFactory {
 		return &MySQLQueryFactory{}
 	case "oracle":
 		return &OracleQueryFactory{}
+	case "sqlite", "sqlite3":
+		return &SQLiteQueryFactory{}
 	default:
 		logger.Warn("Unknown database type: %s, will use generic query factory", dbType)
 		return &GenericQueryFactory{}

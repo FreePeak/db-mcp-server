@@ -1,19 +1,8 @@
 {
-    "mcpServers": {
-        "multidb": {
-            "command": "/Users/harvey/Work/dev/FreePeak/Opensource/db-mcp-server/bin/server",
-            "args": [
-                "-t",
-                "stdio",
-                "-c",
-                "/Users/harvey/Work/dev/FreePeak/SaaS/CashFlow/cashflow-core/database_config.json"
-            ]
-        },
-        "multidb2": {
-            "url": "http://127.0.0.1:9090/sse"
-        },
-        "multidb3": {
-            "url": "http://127.0.0.1:9092/sse"
-        }
+  "mcpServers": {
+    "db-mcp-server": {
+      "command": "db-mcp-server",
+      "args": ["-c", "/Users/linh.doan/work/harvey/freepeak/db-mcp-server/config.test.json"]
     }
+  }
 }

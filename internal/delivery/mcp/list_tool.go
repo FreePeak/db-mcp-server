@@ -38,6 +38,18 @@ func (t *ListDirectoryTool) CreateTool(name string, dbID string) interface{} {
 	)
 }
 
+// CreateUnifiedTool creates a unified list directory tool (no database parameter needed)
+func (t *ListDirectoryTool) CreateUnifiedTool(name string, _ []string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.description),
+		tools.WithString("path",
+			tools.Description("Absolute path to list"),
+			tools.Required(),
+		),
+	)
+}
+
 // HandleRequest handles list directory tool requests
 func (t *ListDirectoryTool) HandleRequest(_ context.Context, request server.ToolCallRequest, _ string, _ UseCaseProvider) (interface{}, error) {
 	path, ok := request.Parameters["path"].(string)
