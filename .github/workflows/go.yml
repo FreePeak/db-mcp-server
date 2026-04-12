@@ -22,7 +22,6 @@ jobs:
 
     - name: Update go.mod
       run: |
-        go mod edit -go=1.22
         go mod tidy
 
     - name: Get dependencies
@@ -95,7 +94,6 @@ jobs:
 
     - name: Update go.mod
       run: |
-        go mod edit -go=1.22
         go mod tidy
 
     - name: Get dependencies
@@ -185,11 +183,10 @@ jobs:
 
     - name: Update go.mod
       run: |
-        go mod edit -go=1.22
         go mod tidy
 
     - name: Install golangci-lint
-      run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.0.0
+      run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.64.8
 
     - name: Run golangci-lint
       run: golangci-lint run --timeout=5m 
