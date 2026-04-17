@@ -37,9 +37,15 @@ type DatabaseConfig struct {
 
 // LoadConfig loads the configuration from environment variables and optional JSON config
 func LoadConfig(logDir string) (*Config, error) {
-	// Reinitialize logger with info level and custom log directory
-	// This ensures consistent logging throughout config loading regardless of initial setup
-	logger.Initialize(logger.Config{Level: "info", LogDir: logDir})
+	// Check for verbose flag - logging enabled only when explicitly requested
+	// Default to error level (silent), debug when VERBOSE=true
+	logLevel := "error"
+	if os.Getenv("VERBOSE") == "true" || os.Getenv("VERBOSE") == "1" {
+		logLevel = "debug"
+	}
+
+	// Initialize logger with appropriate level
+	logger.Initialize(logger.Config{Level: logLevel, LogDir: logDir})
 
 	// Load .env file if it exists
 	err := godotenv.Load()
@@ -77,7 +83,7 @@ func LoadConfig(logDir string) (*Config, error) {
 		}
 	}
 
-	// Parse DISABLE_LOGGING env var
+	// Check for verbose flag - logging enabled only when explicitly requested
 	disableLogging := false
 	if v := getEnv("DISABLE_LOGGING", "false"); v == "true" || v == "1" {
 		disableLogging = true
