@@ -304,6 +304,11 @@ func main() {
 		} else {
 			// Redirect all standard logging to the file
 			log.SetOutput(logFile)
+			defer func() {
+				if closeErr := logFile.Close(); closeErr != nil {
+					fmt.Fprintf(os.Stderr, "Failed to close log file: %v\n", closeErr)
+				}
+			}()
 		}
 
 		// Critical: Use ServeStdio WITHOUT any console output to stdout
