@@ -4,12 +4,32 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/FreePeak/db-mcp-server/pkg/db"
 	"github.com/FreePeak/db-mcp-server/pkg/logger"
 	"github.com/FreePeak/db-mcp-server/pkg/tools"
 )
+
+// validIdentifier matches valid SQL identifiers (alphanumeric and underscores)
+var validIdentifier = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+// sanitizeIdentifier validates and escapes a SQL identifier for SQLite
+func sanitizeIdentifier(identifier string) string {
+	if identifier == "" {
+		return ""
+	}
+	if strings.Contains(identifier, "\x00") {
+		return ""
+	}
+	if validIdentifier.MatchString(identifier) {
+		return identifier
+	}
+	// Quote the identifier to handle special characters
+	return "\"" + strings.ReplaceAll(identifier, "\"", "\"\"") + "\""
+}
 
 // DatabaseStrategy defines the interface for database-specific query strategies
 type DatabaseStrategy interface {
@@ -268,7 +288,7 @@ func (s *SQLiteStrategy) GetColumnsQueries(table string) []QueryWithArgs {
 	return []QueryWithArgs{
 		// Primary: PRAGMA table_info approach
 		{
-			Query: "PRAGMA table_info(" + table + ")",
+			Query: "PRAGMA table_info(" + sanitizeIdentifier(table) + ")",
 			Args:  []interface{}{},
 		},
 		// Secondary: sqlite_master approach for column info
