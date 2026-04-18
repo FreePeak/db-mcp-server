@@ -3,8 +3,37 @@ package timescale
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+// validIdentifier matches valid PostgreSQL identifiers (alphanumeric and underscores, not starting with number)
+var validIdentifier = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+// sanitizeIdentifier validates and escapes a SQL identifier.
+// If the identifier is valid (alphanumeric + underscore), it returns it as-is.
+// If it contains special characters, it quotes it using PostgreSQL double-quote syntax.
+// Returns empty string if identifier is empty or contains null bytes.
+func sanitizeIdentifier(identifier string) string {
+	if identifier == "" {
+		return ""
+	}
+	// Check for null bytes
+	if strings.Contains(identifier, "\x00") {
+		return ""
+	}
+	// If valid identifier without quoting needed
+	if validIdentifier.MatchString(identifier) {
+		return identifier
+	}
+	// Quote the identifier to handle special characters
+	return "\"" + strings.ReplaceAll(identifier, "\"", "\"\"") + "\""
+}
+
+// sanitizeStringLiteral escapes a string literal by replacing ' with ”
+func sanitizeStringLiteral(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
 
 // HypertableConfig defines configuration for creating a hypertable
 type HypertableConfig struct {
@@ -39,12 +68,15 @@ func (t *DB) CreateHypertable(ctx context.Context, config HypertableConfig) erro
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString("SELECT create_hypertable(")
 
-	// Table name and time column are required
-	queryBuilder.WriteString(fmt.Sprintf("'%s', '%s'", config.TableName, config.TimeColumn))
+	// Table name and time column are required (use identifiers, not string literals)
+	queryBuilder.WriteString(sanitizeIdentifier(config.TableName))
+	queryBuilder.WriteString(", ")
+	queryBuilder.WriteString(sanitizeIdentifier(config.TimeColumn))
 
 	// Optional parameters
 	if config.PartitioningColumn != "" {
-		queryBuilder.WriteString(fmt.Sprintf(", partition_column => '%s'", config.PartitioningColumn))
+		queryBuilder.WriteString(", partition_column => ")
+		queryBuilder.WriteString(sanitizeIdentifier(config.PartitioningColumn))
 	}
 
 	if config.ChunkTimeInterval != "" {
@@ -80,8 +112,8 @@ func (t *DB) AddDimension(ctx context.Context, tableName, columnName string, num
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
 
-	query := fmt.Sprintf("SELECT add_dimension('%s', '%s', number_partitions => %d)",
-		tableName, columnName, numPartitions)
+	query := fmt.Sprintf("SELECT add_dimension(%s, %s, number_partitions => %d)",
+		sanitizeIdentifier(tableName), sanitizeIdentifier(columnName), numPartitions)
 
 	_, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {
@@ -143,8 +175,8 @@ func (t *DB) ListHypertables(ctx context.Context) ([]Hypertable, error) {
 
 		// Check if compression is enabled
 		compQuery := fmt.Sprintf(
-			"SELECT count(*) > 0 as is_compressed FROM timescaledb_information.compression_settings WHERE hypertable_name = '%s'",
-			ht.TableName,
+			"SELECT count(*) > 0 as is_compressed FROM timescaledb_information.compression_settings WHERE hypertable_name = %s",
+			sanitizeIdentifier(ht.TableName),
 		)
 		compResult, err := t.ExecuteSQLWithoutParams(ctx, compQuery)
 		if err == nil {
@@ -157,8 +189,8 @@ func (t *DB) ListHypertables(ctx context.Context) ([]Hypertable, error) {
 
 		// Check if retention policy is enabled
 		retQuery := fmt.Sprintf(
-			"SELECT count(*) > 0 as has_retention FROM timescaledb_information.jobs WHERE hypertable_name = '%s' AND proc_name = 'policy_retention'",
-			ht.TableName,
+			"SELECT count(*) > 0 as has_retention FROM timescaledb_information.jobs WHERE hypertable_name = %s AND proc_name = 'policy_retention'",
+			sanitizeIdentifier(ht.TableName),
 		)
 		retResult, err := t.ExecuteSQLWithoutParams(ctx, retQuery)
 		if err == nil {
@@ -185,16 +217,16 @@ func (t *DB) GetHypertable(ctx context.Context, tableName string) (*Hypertable, 
 		SELECT h.table_name, h.schema_name, d.column_name as time_column,
 			count(d.id) as num_dimensions,
 			(
-				SELECT column_name FROM _timescaledb_catalog.dimension 
-				WHERE hypertable_id = h.id AND column_type != 'TIMESTAMP' 
-				AND column_type != 'TIMESTAMPTZ' 
+				SELECT column_name FROM _timescaledb_catalog.dimension
+				WHERE hypertable_id = h.id AND column_type != 'TIMESTAMP'
+				AND column_type != 'TIMESTAMPTZ'
 				LIMIT 1
 			) as space_column
 		FROM _timescaledb_catalog.hypertable h
 		JOIN _timescaledb_catalog.dimension d ON h.id = d.hypertable_id
-		WHERE h.table_name = '%s'
+		WHERE h.table_name = %s
 		GROUP BY h.id, h.table_name, h.schema_name
-	`, tableName)
+	`, sanitizeIdentifier(tableName))
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {
@@ -263,7 +295,7 @@ func (t *DB) DropHypertable(ctx context.Context, tableName string, cascade bool)
 	}
 
 	// Build the DROP TABLE query
-	query := fmt.Sprintf("DROP TABLE %s", tableName)
+	query := fmt.Sprintf("DROP TABLE %s", sanitizeIdentifier(tableName))
 	if cascade {
 		query += " CASCADE"
 	}
@@ -284,11 +316,11 @@ func (t *DB) CheckIfHypertable(ctx context.Context, tableName string) (bool, err
 
 	query := fmt.Sprintf(`
 		SELECT EXISTS (
-			SELECT 1 
+			SELECT 1
 			FROM _timescaledb_catalog.hypertable
-			WHERE table_name = '%s'
+			WHERE table_name = %s
 		) as is_hypertable
-	`, tableName)
+	`, sanitizeIdentifier(tableName))
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {
@@ -320,15 +352,15 @@ func (t *DB) RecentChunks(ctx context.Context, tableName string, limit int) (int
 	}
 
 	query := fmt.Sprintf(`
-		SELECT 
+		SELECT
 			chunk_name,
 			range_start,
 			range_end
 		FROM timescaledb_information.chunks
-		WHERE hypertable_name = '%s'
+		WHERE hypertable_name = %s
 		ORDER BY range_end DESC
 		LIMIT %d
-	`, tableName, limit)
+	`, sanitizeIdentifier(tableName), limit)
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {

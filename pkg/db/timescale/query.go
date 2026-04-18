@@ -271,7 +271,7 @@ func (t *DB) DownsampleTimeSeries(ctx context.Context, options DownsampleOptions
 	// Create the destination table if requested
 	if options.CreateTable {
 		// Get source table columns
-		schemaQuery := fmt.Sprintf("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '%s'", options.SourceTable)
+		schemaQuery := fmt.Sprintf("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = %s", sanitizeIdentifier(options.SourceTable))
 		result, err := t.ExecuteSQLWithoutParams(ctx, schemaQuery)
 		if err != nil {
 			return fmt.Errorf("failed to get source table schema: %w", err)
@@ -284,7 +284,7 @@ func (t *DB) DownsampleTimeSeries(ctx context.Context, options DownsampleOptions
 
 		// Build CREATE TABLE statement
 		var createStmt strings.Builder
-		createStmt.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (", options.DestTable))
+		createStmt.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (", sanitizeIdentifier(options.DestTable)))
 
 		// Add time bucket column
 		createStmt.WriteString("time_bucket timestamptz, ")
@@ -374,7 +374,7 @@ func (t *DB) DownsampleTimeSeries(ctx context.Context, options DownsampleOptions
 		}
 	}
 
-	insertStmt.WriteString(fmt.Sprintf(" FROM %s", options.SourceTable))
+	insertStmt.WriteString(fmt.Sprintf(" FROM %s", sanitizeIdentifier(options.SourceTable)))
 
 	// Add WHERE clause if specified
 	if options.WhereCondition != "" {
