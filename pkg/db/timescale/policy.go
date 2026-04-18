@@ -29,7 +29,7 @@ func (t *DB) EnableCompression(ctx context.Context, tableName string, afterInter
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
 
-	query := fmt.Sprintf("ALTER TABLE %s SET (timescaledb.compress = true)", tableName)
+	query := fmt.Sprintf("ALTER TABLE %s SET (timescaledb.compress = true)", sanitizeIdentifier(tableName))
 	_, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {
 		return fmt.Errorf("failed to enable compression: %w", err)
@@ -59,7 +59,7 @@ func (t *DB) DisableCompression(ctx context.Context, tableName string) error {
 	}
 
 	// Then disable compression
-	query := fmt.Sprintf("ALTER TABLE %s SET (timescaledb.compress = false)", tableName)
+	query := fmt.Sprintf("ALTER TABLE %s SET (timescaledb.compress = false)", sanitizeIdentifier(tableName))
 	_, err = t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {
 		return fmt.Errorf("failed to disable compression: %w", err)
@@ -75,7 +75,7 @@ func (t *DB) AddCompressionPolicy(ctx context.Context, tableName, interval, segm
 	}
 
 	// First, check if the table has compression enabled
-	query := fmt.Sprintf("SELECT compress FROM timescaledb_information.hypertables WHERE hypertable_name = '%s'", tableName)
+	query := fmt.Sprintf("SELECT compress FROM timescaledb_information.hypertables WHERE hypertable_name = '%s'", sanitizeStringLiteral(tableName))
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {
 		return fmt.Errorf("failed to check compression status: %w", err)
@@ -89,7 +89,7 @@ func (t *DB) AddCompressionPolicy(ctx context.Context, tableName, interval, segm
 	isCompressed := rows[0]["compress"]
 	if isCompressed == nil || fmt.Sprintf("%v", isCompressed) == "false" {
 		// Enable compression
-		enableQuery := fmt.Sprintf("ALTER TABLE %s SET (timescaledb.compress = true)", tableName)
+		enableQuery := fmt.Sprintf("ALTER TABLE %s SET (timescaledb.compress = true)", sanitizeIdentifier(tableName))
 		_, err := t.ExecuteSQLWithoutParams(ctx, enableQuery)
 		if err != nil {
 			return fmt.Errorf("failed to enable compression: %w", err)
@@ -98,14 +98,14 @@ func (t *DB) AddCompressionPolicy(ctx context.Context, tableName, interval, segm
 
 	// Build the compression policy query
 	var policyQuery strings.Builder
-	policyQuery.WriteString(fmt.Sprintf("SELECT add_compression_policy('%s', INTERVAL '%s'", tableName, interval))
+	policyQuery.WriteString(fmt.Sprintf("SELECT add_compression_policy('%s', INTERVAL '%s'", sanitizeStringLiteral(tableName), sanitizeStringLiteral(interval)))
 
 	if segmentBy != "" {
-		policyQuery.WriteString(fmt.Sprintf(", segmentby => '%s'", segmentBy))
+		policyQuery.WriteString(fmt.Sprintf(", segmentby => '%s'", sanitizeStringLiteral(segmentBy)))
 	}
 
 	if orderBy != "" {
-		policyQuery.WriteString(fmt.Sprintf(", orderby => '%s'", orderBy))
+		policyQuery.WriteString(fmt.Sprintf(", orderby => '%s'", sanitizeStringLiteral(orderBy)))
 	}
 
 	policyQuery.WriteString(")")
@@ -128,7 +128,7 @@ func (t *DB) RemoveCompressionPolicy(ctx context.Context, tableName string) erro
 	// Find the policy ID
 	query := fmt.Sprintf(
 		"SELECT job_id FROM timescaledb_information.jobs WHERE hypertable_name = '%s' AND proc_name = 'policy_compression'",
-		tableName,
+		sanitizeStringLiteral(tableName),
 	)
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
@@ -167,7 +167,7 @@ func (t *DB) GetCompressionSettings(ctx context.Context, tableName string) (*Com
 	// Check if the table has compression enabled
 	query := fmt.Sprintf(
 		"SELECT compress FROM timescaledb_information.hypertables WHERE hypertable_name = '%s'",
-		tableName,
+		sanitizeStringLiteral(tableName),
 	)
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
@@ -191,7 +191,7 @@ func (t *DB) GetCompressionSettings(ctx context.Context, tableName string) (*Com
 		// Get compression-specific settings
 		settingsQuery := fmt.Sprintf(
 			"SELECT segmentby, orderby FROM timescaledb_information.compression_settings WHERE hypertable_name = '%s'",
-			tableName,
+			sanitizeStringLiteral(tableName),
 		)
 
 		settingsResult, err := t.ExecuteSQLWithoutParams(ctx, settingsQuery)
@@ -243,7 +243,7 @@ func (t *DB) AddRetentionPolicy(ctx context.Context, tableName, interval string)
 		return fmt.Errorf("TimescaleDB extension not available")
 	}
 
-	query := fmt.Sprintf("SELECT add_retention_policy('%s', INTERVAL '%s')", tableName, interval)
+	query := fmt.Sprintf("SELECT add_retention_policy('%s', INTERVAL '%s')", sanitizeStringLiteral(tableName), sanitizeStringLiteral(interval))
 	_, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {
 		return fmt.Errorf("failed to add retention policy: %w", err)
@@ -261,7 +261,7 @@ func (t *DB) RemoveRetentionPolicy(ctx context.Context, tableName string) error 
 	// Find the policy ID
 	query := fmt.Sprintf(
 		"SELECT job_id FROM timescaledb_information.jobs WHERE hypertable_name = '%s' AND proc_name = 'policy_retention'",
-		tableName,
+		sanitizeStringLiteral(tableName),
 	)
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
@@ -306,7 +306,7 @@ func (t *DB) GetRetentionSettings(ctx context.Context, tableName string) (*Reten
 		"SELECT s.schedule_interval FROM timescaledb_information.jobs j "+
 			"JOIN timescaledb_information.job_stats s ON j.job_id = s.job_id "+
 			"WHERE j.hypertable_name = '%s' AND j.proc_name = 'policy_retention'",
-		tableName,
+		sanitizeStringLiteral(tableName),
 	)
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
@@ -334,11 +334,11 @@ func (t *DB) CompressChunks(ctx context.Context, tableName, olderThan string) er
 	var query string
 	if olderThan == "" {
 		// Compress all chunks
-		query = fmt.Sprintf("SELECT compress_chunks(hypertable => '%s')", tableName)
+		query = fmt.Sprintf("SELECT compress_chunks(hypertable => '%s')", sanitizeStringLiteral(tableName))
 	} else {
 		// Compress chunks older than the specified interval
 		query = fmt.Sprintf("SELECT compress_chunks(hypertable => '%s', older_than => INTERVAL '%s')",
-			tableName, olderThan)
+			sanitizeStringLiteral(tableName), sanitizeStringLiteral(olderThan))
 	}
 
 	_, err := t.ExecuteSQLWithoutParams(ctx, query)
@@ -358,11 +358,11 @@ func (t *DB) DecompressChunks(ctx context.Context, tableName, newerThan string) 
 	var query string
 	if newerThan == "" {
 		// Decompress all chunks
-		query = fmt.Sprintf("SELECT decompress_chunks(hypertable => '%s')", tableName)
+		query = fmt.Sprintf("SELECT decompress_chunks(hypertable => '%s')", sanitizeStringLiteral(tableName))
 	} else {
 		// Decompress chunks newer than the specified interval
 		query = fmt.Sprintf("SELECT decompress_chunks(hypertable => '%s', newer_than => INTERVAL '%s')",
-			tableName, newerThan)
+			sanitizeStringLiteral(tableName), sanitizeStringLiteral(newerThan))
 	}
 
 	_, err := t.ExecuteSQLWithoutParams(ctx, query)
@@ -394,7 +394,7 @@ func (t *DB) GetChunkCompressionStats(ctx context.Context, tableName string) (in
 		FROM timescaledb_information.chunks
 		WHERE hypertable_name = '%s'
 		ORDER BY range_end DESC
-	`, tableName)
+	`, sanitizeStringLiteral(tableName))
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {

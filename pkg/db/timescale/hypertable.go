@@ -30,7 +30,7 @@ func sanitizeIdentifier(identifier string) string {
 	return "\"" + strings.ReplaceAll(identifier, "\"", "\"\"") + "\""
 }
 
-// sanitizeStringLiteral escapes a string literal by replacing ' with ”
+// sanitizeStringLiteral escapes a string literal by replacing ' with ''
 func sanitizeStringLiteral(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
 }
