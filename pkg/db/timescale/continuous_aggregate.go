@@ -50,7 +50,7 @@ func (t *DB) CreateContinuousAggregate(ctx context.Context, options ContinuousAg
 	}
 
 	// Add view name
-	builder.WriteString(options.ViewName)
+	builder.WriteString(sanitizeIdentifier(options.ViewName))
 	builder.WriteString("\n")
 
 	// Add WITH clause for materialized_only if requested
@@ -63,7 +63,7 @@ func (t *DB) CreateContinuousAggregate(ctx context.Context, options ContinuousAg
 
 	// Add time bucket
 	builder.WriteString(fmt.Sprintf("time_bucket('%s', %s) as time_bucket",
-		options.BucketInterval, options.TimeColumn))
+		options.BucketInterval, sanitizeIdentifier(options.TimeColumn)))
 
 	// Add aggregations
 	if len(options.Aggregations) > 0 {
@@ -74,7 +74,7 @@ func (t *DB) CreateContinuousAggregate(ctx context.Context, options ContinuousAg
 			}
 
 			builder.WriteString(fmt.Sprintf(",\n    %s(%s) as %s",
-				agg.Function, agg.Column, colName))
+				agg.Function, sanitizeIdentifier(agg.Column), sanitizeIdentifier(colName)))
 		}
 	} else {
 		// Default to count(*) if no aggregations specified
@@ -82,7 +82,7 @@ func (t *DB) CreateContinuousAggregate(ctx context.Context, options ContinuousAg
 	}
 
 	// Add FROM clause
-	builder.WriteString(fmt.Sprintf("\nFROM %s\n", options.SourceTable))
+	builder.WriteString(fmt.Sprintf("\nFROM %s\n", sanitizeIdentifier(options.SourceTable)))
 
 	// Add WHERE clause if specified
 	if options.WhereCondition != "" {
@@ -144,7 +144,7 @@ func (t *DB) RefreshContinuousAggregate(ctx context.Context, viewName, startTime
 	builder.WriteString("CALL refresh_continuous_aggregate(")
 
 	// Add view name
-	builder.WriteString(fmt.Sprintf("'%s'", viewName))
+	builder.WriteString(fmt.Sprintf("'%s'", sanitizeStringLiteral(viewName)))
 
 	// Add time range if specified
 	if startTime != "" && endTime != "" {
@@ -175,7 +175,7 @@ func (t *DB) AddContinuousAggregatePolicy(ctx context.Context, options Continuou
 	sql := fmt.Sprintf(
 		"SELECT add_continuous_aggregate_policy('%s', start_offset => INTERVAL '%s', "+
 			"end_offset => INTERVAL '%s', schedule_interval => INTERVAL '%s')",
-		options.ViewName,
+		sanitizeStringLiteral(options.ViewName),
 		options.Start,
 		options.End,
 		options.ScheduleInterval,
@@ -199,7 +199,7 @@ func (t *DB) RemoveContinuousAggregatePolicy(ctx context.Context, viewName strin
 	// Build policy removal SQL
 	sql := fmt.Sprintf(
 		"SELECT remove_continuous_aggregate_policy('%s')",
-		viewName,
+		sanitizeStringLiteral(viewName),
 	)
 
 	// Execute the statement
@@ -220,7 +220,7 @@ func (t *DB) DropContinuousAggregate(ctx context.Context, viewName string, casca
 	var builder strings.Builder
 
 	// Build DROP statement
-	builder.WriteString(fmt.Sprintf("DROP MATERIALIZED VIEW %s", viewName))
+	builder.WriteString(fmt.Sprintf("DROP MATERIALIZED VIEW %s", sanitizeIdentifier(viewName)))
 
 	// Add CASCADE if requested
 	if cascade {
@@ -245,7 +245,7 @@ func (t *DB) GetContinuousAggregateInfo(ctx context.Context, viewName string) (m
 	// Query for continuous aggregate information
 	query := fmt.Sprintf(`
 		WITH policy_info AS (
-			SELECT 
+			SELECT
 				ca.user_view_name,
 				p.schedule_interval,
 				p.start_offset,
@@ -257,13 +257,13 @@ func (t *DB) GetContinuousAggregateInfo(ctx context.Context, viewName string) (m
 			AND ca.view_name = '%s'
 		),
 		size_info AS (
-			SELECT 
+			SELECT
 				pg_size_pretty(pg_total_relation_size(format('%%I.%%I', schemaname, tablename)))
 				as view_size
 			FROM pg_tables
 			WHERE tablename = '%s'
 		)
-		SELECT 
+		SELECT
 			ca.view_name,
 			ca.view_schema,
 			ca.materialized_only,
@@ -277,18 +277,18 @@ func (t *DB) GetContinuousAggregateInfo(ctx context.Context, viewName string) (m
 			pi.end_offset,
 			si.view_size,
 			(
-				SELECT min(time_bucket) 
+				SELECT min(time_bucket)
 				FROM %s
 			) as min_time,
 			(
-				SELECT max(time_bucket) 
+				SELECT max(time_bucket)
 				FROM %s
 			) as max_time
 		FROM timescaledb_information.continuous_aggregates ca
 		LEFT JOIN policy_info pi ON pi.user_view_name = ca.user_view_name
 		CROSS JOIN size_info si
 		WHERE ca.view_name = '%s'
-	`, viewName, viewName, viewName, viewName, viewName)
+	`, sanitizeStringLiteral(viewName), sanitizeStringLiteral(viewName), sanitizeIdentifier(viewName), sanitizeIdentifier(viewName), sanitizeStringLiteral(viewName))
 
 	// Execute query
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
