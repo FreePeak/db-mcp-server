@@ -170,7 +170,7 @@ func addWindowFunctions(query string, functions []WindowFunction) string {
 
 		// Add alias if specified
 		if fn.Alias != "" {
-			windowPart.WriteString(fmt.Sprintf(" AS %s", fn.Alias))
+			windowPart.WriteString(fmt.Sprintf(" AS %s", sanitizeIdentifier(fn.Alias)))
 		}
 
 		// Add comma if not last function

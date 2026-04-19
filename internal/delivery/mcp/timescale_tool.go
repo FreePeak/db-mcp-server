@@ -4,12 +4,35 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/FreePeak/cortex/pkg/server"
 	cortextools "github.com/FreePeak/cortex/pkg/tools"
 )
+
+// validIdentifier matches valid SQL identifiers
+var validIdentifier = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+// sanitizeIdentifier validates and escapes a SQL identifier
+func sanitizeIdentifier(identifier string) string {
+	if identifier == "" {
+		return ""
+	}
+	if strings.Contains(identifier, "\x00") {
+		return ""
+	}
+	if validIdentifier.MatchString(identifier) {
+		return identifier
+	}
+	return "\"" + strings.ReplaceAll(identifier, "\"", "\"\"") + "\""
+}
+
+// sanitizeStringLiteral escapes a string literal by replacing ' with ”
+func sanitizeStringLiteral(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
 
 // TimescaleDBTool implements a tool for TimescaleDB operations
 type TimescaleDBTool struct {
@@ -1743,19 +1766,19 @@ func getBoolParam(params map[string]interface{}, key string) bool {
 func buildCreateHypertableSQL(table, timeColumn, chunkTimeInterval, partitioningColumn string, ifNotExists bool) string {
 	var args []string
 
-	// Add required arguments: table name and time column
-	args = append(args, fmt.Sprintf("'%s'", table))
-	args = append(args, fmt.Sprintf("'%s'", timeColumn))
+	// Add required arguments: table name and time column (identifiers, not string literals)
+	args = append(args, sanitizeIdentifier(table))
+	args = append(args, sanitizeIdentifier(timeColumn))
 
 	// Build optional parameters
 	var options []string
 
 	if chunkTimeInterval != "" {
-		options = append(options, fmt.Sprintf("chunk_time_interval => interval '%s'", chunkTimeInterval))
+		options = append(options, fmt.Sprintf("chunk_time_interval => interval '%s'", sanitizeStringLiteral(chunkTimeInterval)))
 	}
 
 	if partitioningColumn != "" {
-		options = append(options, fmt.Sprintf("partitioning_column => '%s'", partitioningColumn))
+		options = append(options, fmt.Sprintf("partitioning_column => %s", sanitizeIdentifier(partitioningColumn)))
 	}
 
 	options = append(options, fmt.Sprintf("if_not_exists => %t", ifNotExists))

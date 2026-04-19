@@ -497,16 +497,16 @@ func (t *DB) GenerateHypertableSchema(ctx context.Context, tableName string) (st
 	// Generate CREATE HYPERTABLE statement
 	var createHypertableStmt strings.Builder
 	createHypertableStmt.WriteString(fmt.Sprintf("SELECT create_hypertable('%s', '%s'",
-		tableName, metadata.TimeDimension))
+		sanitizeStringLiteral(tableName), sanitizeStringLiteral(metadata.TimeDimension)))
 
 	if metadata.ChunkTimeInterval != "" {
 		createHypertableStmt.WriteString(fmt.Sprintf(", chunk_time_interval => INTERVAL '%s'",
-			metadata.ChunkTimeInterval))
+			sanitizeStringLiteral(metadata.ChunkTimeInterval)))
 	}
 
 	if len(metadata.SpaceDimensions) > 0 {
 		createHypertableStmt.WriteString(fmt.Sprintf(", partitioning_column => '%s'",
-			metadata.SpaceDimensions[0]))
+			sanitizeStringLiteral(metadata.SpaceDimensions[0])))
 	}
 
 	createHypertableStmt.WriteString(");")
@@ -518,20 +518,20 @@ func (t *DB) GenerateHypertableSchema(ctx context.Context, tableName string) (st
 	if metadata.Compression {
 		compressionSettings, err := t.GetCompressionSettings(ctx, tableName)
 		if err == nil && compressionSettings.CompressionEnabled {
-			compressionStmt := fmt.Sprintf("ALTER TABLE %s SET (timescaledb.compress = true);", tableName)
+			compressionStmt := fmt.Sprintf("ALTER TABLE %s SET (timescaledb.compress = true);", sanitizeIdentifier(tableName))
 			result += "\n\n" + compressionStmt
 
 			// Add compression policy if exists
 			if compressionSettings.CompressionInterval != "" {
 				policyStmt := fmt.Sprintf("SELECT add_compression_policy('%s', INTERVAL '%s'",
-					tableName, compressionSettings.CompressionInterval)
+					sanitizeStringLiteral(tableName), sanitizeStringLiteral(compressionSettings.CompressionInterval))
 
 				if compressionSettings.SegmentBy != "" {
-					policyStmt += fmt.Sprintf(", segmentby => '%s'", compressionSettings.SegmentBy)
+					policyStmt += fmt.Sprintf(", segmentby => '%s'", sanitizeStringLiteral(compressionSettings.SegmentBy))
 				}
 
 				if compressionSettings.OrderBy != "" {
-					policyStmt += fmt.Sprintf(", orderby => '%s'", compressionSettings.OrderBy)
+					policyStmt += fmt.Sprintf(", orderby => '%s'", sanitizeStringLiteral(compressionSettings.OrderBy))
 				}
 
 				policyStmt += ");"
@@ -545,7 +545,7 @@ func (t *DB) GenerateHypertableSchema(ctx context.Context, tableName string) (st
 		retentionSettings, err := t.GetRetentionSettings(ctx, tableName)
 		if err == nil && retentionSettings.RetentionEnabled && retentionSettings.RetentionInterval != "" {
 			retentionStmt := fmt.Sprintf("SELECT add_retention_policy('%s', INTERVAL '%s');",
-				tableName, retentionSettings.RetentionInterval)
+				sanitizeStringLiteral(tableName), sanitizeStringLiteral(retentionSettings.RetentionInterval))
 			result += "\n\n" + retentionStmt
 		}
 	}
