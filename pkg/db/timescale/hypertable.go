@@ -30,7 +30,7 @@ func sanitizeIdentifier(identifier string) string {
 	return "\"" + strings.ReplaceAll(identifier, "\"", "\"\"") + "\""
 }
 
-// sanitizeStringLiteral escapes a string literal by replacing ' with ''
+// sanitizeStringLiteral escapes a string literal by replacing ' with ”
 func sanitizeStringLiteral(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
 }
@@ -175,8 +175,8 @@ func (t *DB) ListHypertables(ctx context.Context) ([]Hypertable, error) {
 
 		// Check if compression is enabled
 		compQuery := fmt.Sprintf(
-			"SELECT count(*) > 0 as is_compressed FROM timescaledb_information.compression_settings WHERE hypertable_name = %s",
-			sanitizeIdentifier(ht.TableName),
+			"SELECT count(*) > 0 as is_compressed FROM timescaledb_information.compression_settings WHERE hypertable_name = '%s'",
+			sanitizeStringLiteral(ht.TableName),
 		)
 		compResult, err := t.ExecuteSQLWithoutParams(ctx, compQuery)
 		if err == nil {
@@ -189,8 +189,8 @@ func (t *DB) ListHypertables(ctx context.Context) ([]Hypertable, error) {
 
 		// Check if retention policy is enabled
 		retQuery := fmt.Sprintf(
-			"SELECT count(*) > 0 as has_retention FROM timescaledb_information.jobs WHERE hypertable_name = %s AND proc_name = 'policy_retention'",
-			sanitizeIdentifier(ht.TableName),
+			"SELECT count(*) > 0 as has_retention FROM timescaledb_information.jobs WHERE hypertable_name = '%s' AND proc_name = 'policy_retention'",
+			sanitizeStringLiteral(ht.TableName),
 		)
 		retResult, err := t.ExecuteSQLWithoutParams(ctx, retQuery)
 		if err == nil {
@@ -224,9 +224,9 @@ func (t *DB) GetHypertable(ctx context.Context, tableName string) (*Hypertable, 
 			) as space_column
 		FROM _timescaledb_catalog.hypertable h
 		JOIN _timescaledb_catalog.dimension d ON h.id = d.hypertable_id
-		WHERE h.table_name = %s
+		WHERE h.table_name = '%s'
 		GROUP BY h.id, h.table_name, h.schema_name
-	`, sanitizeIdentifier(tableName))
+	`, sanitizeStringLiteral(tableName))
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {
@@ -318,9 +318,9 @@ func (t *DB) CheckIfHypertable(ctx context.Context, tableName string) (bool, err
 		SELECT EXISTS (
 			SELECT 1
 			FROM _timescaledb_catalog.hypertable
-			WHERE table_name = %s
+			WHERE table_name = '%s'
 		) as is_hypertable
-	`, sanitizeIdentifier(tableName))
+	`, sanitizeStringLiteral(tableName))
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {
@@ -357,10 +357,10 @@ func (t *DB) RecentChunks(ctx context.Context, tableName string, limit int) (int
 			range_start,
 			range_end
 		FROM timescaledb_information.chunks
-		WHERE hypertable_name = %s
+		WHERE hypertable_name = '%s'
 		ORDER BY range_end DESC
 		LIMIT %d
-	`, sanitizeIdentifier(tableName), limit)
+	`, sanitizeStringLiteral(tableName), limit)
 
 	result, err := t.ExecuteSQLWithoutParams(ctx, query)
 	if err != nil {
