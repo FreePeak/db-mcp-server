@@ -1072,7 +1072,8 @@ func getBasicSchemaInfo(ctx context.Context, db db.Database, dbID, dbType string
 
 	rows, err := db.Query(ctx, query)
 	if err != nil {
-		// Return empty schema if query fails
+		// Log the error but return empty schema to avoid breaking the tool
+		logger.Warn("Failed to get basic schema for database %s: %v", dbID, err)
 		return result
 	}
 	defer func() {
