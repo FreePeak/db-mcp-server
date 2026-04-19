@@ -118,6 +118,10 @@ func LoadConfig(logDir string) (*Config, error) {
 			return nil, fmt.Errorf("failed to parse config file %s: %w", config.ConfigPath, err)
 		}
 
+		// Resolve SQLite database paths relative to the config file directory
+		configDir := filepath.Dir(config.ConfigPath)
+		resolveSQLitePaths(&multiDBConfig, configDir)
+
 		config.MultiDBConfig = &multiDBConfig
 	} else {
 		logger.Info("Warning: Config file not found at %s, using environment variables", config.ConfigPath)
@@ -138,6 +142,22 @@ func LoadConfig(logDir string) (*Config, error) {
 	}
 
 	return config, nil
+}
+
+// resolveSQLitePaths resolves SQLite database_path values to absolute paths
+// relative to the config file directory
+func resolveSQLitePaths(multiDBConfig *db.MultiDBConfig, configDir string) {
+	if multiDBConfig == nil {
+		return
+	}
+
+	for i := range multiDBConfig.Connections {
+		conn := &multiDBConfig.Connections[i]
+		if conn.Type == "sqlite" && conn.DatabasePath != "" && !filepath.IsAbs(conn.DatabasePath) {
+			// Resolve relative path against config file directory
+			conn.DatabasePath = filepath.Join(configDir, conn.DatabasePath)
+		}
+	}
 }
 
 // getEnv gets an environment variable or returns a default value
