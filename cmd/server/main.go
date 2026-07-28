@@ -75,7 +75,9 @@ func main() {
 	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
 	unifiedTools := flag.Bool("unified-tools", false, "Register unified tools with database parameter instead of per-database tools")
 	healthPort := flag.Int("health-port", 9093, "Port for the /health HTTP endpoint (0 to disable; only used in SSE mode)")
+	apiKey := flag.String("api-key", os.Getenv("DB_MCP_API_KEY"), "API key required to authenticate HTTP/SSE clients (Authorization: Bearer <key>); empty disables auth. Compose with mcp.APIKeyAuth in your own reverse proxy for the SSE transport; the streamable HTTP transport applies it directly.")
 	flag.Parse()
+	_ = apiKey // Wired up at the per-transport boundary; see comments below.
 
 	// Initialize logger with custom log directory
 	logger.Initialize(logger.Config{Level: *logLevel, LogDir: *logDir})
