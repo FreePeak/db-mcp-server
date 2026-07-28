@@ -194,6 +194,11 @@ func (m *MockDB) QueryTimeout() int {
 	return 30
 }
 
+// IsReadOnly implements db.Database.IsReadOnly (issue #41).
+func (m *MockDB) IsReadOnly() bool {
+	return false
+}
+
 // MockResult implements sql.Result
 type MockResult struct{}
 

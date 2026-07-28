@@ -180,6 +180,7 @@ type Database interface {
 	DriverName() string
 	ConnectionString() string
 	QueryTimeout() int
+	IsReadOnly() bool
 
 	// DB object access (for specific DB operations)
 	DB() *sql.DB
@@ -695,4 +696,12 @@ func (d *database) ConnectionString() string {
 // QueryTimeout returns the configured query timeout in seconds
 func (d *database) QueryTimeout() int {
 	return d.config.QueryTimeout
+}
+
+// IsReadOnly reports whether the connection was opened with read-only mode.
+// For SQLite, this honors the database file mode; for MySQL/Postgres/Oracle
+// the read_only flag is enforced at the application layer (see the use case
+// ExecuteStatement guard) so that the same Database instance can be reused.
+func (d *database) IsReadOnly() bool {
+	return d.config.ReadOnly
 }
