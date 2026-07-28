@@ -450,8 +450,15 @@ func NewDatabase(config Config) (Database, error) {
 	switch config.Type {
 	case "mysql":
 		driverName = "mysql"
-		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true",
-			config.User, config.Password, config.Host, config.Port, config.Name)
+		mysqlParams := []string{"parseTime=true"}
+		if config.ConnectTimeout > 0 {
+			mysqlParams = append(mysqlParams, fmt.Sprintf("timeout=%ds", config.ConnectTimeout))
+			mysqlParams = append(mysqlParams, fmt.Sprintf("readTimeout=%ds", config.QueryTimeout))
+			mysqlParams = append(mysqlParams, fmt.Sprintf("writeTimeout=%ds", config.QueryTimeout))
+		}
+		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?%s",
+			config.User, config.Password, config.Host, config.Port, config.Name,
+			strings.Join(mysqlParams, "&"))
 	case "postgres":
 		driverName = "postgres"
 		dsn = buildPostgresConnStr(config)
@@ -624,8 +631,13 @@ func (d *database) ConnectionString() string {
 	// Return masked DSN (hide password)
 	switch d.config.Type {
 	case "mysql":
-		return fmt.Sprintf("%s:***@tcp(%s:%d)/%s",
+		masked := fmt.Sprintf("%s:***@tcp(%s:%d)/%s",
 			d.config.User, d.config.Host, d.config.Port, d.config.Name)
+		if d.config.ConnectTimeout > 0 {
+			masked += fmt.Sprintf("?timeout=%ds&readTimeout=%ds&writeTimeout=%ds",
+				d.config.ConnectTimeout, d.config.QueryTimeout, d.config.QueryTimeout)
+		}
+		return masked
 	case "postgres":
 		// Create a sanitized version of the connection string
 		params := make([]string, 0)
