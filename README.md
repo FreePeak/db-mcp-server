@@ -490,6 +490,33 @@ For PostgreSQL databases with TimescaleDB extension, these additional specialize
 
 For detailed documentation on TimescaleDB tools, see [TIMESCALEDB_TOOLS.md](docs/TIMESCALEDB_TOOLS.md).
 
+### Unified Tool Mode
+
+If you connect many databases (5+), the per-database tool naming generates a large
+number of tools (5 × N). Some MCP clients — Claude in particular — apply strict
+limits on the total number of tools and tool description size that can cause the
+agent to fail to load the server, ignore tools, or refuse to call them. Issue #18
+documents this exact symptom: "the db-mcp-server does not function properly with
+Claude, even though it works fine with OpenAI".
+
+For these clients, launch the server with the `--unified-tools` flag to register
+six consolidated tools (`query`, `execute`, `transaction`, `performance`,
+`schema`, `list_databases`) instead of per-database tools:
+
+```bash
+./bin/server -t stdio -c config.json --unified-tools
+```
+
+In unified mode, each tool accepts a required `database` parameter that names
+which database the call should target. See the [Configuration](#configuration)
+section for the full list of available databases. This dramatically reduces the
+tool count and the cumulative description size, which resolves the Claude
+compatibility issues.
+
+For very large configurations, also enable `--lazy-loading` so that startup
+doesn't open connections to databases that may never be queried during the
+session.
+
 ## Examples
 
 ### Querying Multiple Databases
