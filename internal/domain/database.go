@@ -10,6 +10,7 @@ type Database interface {
 	Query(ctx context.Context, query string, args ...interface{}) (Rows, error)
 	Exec(ctx context.Context, statement string, args ...interface{}) (Result, error)
 	Begin(ctx context.Context, opts *TxOptions) (Tx, error)
+	IsReadOnly() bool
 }
 
 // Rows represents database query results

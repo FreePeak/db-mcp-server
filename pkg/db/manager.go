@@ -159,6 +159,7 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 		dbConfig.QueryTimeout = cfg.QueryTimeout
 		dbConfig.TargetSessionAttrs = cfg.TargetSessionAttrs
 		dbConfig.Options = cfg.Options
+		dbConfig.ReadOnly = cfg.ReadOnly
 	case "oracle":
 		// Extract Oracle-specific options from Options map
 		if serviceName, ok := cfg.Options["service_name"]; ok {
@@ -191,10 +192,12 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 		dbConfig.ConnectTimeout = cfg.ConnectTimeout
 		dbConfig.QueryTimeout = cfg.QueryTimeout
 		dbConfig.Options = cfg.Options
+		dbConfig.ReadOnly = cfg.ReadOnly
 	case "mysql":
 		// Set MySQL-specific options
 		dbConfig.ConnectTimeout = cfg.ConnectTimeout
 		dbConfig.QueryTimeout = cfg.QueryTimeout
+		dbConfig.ReadOnly = cfg.ReadOnly
 	case "sqlite":
 		// Set SQLite-specific options
 		dbConfig.DatabasePath = cfg.DatabasePath
@@ -210,6 +213,7 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 		dbConfig.ConnectTimeout = cfg.ConnectTimeout
 		dbConfig.QueryTimeout = cfg.QueryTimeout
 		dbConfig.Options = cfg.Options
+		dbConfig.ReadOnly = cfg.ReadOnly
 	}
 
 	// Connection pool settings

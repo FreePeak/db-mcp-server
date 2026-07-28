@@ -56,6 +56,7 @@ type DatabaseAdapter struct {
 		Query(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
 		Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 		BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+		IsReadOnly() bool
 	}
 }
 
@@ -89,6 +90,13 @@ func (a *DatabaseAdapter) Begin(ctx context.Context, opts *domain.TxOptions) (do
 		return nil, err
 	}
 	return &TxAdapter{tx: tx}, nil
+}
+
+// IsReadOnly reports whether the connection was opened in read-only mode.
+// The use-case layer relies on this to enforce the per-database `read_only`
+// configuration flag added for issue #41.
+func (a *DatabaseAdapter) IsReadOnly() bool {
+	return a.db.IsReadOnly()
 }
 
 // RowsAdapter adapts sql.Rows to domain.Rows

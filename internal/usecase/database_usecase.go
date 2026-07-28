@@ -302,6 +302,13 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 		return "", fmt.Errorf("failed to get database: %w", err)
 	}
 
+	// Read-only enforcement: refuse any data-modifying statement when the
+	// connection was opened with read_only: true. This resolves issue #41
+	// by giving operators a per-database guardrail for production access.
+	if db.IsReadOnly() {
+		return "", fmt.Errorf("database %q is configured as read-only; write statements are not allowed", dbID)
+	}
+
 	// Execute statement
 	result, err := db.Exec(ctx, statement, params...)
 	if err != nil {
@@ -326,6 +333,14 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 // ExecuteTransaction executes operations in a transaction
 func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action string, _ string,
 	_ string, _ []interface{}, readOnly bool) (string, map[string]interface{}, error) {
+
+	// Read-only enforcement: refuse non-read-only transaction requests when
+	// the connection was opened with read_only: true (issue #41).
+	if !readOnly && action != "commit" && action != "rollback" {
+		if db, err := uc.repo.GetDatabase(dbID); err == nil && db.IsReadOnly() {
+			return "", nil, fmt.Errorf("database %q is configured as read-only; write transactions are not allowed", dbID)
+		}
+	}
 
 	switch action {
 	case "begin":
