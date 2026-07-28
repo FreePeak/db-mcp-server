@@ -64,6 +64,31 @@ func (tr *ToolRegistry) RegisterAllTools(ctx context.Context, useCase UseCasePro
 		}
 	}
 
+	// Register cross-database filter_tables tool (issue #54). The handler
+	// resolves the target database from the request's database parameter, so
+	// a single registration covers every connected database.
+	if _, ok := tr.factory.GetToolType("filter_tables"); ok {
+		if err := tr.server.AddTool(ctx, tr.factory.toolTypes["filter_tables"].CreateUnifiedTool("filter_tables", dbList), func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
+			database, err := extractAndValidateDatabase(request, dbList)
+			if err != nil {
+				return FormatResponse(nil, err)
+			}
+			// Re-bind dbID into request.Name so HandleRequest's
+			// extractDatabaseIDFromName fallback isn't needed.
+			if request.Parameters == nil {
+				request.Parameters = map[string]interface{}{}
+			}
+			request.Parameters["database"] = database
+			response, err := tr.factory.toolTypes["filter_tables"].HandleRequest(ctx, request, database, tr.databaseUseCase)
+			return FormatResponse(response, err)
+		}); err != nil {
+			logger.Error("Error registering filter_tables tool: %v", err)
+			registrationErrors++
+		} else {
+			logger.Info("Successfully registered filter_tables tool")
+		}
+	}
+
 	// Register common tools
 	tr.registerCommonTools(ctx)
 
@@ -206,7 +231,7 @@ func (tr *ToolRegistry) registerTool(ctx context.Context, toolTypeName string, n
 func (tr *ToolRegistry) registerUnifiedTools(ctx context.Context) error {
 	dbList := tr.databaseUseCase.ListDatabases()
 
-	toolTypeNames := []string{"query", "execute", "transaction", "performance", "schema"}
+	toolTypeNames := []string{"query", "execute", "transaction", "performance", "schema", "filter_tables"}
 
 	registrationErrors := 0
 	for _, typeName := range toolTypeNames {

@@ -668,6 +668,7 @@ func NewToolTypeFactory() *ToolTypeFactory {
 	factory.Register(NewSchemaTool())
 	factory.Register(NewListDatabasesTool())
 	factory.Register(NewListDirectoryTool())
+	factory.Register(NewFilterTablesTool())
 
 	return factory
 }
@@ -726,4 +727,105 @@ func (f *ToolTypeFactory) GetAllToolTypes() []ToolType {
 		types = append(types, toolType)
 	}
 	return types
+}
+
+//------------------------------------------------------------------------------
+// FilterTablesTool implementation
+//------------------------------------------------------------------------------
+
+// FilterTablesTool returns the list of tables whose names match a substring
+// pattern. It is the substring-search equivalent of mcp-alchemy's
+// filter_table_names and resolves FreePeak/db-mcp-server issue #54: callers
+// with many tables (WordPress wp_*, Drupal pre_*, etc.) no longer have to
+// retrieve the full schema list and then filter client-side.
+type FilterTablesTool struct {
+	BaseToolType
+}
+
+// NewFilterTablesTool creates a new filter_tables tool type
+func NewFilterTablesTool() *FilterTablesTool {
+	return &FilterTablesTool{
+		BaseToolType: BaseToolType{
+			name:        "filter_tables",
+			description: "Find tables by substring match",
+		},
+	}
+}
+
+// CreateTool creates a per-database filter_tables tool
+func (t *FilterTablesTool) CreateTool(name string, dbID string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetDescription(dbID)),
+		tools.WithString("pattern",
+			tools.Description("Case-insensitive substring to match table names against"),
+			tools.Required(),
+		),
+	)
+}
+
+// CreateUnifiedTool creates a unified filter_tables tool with a database parameter
+func (t *FilterTablesTool) CreateUnifiedTool(name string, dbList []string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetUnifiedDescription(dbList)),
+		tools.WithString("database",
+			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			tools.Required(),
+		),
+		tools.WithString("pattern",
+			tools.Description("Case-insensitive substring to match table names against"),
+			tools.Required(),
+		),
+	)
+}
+
+// HandleRequest handles the filter_tables request: it pulls the database
+// schema, filters the tables whose names contain the pattern (case
+// insensitive), and returns a small text response with the matched names.
+func (t *FilterTablesTool) HandleRequest(_ context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	if dbID == "" {
+		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	pattern, _ := request.Parameters["pattern"].(string) //nolint:errcheck // type assertion; missing pattern is handled below
+	if pattern == "" {
+		return nil, fmt.Errorf("pattern parameter is required")
+	}
+
+	info, err := useCase.GetDatabaseInfo(dbID)
+	if err != nil {
+		return nil, err
+	}
+
+	tablesRaw, ok := info["tables"].([]map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("database %q returned unexpected schema format", dbID)
+	}
+
+	lower := strings.ToLower(pattern)
+	var matched []string
+	for _, tbl := range tablesRaw {
+		// Try common column names that may carry the table name.
+		for _, key := range []string{"table_name", "tablename", "TABLE_NAME", "name"} {
+			if v, ok := tbl[key].(string); ok {
+				if strings.Contains(strings.ToLower(v), lower) {
+					matched = append(matched, v)
+				}
+				break
+			}
+		}
+	}
+
+	output := fmt.Sprintf("Tables matching %q in %s:\n\n", pattern, dbID)
+	if len(matched) == 0 {
+		output += "(no matches)"
+	} else {
+		for _, name := range matched {
+			output += fmt.Sprintf("- %s\n", name)
+		}
+	}
+	output += fmt.Sprintf("\nMatched %d of %d tables.", len(matched), len(tablesRaw))
+
+	return createTextResponse(output), nil
 }
