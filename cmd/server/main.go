@@ -10,9 +10,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -72,6 +74,7 @@ func main() {
 	lazyLoading := flag.Bool("lazy-loading", false, "Enable lazy loading: connections established on first use (recommended for 10+ databases)")
 	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
 	unifiedTools := flag.Bool("unified-tools", false, "Register unified tools with database parameter instead of per-database tools")
+	healthPort := flag.Int("health-port", 9093, "Port for the /health HTTP endpoint (0 to disable; only used in SSE mode)")
 	flag.Parse()
 
 	// Initialize logger with custom log directory
@@ -248,6 +251,35 @@ func main() {
 		// Set the server address
 		mcpServer.SetAddress(fmt.Sprintf(":%d", cfg.ServerPort))
 
+		// Start the dedicated /health HTTP endpoint on a separate port so the
+		// MCP SSE server is not blocked by container/orchestrator probes.
+		// The endpoint returns 200 OK with a small JSON body describing the
+		// configured database count and uptime so monitoring tools can verify
+		// the server is alive without opening an MCP session.
+		var healthServer *http.Server
+		if *healthPort > 0 {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				if _, err := fmt.Fprintf(w, `{"status":"ok","databases":%d,"transport":"%s"}`,
+					len(dbIDs), cfg.TransportMode); err != nil {
+					logger.Warn("health response write failed: %v", err)
+				}
+			})
+			healthServer = &http.Server{
+				Addr:              fmt.Sprintf(":%d", *healthPort),
+				Handler:           mux,
+				ReadHeaderTimeout: 5 * time.Second,
+			}
+			go func() {
+				logger.Info("Starting health endpoint on :%d/health", *healthPort)
+				if err := healthServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					logger.Warn("health endpoint error: %v", err)
+				}
+			}()
+		}
+
 		// Start the server
 		errCh := make(chan error, 1)
 		go func() {
@@ -270,6 +302,12 @@ func main() {
 			// Shutdown the server
 			if err := mcpServer.Shutdown(shutdownCtx); err != nil {
 				logger.Error("Error during server shutdown: %v", err)
+			}
+
+			if healthServer != nil {
+				if err := healthServer.Shutdown(shutdownCtx); err != nil {
+					logger.Error("Error during health endpoint shutdown: %v", err)
+				}
 			}
 
 			// Close database connections
