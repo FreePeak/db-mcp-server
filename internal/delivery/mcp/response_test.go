@@ -141,6 +141,18 @@ func TestFormatResponse(t *testing.T) {
 			useMock:        false,
 		},
 		{
+			name: "map with concrete typed content slice",
+			input: map[string]interface{}{
+				"content": []map[string]interface{}{
+					{"type": "text", "text": "Typed content"},
+				},
+			},
+			err:            nil,
+			expectError:    false,
+			expectedOutput: `{"content":[{"text":"Typed content","type":"text"}]}`,
+			useMock:        false,
+		},
+		{
 			name:           "empty map response",
 			input:          map[string]interface{}{},
 			err:            nil,
@@ -175,6 +187,62 @@ func TestFormatResponse(t *testing.T) {
 					_ = err    // intentionally ignored in this test
 				}
 			}
+		})
+	}
+}
+
+// TestFormatResponse_ContentSliceTypes locks in that FormatResponse passes
+// through handler maps whose "content" field is either []interface{} or
+// []map[string]interface{}. Prior behavior only accepted []interface{},
+// causing []map[string]interface{} to fall through to the default
+// fmt.Sprintf("%v", response) branch and double-wrap the MCP envelope.
+func TestFormatResponse_ContentSliceTypes(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    interface{}
+		expected string
+	}{
+		{
+			name: "content as []interface{}",
+			input: map[string]interface{}{
+				"content": []interface{}{
+					map[string]interface{}{"type": "text", "text": "hi"},
+				},
+			},
+			expected: `{"content":[{"text":"hi","type":"text"}]}`,
+		},
+		{
+			name: "content as []map[string]interface{} (handler return type)",
+			input: map[string]interface{}{
+				"content": []map[string]interface{}{
+					{"type": "text", "text": "hi"},
+				},
+			},
+			expected: `{"content":[{"text":"hi","type":"text"}]}`,
+		},
+		{
+			name: "content with metadata preserved",
+			input: map[string]interface{}{
+				"content": []map[string]interface{}{
+					{"type": "text", "text": "tx done"},
+				},
+				"metadata": map[string]interface{}{"transactionId": "tx_123"},
+			},
+			expected: `{"content":[{"text":"tx done","type":"text"}],"metadata":{"transactionId":"tx_123"}}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := FormatResponse(tc.input, nil)
+			assert.NoError(t, err)
+			out, err := json.Marshal(resp)
+			assert.NoError(t, err)
+			assert.JSONEq(t, tc.expected, string(out))
+			// Defensive: make sure the Go map fmt string did NOT leak
+			// into the marshaled output.
+			assert.NotContains(t, string(out), "map[",
+				"FormatResponse double-wrapped the envelope via fmt.Sprintf(\"%%v\", response)")
 		})
 	}
 }

@@ -88,8 +88,18 @@ func FormatResponse(response interface{}, err error) (interface{}, error) {
 		}
 
 		if content, exists := respMap["content"]; exists {
-			if contentSlice, isSlice := content.([]interface{}); isSlice {
-				// If content is an empty slice, return a new empty response
+			// Accept both []interface{} (from JSON-decoded input) and
+			// []map[string]interface{} (typical handler return type).
+			// Without this, handler maps fall through to the default
+			// fmt.Sprintf("%v", response) branch and the MCP envelope
+			// gets Go-stringified into the outer text content.
+			switch contentSlice := content.(type) {
+			case []interface{}:
+				if len(contentSlice) == 0 {
+					return NewResponse(), nil
+				}
+				return respMap, nil
+			case []map[string]interface{}:
 				if len(contentSlice) == 0 {
 					return NewResponse(), nil
 				}
