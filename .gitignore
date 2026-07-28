@@ -1,8 +1,8 @@
 # Specific binary files
-server
-server-linux
-multidb
-multidb-linux
+/server
+/server-linux
+/multidb
+/multidb-linux
 /bin/*
 
 # Build & test output
