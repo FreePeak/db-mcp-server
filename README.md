@@ -129,10 +129,27 @@ docker run -p 9092:9092 \
   -v $(pwd)/config.json:/app/my-config.json \
   -e TRANSPORT_MODE=sse \
   -e CONFIG_PATH=/app/my-config.json \
+  -e DB_MCP_API_KEY=replace-me-with-a-long-random-string \
   freepeak/db-mcp-server
 ```
 
 > **Note**: Mount to `/app/my-config.json` as the container has a default file at `/app/config.json`.
+
+#### API-Key Authentication
+
+The SSE and streamable-HTTP transports accept an `Authorization: Bearer <key>`
+header. Set `DB_MCP_API_KEY` (or pass `-api-key`) when launching the Docker
+container; clients must then send the matching bearer token on every request:
+
+```bash
+curl -H "Authorization: Bearer replace-me-with-a-long-random-string" \
+     http://localhost:9092/sse
+```
+
+When no API key is configured the transport remains open (single-user /
+development use). The middleware lives in `internal/delivery/mcp.APIKeyAuth`
+and is exported so you can compose it with your own reverse proxy if you
+front the container with nginx, Caddy, or Traefik.
 
 ### STDIO Mode (IDE Integration)
 
