@@ -10,9 +10,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -64,7 +66,7 @@ func main() {
 	// Parse command-line arguments
 	configFile := flag.String("c", "config.json", "Database configuration file")
 	configPath := flag.String("config", "config.json", "Database configuration file (alternative)")
-	transportMode := flag.String("t", "sse", "Transport mode (stdio or sse)")
+	transportMode := flag.String("t", "sse", "Transport mode (stdio, sse, or streamable)")
 	serverPort := flag.Int("p", 9092, "Server port for SSE transport")
 	serverHost := flag.String("h", "localhost", "Server host for SSE transport")
 	dbConfigJSON := flag.String("db-config", "", "JSON string with database configuration")
@@ -316,6 +318,38 @@ func main() {
 			// Log error to stderr only - never stdout
 			fmt.Fprintf(os.Stderr, "STDIO server error: %v\n", err)
 			os.Exit(1)
+		}
+
+	case "streamable":
+		logger.Info("Starting streamable HTTP server on port %d", cfg.ServerPort)
+
+		mux := http.NewServeMux()
+		mux.Handle("/mcp", mcp.NewStreamableHTTPHandler(mcpServer))
+
+		streamableServer := &http.Server{
+			Addr:              fmt.Sprintf(":%d", cfg.ServerPort),
+			Handler:           mux,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+
+		go func() {
+			logger.Info("Streamable HTTP endpoint ready at POST /mcp on :%d", cfg.ServerPort)
+			if err := streamableServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logger.Error("streamable HTTP server error: %v", err)
+			}
+		}()
+
+		<-stop
+		logger.Info("Shutting down streamable HTTP server...")
+
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+
+		if err := streamableServer.Shutdown(shutdownCtx); err != nil {
+			logger.Error("Error during streamable HTTP shutdown: %v", err)
+		}
+		if err := dbtools.CloseDatabase(); err != nil {
+			logger.Error("Error closing database connections: %v", err)
 		}
 
 	default:
