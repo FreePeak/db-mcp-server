@@ -4,6 +4,8 @@
 
 # Multi Database MCP Server
 
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2FFreePeak%2Fdb-mcp-server.svg)](https://mcptoplist.com/server/glama%2FFreePeak%2Fdb-mcp-server)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Go Report Card](https://goreportcard.com/badge/github.com/FreePeak/db-mcp-server)](https://goreportcard.com/report/github.com/FreePeak/db-mcp-server)
 [![Go Reference](https://pkg.go.dev/badge/github.com/FreePeak/db-mcp-server.svg)](https://pkg.go.dev/github.com/FreePeak/db-mcp-server)
