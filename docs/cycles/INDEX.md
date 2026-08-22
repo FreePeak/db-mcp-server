@@ -65,6 +65,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 49 | Loop-continuity infrastructure (`LOOP_STATE.md`) | ✅ Shipped (hackathon branch) | — |
 | 50 | Durable query-history sink (JSONL, fail-fast config) | ✅ Shipped (hackathon branch) | [cycle-50](cycle-50-history-sink.md) |
 | 51 | History sink server wiring (-query-history-log + env) | ✅ Shipped (hackathon branch) | [cycle-51](cycle-51-history-wiring.md) |
+| 52 | PR #87 title/body refresh for full scope | ✅ Shipped (hackathon branch) | [cycle-52](cycle-52-pr-refresh.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
