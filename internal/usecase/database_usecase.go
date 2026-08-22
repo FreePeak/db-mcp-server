@@ -339,7 +339,16 @@ func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query s
 		}
 	}()
 
-	out, masked, err2 := renderQueryResults(rows, db.MaxRows(), mask || db.MaskPII(), verbosity)
+	effective := verbosity
+	if effective == VerbosityFull {
+		if vp, ok := db.(interface{ Verbosity() string }); ok {
+			switch ResultVerbosity(vp.Verbosity()) {
+			case VerbosityNormal, VerbosityMinimal:
+				effective = ResultVerbosity(vp.Verbosity())
+			}
+		}
+	}
+	out, masked, err2 := renderQueryResults(rows, db.MaxRows(), mask || db.MaskPII(), effective)
 	if err2 == nil {
 		uc.maskingAudit.record(dbID, query, masked)
 	}

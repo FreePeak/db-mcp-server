@@ -50,6 +50,10 @@ type DatabaseConnectionConfig struct {
 	// MaskPii enforces PII masking on query results at the server level;
 	// agents cannot opt out for this database.
 	MaskPii bool `json:"mask_pii,omitempty"`
+
+	// Verbosity sets the per-database default result verbosity
+	// ("full" | "normal" | "minimal"); per-request values still win.
+	Verbosity string `json:"verbosity,omitempty"`
 }
 
 // MultiDBConfig represents the configuration for multiple database connections
@@ -226,6 +230,7 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 	// Result guardrails (all engines)
 	dbConfig.MaxRows = cfg.MaxRows
 	dbConfig.MaskPII = cfg.MaskPii
+	dbConfig.DefaultVerbosity = cfg.Verbosity
 
 	// Connection pool settings
 	if cfg.MaxOpenConns > 0 {

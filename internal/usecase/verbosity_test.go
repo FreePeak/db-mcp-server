@@ -117,3 +117,38 @@ func TestExecuteQueryVerbosity_EndToEnd(t *testing.T) {
 		t.Fatalf("expected compact summary:\n%s", minimal)
 	}
 }
+
+// TestExecuteQueryVerbosity_PerDatabaseDefault proves a database-level
+// verbosity default applies when the client does not choose one.
+func TestExecuteQueryVerbosity_PerDatabaseDefault(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE posts (id INTEGER PRIMARY KEY, body TEXT)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO posts (body) VALUES (?)`, strings.Repeat("z", 3000)); err != nil {
+		t.Fatalf("insert failed: %v", err)
+	}
+
+	wrapper := &sqliteDB{db: raw}
+	uc := NewDatabaseUseCase(&fakeRepo{db: wrapper, dbType: "sqlite"})
+
+	// No DB default: full output.
+	full, _ := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT * FROM posts", nil, false, VerbosityFull)
+	if len(full) <= 3000 {
+		t.Fatalf("expected full body without default, got %d bytes", len(full))
+	}
+
+	// With normal as the DB default and client asking for full (unset),
+	// the server default wins.
+	wrapper.verbosity = "normal"
+	capped, _ := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT * FROM posts", nil, false, VerbosityFull)
+	if len(capped) >= 3000 || !strings.Contains(capped, "…(+") {
+		t.Fatalf("per-db verbosity default not applied: %d bytes", len(capped))
+	}
+
+	// Client choice still beats the default.
+	minimal, _ := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT * FROM posts", nil, false, VerbosityMinimal)
+	if len(minimal) > 800 {
+		t.Fatalf("explicit minimal should stay compact regardless of default: %d bytes", len(minimal))
+	}
+}

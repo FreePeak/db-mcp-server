@@ -41,6 +41,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 25 | Durable audit sink: `-masking-audit-log` JSONL append trail | ✅ Shipped (hackathon branch) | [cycle-25](cycle-25-audit-sink.md) |
 | 26 | Docs surface + schema-contract guard (caught per-db mask_pii drift) | ✅ Shipped (hackathon branch) | [cycle-26](cycle-26-docs-contract.md) |
 | 27 | Result verbosity modes (`minimal`/`normal`/`full`, token compression) | ✅ Shipped (hackathon branch) | [cycle-27](cycle-27-verbosity.md) |
+| 28 | Per-database default verbosity (config-level, precedence-safe) | ✅ Shipped (hackathon branch) | [cycle-28](cycle-28-db-verbosity.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
