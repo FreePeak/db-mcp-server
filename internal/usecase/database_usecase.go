@@ -323,7 +323,7 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 	}
 
 	// Execute query
-	rows, err := db.Query(ctx, query, params...)
+	rows, err := db.Query(ctx, uc.autoLimitedQuery(dbID, query, db), params...)
 	if err != nil {
 		return "", fmt.Errorf("query execution failed: %w", err)
 	}
@@ -362,7 +362,7 @@ func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query s
 		return "", fmt.Errorf("database %q is configured as read-only; write statements are not allowed via queries", dbID)
 	}
 
-	rows, err := db.Query(ctx, query, params...)
+	rows, err := db.Query(ctx, uc.autoLimitedQuery(dbID, query, db), params...)
 	if err != nil {
 		return "", fmt.Errorf("query execution failed: %w", err)
 	}
@@ -394,6 +394,22 @@ func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query s
 func formatQueryResults(rows domain.Rows, maxRows int) (string, error) {
 	out, _, err := renderQueryResults(rows, maxRows, false, VerbosityFull)
 	return out, err
+}
+
+// autoLimitedQuery injects a top-level LIMIT when max_rows is configured,
+// letting the engine stop early instead of materializing unbounded results.
+// Oracle is excluded (ROWNUM/FETCH FIRST syntax differs); introspection
+// failures leave the statement untouched.
+func (uc *DatabaseUseCase) autoLimitedQuery(dbID, query string, db domain.Database) string {
+	maxRows := db.MaxRows()
+	if maxRows <= 0 {
+		return query
+	}
+	dbType, err := uc.repo.GetDatabaseType(dbID)
+	if err != nil || strings.EqualFold(dbType, "oracle") {
+		return query
+	}
+	return applyAutoLimit(query, maxRows)
 }
 
 // ExecuteStatement executes a SQL statement (INSERT, UPDATE, DELETE)

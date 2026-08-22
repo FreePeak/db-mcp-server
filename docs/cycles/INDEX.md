@@ -59,6 +59,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 43 | Coverage audit & gap closure (usecase 83.3%) | ✅ Shipped (hackathon branch) | [cycle-43](cycle-43-coverage-audit.md) |
 | 44 | Tool-registry integration tests (per-db vs unified verified) | ✅ Shipped (hackathon branch) | [cycle-44](cycle-44-registry-tests.md) |
 | 45 | Declarative env defaults for operator flags | ✅ Shipped (hackathon branch) | [cycle-45](cycle-45-env-defaults.md) |
+| 46 | Auto-LIMIT injection (server-side bound, Oracle-safe) | ✅ Shipped (hackathon branch) | [cycle-46](cycle-46-auto-limit.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
