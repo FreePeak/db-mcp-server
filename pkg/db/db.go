@@ -83,6 +83,9 @@ type Config struct {
 	JournalMode      SQLiteJournalMode // Journal mode for SQLite
 	UseModerncDriver bool              // Use modernc.org/sqlite driver instead of mattn/go-sqlite3
 
+	// Result guardrails (all engines)
+	MaxRows int // Maximum rows returned per query; 0 means unlimited
+
 	// Oracle specific options
 	ServiceName     string // Oracle service name (preferred over SID)
 	SID             string // Oracle SID (legacy)
@@ -181,6 +184,7 @@ type Database interface {
 	ConnectionString() string
 	QueryTimeout() int
 	IsReadOnly() bool
+	MaxRows() int
 
 	// DB object access (for specific DB operations)
 	DB() *sql.DB
@@ -704,4 +708,9 @@ func (d *database) QueryTimeout() int {
 // ExecuteStatement guard) so that the same Database instance can be reused.
 func (d *database) IsReadOnly() bool {
 	return d.config.ReadOnly
+}
+
+// MaxRows returns the configured query row limit. Zero means unlimited.
+func (d *database) MaxRows() int {
+	return d.config.MaxRows
 }

@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `max_rows` per-database configuration option (all engines): truncates query results with an explicit `[Truncated]` notice to protect agent context windows from large result sets
+
+### Fixed
+- **Read-only bypass (security)**: write statements (`INSERT`/`UPDATE`/`DELETE`/DDL/data-modifying CTEs/stacked statements) executed through the `query_*` tool no longer bypass the per-database `read_only: true` guard; statement classification strips comments and string literals and defaults to deny for unrecognized leading keywords
+
 ## [v1.6.1] - 2025-04-01
 
 ### Added

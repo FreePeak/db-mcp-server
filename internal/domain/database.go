@@ -11,6 +11,9 @@ type Database interface {
 	Exec(ctx context.Context, statement string, args ...interface{}) (Result, error)
 	Begin(ctx context.Context, opts *TxOptions) (Tx, error)
 	IsReadOnly() bool
+	// MaxRows returns the configured result-row limit for queries against
+	// this database. Zero means unlimited.
+	MaxRows() int
 }
 
 // Rows represents database query results

@@ -230,6 +230,14 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 		return "", fmt.Errorf("failed to get database: %w", err)
 	}
 
+	// Read-only enforcement: the query tool previously accepted any
+	// statement, so an agent could mutate a read_only database through it
+	// even though the execute tool refused writes. Classify the statement
+	// first and fail closed before touching the database.
+	if db.IsReadOnly() && IsWriteStatement(query) {
+		return "", fmt.Errorf("database %q is configured as read-only; write statements are not allowed via queries", dbID)
+	}
+
 	// Execute query
 	rows, err := db.Query(ctx, query, params...)
 	if err != nil {
@@ -237,17 +245,22 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 	}
 	defer func() {
 		if closeErr := rows.Close(); closeErr != nil {
-			err = fmt.Errorf("error closing rows: %w", closeErr)
+			logger.Error("error closing rows: %v", closeErr)
 		}
 	}()
 
-	// Process results into a readable format
+	return formatQueryResults(rows, db.MaxRows())
+}
+
+// formatQueryResults renders query results as text, stopping after maxRows
+// rows when maxRows > 0 so large result sets cannot flood the client's
+// context window. The caller owns closing rows.
+func formatQueryResults(rows domain.Rows, maxRows int) (string, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return "", fmt.Errorf("failed to get column names: %w", err)
 	}
 
-	// Format results as text
 	var resultText strings.Builder
 	resultText.WriteString("Results:\n\n")
 	resultText.WriteString(strings.Join(columns, "\t") + "\n")
@@ -260,12 +273,15 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 		valuePtrs[i] = &values[i]
 	}
 
-	// Process rows
 	rowCount := 0
+	truncated := false
 	for rows.Next() {
+		if maxRows > 0 && rowCount >= maxRows {
+			truncated = true
+			break
+		}
 		rowCount++
-		scanErr := rows.Scan(valuePtrs...)
-		if scanErr != nil {
+		if scanErr := rows.Scan(valuePtrs...); scanErr != nil {
 			return "", fmt.Errorf("failed to scan row: %w", scanErr)
 		}
 
@@ -286,12 +302,16 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 		}
 		resultText.WriteString(strings.Join(rowText, "\t") + "\n")
 	}
-
 	if err = rows.Err(); err != nil {
 		return "", fmt.Errorf("error reading rows: %w", err)
 	}
 
-	resultText.WriteString(fmt.Sprintf("\nTotal rows: %d", rowCount))
+	if truncated {
+		resultText.WriteString(fmt.Sprintf("\nTruncated: showing first %d rows (max_rows=%d). Refine the query with LIMIT or tighter filters to see more.", rowCount, maxRows))
+		resultText.WriteString(fmt.Sprintf("\nTotal rows shown: %d", rowCount))
+	} else {
+		resultText.WriteString(fmt.Sprintf("\nTotal rows: %d", rowCount))
+	}
 	return resultText.String(), nil
 }
 
