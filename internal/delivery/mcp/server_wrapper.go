@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"sort"
+	"sync"
 
 	"github.com/FreePeak/cortex/pkg/server"
 	"github.com/FreePeak/cortex/pkg/types"
@@ -12,12 +14,16 @@ import (
 // ServerWrapper provides a wrapper around server.MCPServer to handle type assertions
 type ServerWrapper struct {
 	mcpServer *server.MCPServer
+
+	mu              sync.Mutex
+	registeredNames map[string]struct{} // every tool name that passed through AddTool
 }
 
 // NewServerWrapper creates a new ServerWrapper
 func NewServerWrapper(mcpServer *server.MCPServer) *ServerWrapper {
 	return &ServerWrapper{
-		mcpServer: mcpServer,
+		mcpServer:       mcpServer,
+		registeredNames: map[string]struct{}{},
 	}
 }
 
@@ -33,6 +39,23 @@ func (sw *ServerWrapper) AddTool(ctx context.Context, tool interface{}, handler 
 		return nil
 	}
 
+	sw.mu.Lock()
+	sw.registeredNames[typedTool.Name] = struct{}{}
+	sw.mu.Unlock()
+
 	// Pass the tool to the MCPServer's AddTool method
 	return sw.mcpServer.AddTool(ctx, typedTool, handler)
+}
+
+// ListRegisteredNames returns sorted names of tools that passed through
+// AddTool — useful for tests and startup diagnostics.
+func (sw *ServerWrapper) ListRegisteredNames() []string {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	out := make([]string, 0, len(sw.registeredNames))
+	for n := range sw.registeredNames {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
 }
