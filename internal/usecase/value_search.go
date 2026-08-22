@@ -121,6 +121,9 @@ func (uc *DatabaseUseCase) SearchValues(ctx context.Context, dbID, needle string
 	}
 
 	sort.Slice(hits, func(i, j int) bool {
+		if hits[i].count != hits[j].count {
+			return hits[i].count > hits[j].count // strongest evidence first
+		}
 		if hits[i].table != hits[j].table {
 			return hits[i].table < hits[j].table
 		}

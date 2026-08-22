@@ -104,6 +104,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 88 | Cross-database fan-out (query databases=) | ✅ Shipped (hackathon branch) | [cycle-88](cycle-88-query-across.md) |
 | 89 | View drift in schema compare | ✅ Shipped (hackathon branch) | [cycle-89](cycle-89-view-drift.md) |
 | 90 | Delivery routing tests (capability wiring) | ✅ Shipped (hackathon branch) | [cycle-90](cycle-90-routing-tests.md) |
+| 91 | Value-search ranking by hit count | ✅ Shipped (hackathon branch) | [cycle-91](cycle-91-ranked-search.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
