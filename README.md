@@ -533,6 +533,8 @@ For each connected database, DB MCP Server automatically generates these special
 | `describe_<db_id>` | Inspect one table's columns, indexes, row estimate, constraints (PK/FK/UNIQUE) with FK target resolution (`author_id -> authors(id)`) via engine catalog queries |
 | `schema_<db_id>` | List tables/columns; `format: "mermaid"` renders the foreign-key graph as a Mermaid ER diagram |
 | `health_<db_id>` | Report connectivity, ping latency, connection-pool state, engine stats (PostgreSQL buffer-cache hit ratio, MySQL InnoDB buffer efficiency), and recent PII-masking redaction counts when masking is active |
+| `transaction_<db_id>` | Multi-statement transactions (`begin`/`execute`/`commit`/`rollback`) plus pre-mutation safety net: every DELETE/UPDATE auto-captures affected rows; `list_snapshots` and `rollback_snapshot` (with `snapshot_id`) let the agent undo a mutation |
+| `execute_<db_id>` | Run write/DDL statements with `dry_run: true` for offline risk analysis (destructive ops, missing WHERE, rewrite/lock advisories); real executions of high/critical statements append an explicit risk notice to the result |
 
 ### TimescaleDB Tools
 

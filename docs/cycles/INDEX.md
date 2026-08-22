@@ -47,6 +47,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 31 | Configurable risk warning threshold (`SetRiskWarnAt`) | ✅ Shipped (hackathon branch) | [cycle-31](cycle-31-risk-threshold.md) |
 | 32 | Pre-mutation snapshots + reverse-SQL rollback | ✅ Shipped (hackathon branch) | [cycle-32](cycle-32-snapshots.md) |
 | 33 | Agent-facing snapshot actions (`list_snapshots`/`rollback_snapshot`) | ✅ Shipped (hackathon branch) | [cycle-33](cycle-33-snapshot-actions.md) |
+| 34 | Snapshot audit context (originating statement) + docs surface | ✅ Shipped (hackathon branch) | [cycle-34](cycle-34-snapshot-context.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

@@ -30,6 +30,7 @@ type MutationSnapshot struct {
 	Columns    []string         `json:"columns"`
 	Rows       []map[string]any `json:"-"`
 	Timestamp  time.Time        `json:"timestamp"`
+	Statement  string           `json:"statement"` // originating statement (audit context)
 }
 
 var (
@@ -181,6 +182,7 @@ func (uc *DatabaseUseCase) captureMutationSnapshot(ctx context.Context, db domai
 		Columns:    columns,
 		Rows:       captured,
 		Timestamp:  time.Now().UTC(),
+		Statement:  truncateQuery(statement),
 	}
 	return uc.snapshots.add(dbID, snap), nil
 }

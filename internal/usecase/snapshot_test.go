@@ -125,3 +125,19 @@ func rawExecSnapSeed(uc *DatabaseUseCase, ctx context.Context) (string, error) {
 	_, err := uc.ExecuteStatement(ctx, "db1", "INSERT OR IGNORE INTO users (id, name) VALUES (2, 'bob')", nil)
 	return "", err
 }
+
+// TestSnapshotCarriesOriginatingStatement proves snapshots record the exact
+// statement that caused them — essential audit context.
+func TestSnapshotCarriesOriginatingStatement(t *testing.T) {
+	uc, ctx := seedUsers(t)
+	if _, err := uc.ExecuteStatement(ctx, "db1", "DELETE FROM users WHERE id = 1", nil); err != nil {
+		t.Fatalf("delete failed: %v", err)
+	}
+	snaps := uc.ListSnapshots("db1")
+	if len(snaps) != 1 {
+		t.Fatalf("expected 1 snapshot")
+	}
+	if !strings.Contains(snaps[0].Statement, "DELETE FROM users") {
+		t.Fatalf("snapshot missing originating statement: %+v", snaps[0].Statement)
+	}
+}
