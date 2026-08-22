@@ -68,3 +68,41 @@ func TestExecuteQueryFormat_Errors(t *testing.T) {
 		t.Fatalf("empty format must default to csv, got: %v", err)
 	}
 }
+
+// TestExecuteQueryFormat_Inserts proves cycle 66: format=inserts renders
+// each row as an INSERT INTO statement for the queried table.
+func TestExecuteQueryFormat_Inserts(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	must := func(q string) {
+		t.Helper()
+		if _, err := raw.Exec(q); err != nil {
+			t.Fatalf("exec failed: %v", err)
+		}
+	}
+	must(`CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, price REAL)`)
+	must(`INSERT INTO items (name, price) VALUES ('plain', 1.5)`)
+	must(`INSERT INTO items (name, price) VALUES ('it''s "quoted"', NULL)`)
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	out, err := uc.ExecuteQueryFormat(context.Background(), "db1",
+		"SELECT id, name, price FROM items ORDER BY id", nil, "inserts")
+	if err != nil {
+		t.Fatalf("export failed: %v", err)
+	}
+	want := "INSERT INTO items (id, name, price) VALUES (1, 'plain', 1.5);\n" +
+		"INSERT INTO items (id, name, price) VALUES (2, 'it''s \"quoted\"', NULL);\n"
+	if out != want {
+		t.Fatalf("inserts mismatch:\ngot:  %q\nwant: %q", out, want)
+	}
+}
+
+func TestExecuteQueryFormat_InsertsErrors(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE t (id INTEGER)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	if _, err := uc.ExecuteQueryFormat(context.Background(), "db1", "SELECT 1", nil, "inserts"); err == nil {
+		t.Fatal("inserts without a FROM table must error")
+	}
+}

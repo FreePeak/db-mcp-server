@@ -152,7 +152,7 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Result size: full (default), normal (cells truncated at 500 chars with …(+N) markers), minimal (row count + first row preview — ideal for write confirmations/polling)"),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: text (default, human-readable table), csv (RFC4180), or json (array of row objects)`),
+			tools.Description(`Output format: text (default, human-readable table), csv (RFC4180), json (array of row objects), or inserts (INSERT INTO statements for the queried table)`),
 		),
 	)
 }
@@ -181,7 +181,7 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 			tools.Description("Result size: full (default), normal (cells truncated at 500 chars with …(+N) markers), minimal (row count + first row preview — ideal for write confirmations/polling)"),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: text (default, human-readable table), csv (RFC4180), or json (array of row objects)`),
+			tools.Description(`Output format: text (default, human-readable table), csv (RFC4180), json (array of row objects), or inserts (INSERT INTO statements for the queried table)`),
 		),
 	)
 }
@@ -245,7 +245,7 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 		}
 	}
 	// Export formats bypass the text renderer entirely.
-	if format, _ := request.Parameters["format"].(string); format == "csv" || format == "json" { //nolint:errcheck // absent means text
+	if format, _ := request.Parameters["format"].(string); format == "csv" || format == "json" || format == "inserts" { //nolint:errcheck // absent means text
 		if x, canExport := useCase.(queryExportUseCase); canExport {
 			result, err := x.ExecuteQueryFormat(ctx, dbID, query, queryParams, format)
 			if err != nil {

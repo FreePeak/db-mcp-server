@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -20,9 +21,9 @@ import (
 // requested format: "csv" (default; RFC4180) or "json" (array of objects).
 func (uc *DatabaseUseCase) ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error) {
 	switch format {
-	case "", "csv", "json":
+	case "", "csv", "json", "inserts":
 	default:
-		return "", fmt.Errorf("unsupported format %q (want \"csv\" or \"json\")", format)
+		return "", fmt.Errorf("unsupported format %q (want \"csv\", \"json\", or \"inserts\")", format)
 	}
 	db, err := uc.repo.GetDatabase(dbID)
 	if err != nil {
@@ -93,6 +94,12 @@ func (uc *DatabaseUseCase) ExecuteQueryFormat(ctx context.Context, dbID, query s
 	switch format {
 	case "json":
 		return renderExportJSON(columns, collected)
+	case "inserts":
+		table, err := tableFromQuery(query)
+		if err != nil {
+			return "", err
+		}
+		return renderExportInserts(table, columns, collected), nil
 	default:
 		return renderExportCSV(columns, collected), nil
 	}
@@ -149,4 +156,44 @@ func jsonCellValue(s string) interface{} {
 		return n
 	}
 	return s
+}
+
+// insertTableRe extracts the single table a plain SELECT reads from;
+// INSERT generation only supports that simple shape.
+var insertTableRe = regexp.MustCompile(`(?i)\bfrom\s+([A-Za-z_][\w$]*)`)
+
+func tableFromQuery(query string) (string, error) {
+	m := insertTableRe.FindStringSubmatch(query)
+	if len(m) < 2 {
+		return "", fmt.Errorf("format=inserts needs a simple SELECT ... FROM <table> statement")
+	}
+	return m[1], nil
+}
+
+// renderExportInserts emits one INSERT per row. Numeric cells stay
+// unquoted so the generated DML round-trips types; strings are
+// single-quote escaped and NULL stays a literal.
+func renderExportInserts(table string, columns []string, rowValues [][]string) string {
+	var b strings.Builder
+	for _, row := range rowValues {
+		fmt.Fprintf(&b, "INSERT INTO %s (%s) VALUES (", table, strings.Join(columns, ", "))
+		for i, v := range row {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(insertValueLiteral(v))
+		}
+		b.WriteString(");\n")
+	}
+	return b.String()
+}
+
+func insertValueLiteral(s string) string {
+	if s == "NULL" {
+		return "NULL"
+	}
+	if _, err := strconv.ParseFloat(s, 64); err == nil {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
