@@ -256,12 +256,18 @@ func NewExecuteTool() *ExecuteTool {
 	return &ExecuteTool{
 		BaseToolType: BaseToolType{
 			name:        "execute",
-			description: "Execute SQL statement",
+			description: "Execute SQL statements",
 		},
 	}
 }
 
-// CreateTool creates an execute tool
+// dryRunCapable is implemented by use cases offering offline statement-risk
+// analysis; detection keeps existing mocks and alternate providers compatible.
+type dryRunCapable interface {
+	ExecuteStatementDryRun(ctx context.Context, dbID, statement string) (*usecase.RiskReport, error)
+}
+
+// CreateTool creates a per-database execute tool
 func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 	return tools.NewTool(
 		name,
@@ -273,6 +279,9 @@ func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithArray("params",
 			tools.Description("Statement parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
+		),
+		tools.WithBoolean("dry_run",
+			tools.Description("Analyze the statement's risk (destructive ops, missing WHERE, table rewrites) WITHOUT executing it"),
 		),
 	)
 }
@@ -293,6 +302,9 @@ func (t *ExecuteTool) CreateUnifiedTool(name string, dbList []string) interface{
 		tools.WithArray("params",
 			tools.Description("Statement parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
+		),
+		tools.WithBoolean("dry_run",
+			tools.Description("Analyze the statement's risk (destructive ops, missing WHERE, table rewrites) WITHOUT executing it"),
 		),
 	)
 }
@@ -316,12 +328,41 @@ func (t *ExecuteTool) HandleRequest(ctx context.Context, request server.ToolCall
 		}
 	}
 
+	// Offline pre-flight: report what the statement WOULD do without running it.
+	dryRun, _ := request.Parameters["dry_run"].(bool) //nolint:errcheck // type assertion; absent param means false
+	if dryRun {
+		dc, capable := useCase.(dryRunCapable)
+		if !capable {
+			return nil, fmt.Errorf("dry_run is not supported by this provider")
+		}
+		report, rerr := dc.ExecuteStatementDryRun(ctx, dbID, statement)
+		if rerr != nil {
+			return nil, rerr
+		}
+		return createTextResponse(formatRiskReport(report)), nil
+	}
+
 	result, err := useCase.ExecuteStatement(ctx, dbID, statement, statementParams)
 	if err != nil {
 		return nil, err
 	}
 
 	return createTextResponse(result), nil
+}
+
+// formatRiskReport renders a RiskReport as compact agent-readable text.
+func formatRiskReport(r *usecase.RiskReport) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "DRY RUN — nothing was executed.\n")
+	fmt.Fprintf(&b, "Kind: %s  Risk: %s  Statements: %d\n", strings.ToUpper(r.Kind[:1])+r.Kind[1:], strings.ToUpper(r.Risk[:1])+r.Risk[1:], r.Statements)
+	if len(r.Notes) > 0 {
+		b.WriteString("\nAdvisories:\n")
+		for _, n := range r.Notes {
+			fmt.Fprintf(&b, "- %s\n", n)
+		}
+	}
+	b.WriteString("\nRe-run without dry_run to execute.")
+	return b.String()
 }
 
 //------------------------------------------------------------------------------

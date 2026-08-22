@@ -109,3 +109,40 @@ func sprintfResponse(resp interface{}) string {
 	}
 	return string(raw)
 }
+
+// stubFullUseCase adds dry-run capability to the stub.
+type stubDryRunUseCase struct {
+	stubMaskingUseCase
+	lastStatement string
+}
+
+func (s *stubDryRunUseCase) ExecuteStatementDryRun(_ context.Context, _ string, statement string) (*usecase.RiskReport, error) {
+	s.lastStatement = statement
+	return &usecase.RiskReport{Kind: "destructive", Risk: "critical", Statements: 1,
+		Notes: []string{"DROP permanently removes a table"}, WouldExecute: true}, nil
+}
+
+// TestExecuteTool_DryRunDoesNotExecute proves the dry_run parameter returns
+// a risk report and never calls ExecuteStatement.
+func TestExecuteTool_DryRunDoesNotExecute(t *testing.T) {
+	tool := NewExecuteTool()
+	uc := &stubDryRunUseCase{}
+
+	resp, err := tool.HandleRequest(context.Background(), server.ToolCallRequest{
+		Name: "execute_db1",
+		Parameters: map[string]interface{}{
+			"statement": "DROP TABLE users",
+			"dry_run":   true,
+		},
+	}, "", uc)
+	if err != nil {
+		t.Fatalf("handle failed: %v", err)
+	}
+	out := strings.ToLower(sprintfResponse(resp))
+	if !strings.Contains(out, "dry run") || !strings.Contains(out, "critical") {
+		t.Fatalf("expected dry-run report with risk level:\n%s", out)
+	}
+	if uc.lastStatement != "DROP TABLE users" {
+		t.Fatal("analyzer did not receive the statement")
+	}
+}

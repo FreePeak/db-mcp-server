@@ -17,6 +17,8 @@ func TestToolSchemas_DocumentedActionsLocked(t *testing.T) {
 	}{
 		{"performance_perdb", NewPerformanceTool().CreateTool("perf_db1", "db1"), []string{"suggest_indexes"}},
 		{"performance_unified", NewPerformanceTool().CreateUnifiedTool("performance", []string{"db1"}), []string{"suggest_indexes"}},
+		{"execute_perdb", NewExecuteTool().CreateTool("execute_db1", "db1"), []string{"dry_run"}},
+		{"execute_unified", NewExecuteTool().CreateUnifiedTool("execute", []string{"db1"}), []string{"dry_run"}},
 		{"query_perdb", NewQueryTool().CreateTool("query_db1", "db1"), []string{"mask_pii", "verbosity"}},
 		{"query_unified", NewQueryTool().CreateUnifiedTool("query", []string{"db1"}), []string{"mask_pii", "verbosity"}},
 	}

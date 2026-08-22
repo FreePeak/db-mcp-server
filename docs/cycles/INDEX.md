@@ -42,6 +42,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 26 | Docs surface + schema-contract guard (caught per-db mask_pii drift) | ✅ Shipped (hackathon branch) | [cycle-26](cycle-26-docs-contract.md) |
 | 27 | Result verbosity modes (`minimal`/`normal`/`full`, token compression) | ✅ Shipped (hackathon branch) | [cycle-27](cycle-27-verbosity.md) |
 | 28 | Per-database default verbosity (config-level, precedence-safe) | ✅ Shipped (hackathon branch) | [cycle-28](cycle-28-db-verbosity.md) |
+| 29 | Offline DDL risk analysis (`dry_run`, multi-engine pre-flight) | ✅ Shipped (hackathon branch) | [cycle-29](cycle-29-ddl-safety.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
