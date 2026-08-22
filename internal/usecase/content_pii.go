@@ -190,8 +190,13 @@ func (uc *DatabaseUseCase) ScanContentPII(ctx context.Context, dbID string, samp
 
 		for col, cats := range hits {
 			categories := make([]string, 0, len(cats))
-			for cat := range cats {
-				categories = append(categories, cat)
+			for cat, n := range cats {
+				if contentThresholdMet(n, scanned) {
+					categories = append(categories, cat)
+				}
+			}
+			if len(categories) == 0 {
+				continue // every category in this column is below the noise floor
 			}
 			sort.Strings(categories)
 			findings = append(findings, ContentPIIFinding{
@@ -216,6 +221,17 @@ func quoteIdentList(names []string) string {
 		quoted[i] = quoteIdent(n)
 	}
 	return strings.Join(quoted, ", ")
+}
+
+// contentThresholdMet decides whether a category's hit count is signal or
+// noise: at least 5% of scanned samples must match (minimum one hit), so a
+// single phone-shaped order id in a 100-row sample does not flag a column
+// while dense PII columns still do.
+func contentThresholdMet(hits, scanned int) bool {
+	if hits < 1 {
+		return false
+	}
+	return hits*20 >= scanned
 }
 
 // isTextualType conservatively limits scanning to string-like columns.

@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -95,5 +96,68 @@ func TestScanContentPII_RespectsSampleCap(t *testing.T) {
 	}
 	if len(findings) == 0 {
 		t.Fatal("expected payload to be flagged")
+	}
+}
+
+// TestContentThresholdMet covers cycle 57: a category must match at least
+// 5% of scanned samples (minimum one) before the column is reported. One
+// stray match in a large sample is noise, not PII.
+func TestContentThresholdMet(t *testing.T) {
+	tests := []struct {
+		hits, scanned int
+		want          bool
+	}{
+		{1, 3, true},    // tiny table: single hit is strong signal
+		{1, 20, true},   // exactly at the 5% line
+		{1, 21, false},  // below the line: noise
+		{5, 100, true},  // exactly 5%
+		{4, 100, false}, // just under
+		{50, 1000, true},
+	}
+	for _, tt := range tests {
+		if got := contentThresholdMet(tt.hits, tt.scanned); got != tt.want {
+			t.Fatalf("contentThresholdMet(%d, %d) = %v, want %v", tt.hits, tt.scanned, got, tt.want)
+		}
+	}
+}
+
+// TestScanContentPII_SuppressesNoise proves a lone phone-shaped order id in
+// a large sample no longer flags the column, while a genuinely dense email
+// column still does.
+func TestScanContentPII_SuppressesNoise(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	must := func(q string) {
+		t.Helper()
+		if _, err := raw.Exec(q); err != nil {
+			t.Fatalf("exec failed: %v", err)
+		}
+	}
+	must(`CREATE TABLE t (id INTEGER PRIMARY KEY, payload TEXT, contacts TEXT)`)
+	for i := 0; i < 100; i++ {
+		payload := fmt.Sprintf("plain note %d", i)
+		if i == 0 {
+			payload = "order 0987654321" // one phone-shaped false positive
+		}
+		contacts := "no pii here"
+		if i < 10 {
+			contacts = "reach me at user" + fmt.Sprint(i) + "@corp.io"
+		}
+		must(fmt.Sprintf(`INSERT INTO t (payload, contacts) VALUES ('%s', '%s')`, payload, contacts))
+	}
+	wrapper := &sqliteDB{db: raw}
+	uc := NewDatabaseUseCase(&fakeRepo{db: wrapper, dbType: "sqlite"})
+	findings, err := uc.ScanContentPII(context.Background(), "db1", 100)
+	if err != nil {
+		t.Fatalf("scan failed: %v", err)
+	}
+	flagged := map[string][]string{}
+	for _, f := range findings {
+		flagged[f.Column] = f.Categories
+	}
+	if _, noisy := flagged["payload"]; noisy {
+		t.Fatalf("noise column flagged despite 1%% hit rate: %+v", findings)
+	}
+	if _, ok := flagged["contacts"]; !ok {
+		t.Fatalf("dense email column not flagged: %+v", findings)
 	}
 }
