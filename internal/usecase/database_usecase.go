@@ -141,6 +141,9 @@ type DatabaseUseCase struct {
 	// snapshots holds pre-mutation row captures for rollback.
 	snapshots *snapshotStore
 
+	// schemaSnaps holds schema baselines for drift detection.
+	schemaSnaps *schemaSnapshotStore
+
 	// riskWarnMu guards riskWarnAt.
 	riskWarnMu sync.Mutex
 	// riskWarnAt is the minimum post-execution advisory level (default high).
@@ -154,6 +157,7 @@ func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 		transactions: make(map[string]domain.Tx),
 		maskingAudit: newMaskingAudit(),
 		snapshots:    newSnapshotStore(),
+		schemaSnaps:  newSchemaSnapshotStore(),
 		riskWarnAt:   "high",
 	}
 }

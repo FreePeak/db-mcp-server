@@ -48,6 +48,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 32 | Pre-mutation snapshots + reverse-SQL rollback | ✅ Shipped (hackathon branch) | [cycle-32](cycle-32-snapshots.md) |
 | 33 | Agent-facing snapshot actions (`list_snapshots`/`rollback_snapshot`) | ✅ Shipped (hackathon branch) | [cycle-33](cycle-33-snapshot-actions.md) |
 | 34 | Snapshot audit context (originating statement) + docs surface | ✅ Shipped (hackathon branch) | [cycle-34](cycle-34-snapshot-context.md) |
+| 35 | Schema snapshots & drift detection (baseline + diff) | ✅ Shipped (hackathon branch) | [cycle-35](cycle-35-schema-drift.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
