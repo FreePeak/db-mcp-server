@@ -47,25 +47,25 @@ func (uc *DatabaseUseCase) SuggestIndexes(ctx context.Context, dbID, query strin
 		return name
 	}
 
-	candidates := map[string][]string{} // table -> columns worth indexing
-	addCandidate := func(table, col string) {
+	candidates := map[string][]idxCandidate{} // table -> columns worth indexing
+	addCandidate := func(table, col, kind string) {
 		table = resolve(table)
 		col = strings.ToLower(col)
 		if !isPlainIdentifier(col) || reservedWord(col) {
 			return
 		}
 		for _, existing := range candidates[table] {
-			if existing == col {
+			if existing.column == col {
 				return
 			}
 		}
-		candidates[table] = append(candidates[table], col)
+		candidates[table] = append(candidates[table], idxCandidate{column: col, kind: kind})
 	}
 
 	// Join columns are the highest-value targets.
 	for _, m := range joinOnRe.FindAllStringSubmatch(query, -1) {
-		addCandidate(m[1], m[2]) // left side
-		addCandidate(m[3], m[4]) // right side
+		addCandidate(m[1], m[2], "join") // left side
+		addCandidate(m[3], m[4], "join") // right side
 	}
 
 	// Filter columns (WHERE x = / LIKE / IN ...). Qualified refs are matched
@@ -73,7 +73,7 @@ func (uc *DatabaseUseCase) SuggestIndexes(ctx context.Context, dbID, query strin
 	for _, m := range whereColRe.FindAllStringSubmatch(query, -1) {
 		col := m[1]
 		target := primaryTableFor(tables, query, col)
-		addCandidate(target, col)
+		addCandidate(target, col, "where")
 	}
 
 	// ORDER BY / GROUP BY leading columns.
@@ -89,7 +89,7 @@ func (uc *DatabaseUseCase) SuggestIndexes(ctx context.Context, dbID, query strin
 					continue
 				}
 				col := colParts[len(colParts)-1] // last segment handles table.col
-				addCandidate(primaryTableFor(tables, query, col), col)
+				addCandidate(primaryTableFor(tables, query, col), col, "sort")
 			}
 		}
 	}
@@ -98,19 +98,53 @@ func (uc *DatabaseUseCase) SuggestIndexes(ctx context.Context, dbID, query strin
 	b.WriteString("Index suggestions (heuristic — verify with EXPLAIN before creating):\n\n")
 	suggestions := 0
 
-	for _, table := range orderedKeys(candidates) {
+	for _, table := range orderedCandidateKeys(candidates) {
 		existing, err := uc.queryTableMetadata(ctx, dbID, indexQueries(strings.ToLower(dbType), table))
 		if err != nil {
 			continue // cannot compare; skip silently
 		}
 		indexedText := strings.ToLower(fmt.Sprintf("%v", existing))
 
-		for _, col := range candidates[table] {
-			if indexCovers(indexedText, col) {
+		// Constraint catalog: primary-key columns are already indexed by
+		// definition and must never be re-suggested.
+		pkCols := map[string]bool{}
+		if constraints, err := uc.queryTableMetadata(ctx, dbID, constraintQueries(strings.ToLower(dbType), table)); err == nil {
+			for _, row := range constraints {
+				if strings.EqualFold(fmt.Sprintf("%v", row["constraint_type"]), "primary key") {
+					if col, ok := row["column_name"].(string); ok {
+						pkCols[strings.ToLower(col)] = true
+					}
+				}
+			}
+		}
+
+		var uncovered []idxCandidate
+		for _, cand := range candidates[table] {
+			if pkCols[cand.column] || indexCovers(indexedText, cand.column) {
 				continue
 			}
+			uncovered = append(uncovered, cand)
+		}
+
+		// Composite grouping: ≥2 uncovered WHERE columns on the same table
+		// usually beat N single-column indexes for AND-filtered queries.
+		var whereCols, otherCols []idxCandidate
+		for _, cand := range uncovered {
+			if cand.kind == "where" {
+				whereCols = append(whereCols, cand)
+			} else {
+				otherCols = append(otherCols, cand)
+			}
+		}
+		if len(whereCols) >= 2 {
+			cols := candidateNames(whereCols)
 			suggestions++
-			fmt.Fprintf(&b, "  CREATE INDEX idx_%s_%s ON %s (%s);\n", table, col, table, col)
+			fmt.Fprintf(&b, "  CREATE INDEX idx_%s_%s ON %s (%s);\n", table, strings.Join(cols, "_"), table, strings.Join(cols, ", "))
+			whereCols = nil
+		}
+		for _, cand := range append(whereCols, otherCols...) {
+			suggestions++
+			fmt.Fprintf(&b, "  CREATE INDEX idx_%s_%s ON %s (%s);\n", table, cand.column, table, cand.column)
 		}
 	}
 
@@ -182,7 +216,23 @@ func indexCovers(existingIndexText, col string) bool {
 		strings.Contains(existingIndexText, col)
 }
 
-func orderedKeys(m map[string][]string) []string {
+// idxCandidate is a column worth indexing plus the clause that nominated it
+// (where/join/sort), driving composite-grouping decisions.
+type idxCandidate struct {
+	column string
+	kind   string
+}
+
+func candidateNames(cands []idxCandidate) []string {
+	out := make([]string, 0, len(cands))
+	for _, c := range cands {
+		out = append(out, c.column)
+	}
+	return out
+}
+
+// orderedCandidateKeys sorts candidate tables for deterministic output.
+func orderedCandidateKeys(m map[string][]idxCandidate) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
