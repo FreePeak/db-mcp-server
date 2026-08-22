@@ -161,3 +161,34 @@ func TestScanContentPII_SuppressesNoise(t *testing.T) {
 		t.Fatalf("dense email column not flagged: %+v", findings)
 	}
 }
+
+// TestScanContentPII_ReportsHitCounts proves cycle 58: findings carry the
+// per-category hit counts so operators can tune the noise floor themselves.
+func TestScanContentPII_ReportsHitCounts(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	must := func(q string) {
+		t.Helper()
+		if _, err := raw.Exec(q); err != nil {
+			t.Fatalf("exec failed: %v", err)
+		}
+	}
+	must(`CREATE TABLE t (id INTEGER PRIMARY KEY, notes TEXT)`)
+	for i := 0; i < 10; i++ {
+		must(fmt.Sprintf(`INSERT INTO t (notes) VALUES ('mail me at u%d@corp.io')`, i))
+	}
+	wrapper := &sqliteDB{db: raw}
+	uc := NewDatabaseUseCase(&fakeRepo{db: wrapper, dbType: "sqlite"})
+	findings, err := uc.ScanContentPII(context.Background(), "db1", 100)
+	if err != nil {
+		t.Fatalf("scan failed: %v", err)
+	}
+	var notes *ContentPIIFinding
+	for i := range findings {
+		if findings[i].Column == "notes" {
+			notes = &findings[i]
+		}
+	}
+	if notes == nil || notes.Hits["email"] != 10 {
+		t.Fatalf("expected notes with email hits=10, got %+v", notes)
+	}
+}

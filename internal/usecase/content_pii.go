@@ -16,10 +16,11 @@ import (
 
 // ContentPIIFinding is one column whose sampled values look like they carry PII.
 type ContentPIIFinding struct {
-	Table          string   `json:"table"`
-	Column         string   `json:"column"`
-	Categories     []string `json:"categories"`
-	SamplesScanned int      `json:"samples_scanned"`
+	Table          string         `json:"table"`
+	Column         string         `json:"column"`
+	Categories     []string       `json:"categories"`
+	Hits           map[string]int `json:"hits,omitempty"`
+	SamplesScanned int            `json:"samples_scanned"`
 }
 
 // contentCategoryOrder lists pattern checks most-specific-first so one value
@@ -201,7 +202,7 @@ func (uc *DatabaseUseCase) ScanContentPII(ctx context.Context, dbID string, samp
 			sort.Strings(categories)
 			findings = append(findings, ContentPIIFinding{
 				Table: tableName, Column: col,
-				Categories: categories, SamplesScanned: scanned,
+				Categories: categories, Hits: cats, SamplesScanned: scanned,
 			})
 		}
 	}
