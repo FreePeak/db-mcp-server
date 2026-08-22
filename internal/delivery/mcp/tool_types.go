@@ -76,6 +76,9 @@ type UseCaseProvider interface {
 	ExecuteExplain(ctx context.Context, dbID, statement string, analyze bool) (string, error)
 	// DescribeTable returns column/index/row-count metadata for one table.
 	DescribeTable(ctx context.Context, dbID, table string) (map[string]interface{}, error)
+	// AnalyzePerformance reports tracked query metrics, slow queries, and
+	// static SQL issue suggestions.
+	AnalyzePerformance(ctx context.Context, dbID, action, query string, limit, thresholdMs int) (string, error)
 }
 
 // BaseToolType provides common functionality for tool types
@@ -477,14 +480,11 @@ func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interf
 }
 
 // HandleRequest handles performance tool requests
-func (t *PerformanceTool) HandleRequest(_ context.Context, request server.ToolCallRequest, dbID string, _ UseCaseProvider) (interface{}, error) {
+func (t *PerformanceTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// If dbID is not provided, extract it from the tool name
 	if dbID == "" {
 		dbID = extractDatabaseIDFromName(request.Name)
 	}
-
-	// This is a simplified implementation
-	// In a real implementation, this would analyze query performance
 
 	action, ok := request.Parameters["action"].(string)
 	if !ok {
@@ -514,22 +514,10 @@ func (t *PerformanceTool) HandleRequest(_ context.Context, request server.ToolCa
 		}
 	}
 
-	// This is where we would call the useCase to analyze performance
-	// For now, just return a placeholder
-	output := fmt.Sprintf("Performance analysis for action '%s' on database '%s'\n", action, dbID)
-
-	if query != "" {
-		output += fmt.Sprintf("Query: %s\n", query)
+	output, err := useCase.AnalyzePerformance(ctx, dbID, action, query, limit, threshold)
+	if err != nil {
+		return nil, err
 	}
-
-	if limit > 0 {
-		output += fmt.Sprintf("Limit: %d\n", limit)
-	}
-
-	if threshold > 0 {
-		output += fmt.Sprintf("Threshold: %d ms\n", threshold)
-	}
-
 	return createTextResponse(output), nil
 }
 

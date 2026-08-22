@@ -69,6 +69,11 @@ func (m *MockDatabaseUseCase) DescribeTable(_ context.Context, _, _ string) (map
 	return nil, nil
 }
 
+// AnalyzePerformance mocks the performance analysis method
+func (m *MockDatabaseUseCase) AnalyzePerformance(_ context.Context, _, _, _ string, _, _ int) (string, error) {
+	return "", nil
+}
+
 func TestTimescaleDBTool(t *testing.T) {
 	tool := mcp.NewTimescaleDBTool()
 	assert.Equal(t, "timescaledb", tool.GetName())

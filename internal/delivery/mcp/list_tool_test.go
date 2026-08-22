@@ -59,6 +59,10 @@ func (m *MockUseCaseProvider) DescribeTable(_ context.Context, _, _ string) (map
 	return nil, nil
 }
 
+func (m *MockUseCaseProvider) AnalyzePerformance(_ context.Context, _, _, _ string, _, _ int) (string, error) {
+	return "", nil
+}
+
 func TestListDirectoryTool(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "list_tool_test")

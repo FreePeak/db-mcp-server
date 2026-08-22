@@ -50,6 +50,9 @@ func (f *fakeFilterUseCase) ExecuteExplain(_ context.Context, _, _ string, _ boo
 func (f *fakeFilterUseCase) DescribeTable(_ context.Context, _, _ string) (map[string]interface{}, error) {
 	return nil, nil
 }
+func (f *fakeFilterUseCase) AnalyzePerformance(_ context.Context, _, _, _ string, _, _ int) (string, error) {
+	return "", nil
+}
 
 func sampleWPInfo() map[string]interface{} {
 	return map[string]interface{}{

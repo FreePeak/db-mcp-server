@@ -40,6 +40,9 @@
 - New `explain_<db_id>` tool (unified mode: `explain`): shows the engine's execution plan for a statement without executing it — `EXPLAIN` (PostgreSQL/TimescaleDB), `EXPLAIN ANALYZE` opt-in (MySQL), `EXPLAIN QUERY PLAN` (SQLite), two-step `EXPLAIN PLAN FOR` + `DBMS_XPLAN.DISPLAY` (Oracle)
 - New `describe_<db_id>` tool (unified mode: `describe`): per-table metadata inspection — columns, indexes, and row estimates via engine-appropriate catalog queries, with identifier validation against catalog-query injection
 
+### Changed
+- `performance_<db_id>` tool now returns real data instead of placeholder text: tracked query metrics (count/avg/max/min per normalized statement), recorded slow queries with errors, static SQL issue suggestions (select-star, cartesian joins, missing WHERE, etc.), and history reset — wired to the query-tracking analyzer that already instruments every `query_*` execution
+
 ### Fixed
 - **Read-only bypass (security)**: write statements (`INSERT`/`UPDATE`/`DELETE`/DDL/data-modifying CTEs/stacked statements) executed through the `query_*` tool no longer bypass the per-database `read_only: true` guard; statement classification strips comments and string literals and defaults to deny for unrecognized leading keywords
 - **Transactions were stubbed**: the `transaction_*` tools' `begin` action silently committed immediately, while `execute`, `commit`, and `rollback` returned success without doing anything. All four actions now operate on a real stored transaction keyed by the returned `transactionId`; unknown IDs fail with a clear error instead of faking success

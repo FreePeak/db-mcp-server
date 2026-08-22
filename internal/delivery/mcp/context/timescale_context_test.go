@@ -67,6 +67,11 @@ func (m *MockDatabaseUseCase) DescribeTable(_ context.Context, _, _ string) (map
 	return nil, nil
 }
 
+// AnalyzePerformance mocks the performance analysis method
+func (m *MockDatabaseUseCase) AnalyzePerformance(_ context.Context, _, _, _ string, _, _ int) (string, error) {
+	return "", nil
+}
+
 func TestTimescaleDBContextProvider(t *testing.T) {
 	// Create a mock use case provider
 	mockUseCase := new(MockDatabaseUseCase)
