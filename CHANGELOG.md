@@ -1,5 +1,37 @@
 # Changelog
 
+## [v1.9.0] - 2026-04-11
+
+### Added
+- Oracle Database support (10g–23c) with RAC, Cloud Wallet, and TNS authentication (#51)
+- `filter_table_names` tool for listing/filtering table names across databases
+- npm distribution channel with release automation (#48)
+
+### Fixed
+- SQLite no longer creates a stray file named after the connection ID in the working directory (#56)
+- `-log-dir` flag now respected in stdio mode (#45)
+- Response format for empty result sets (#30)
+- npm publish workflow no longer runs a redundant install step (#50)
+
+## [v1.8.0] - 2025-05-09
+
+### Added
+- TimescaleDB tool category: hypertable creation and listing (TOOL-1/2/3)
+- TimescaleDB compression policy tools (TOOL-4)
+- TimescaleDB retention policy tools (TOOL-5)
+- TimescaleDB time-series query tools and continuous aggregates (TOOL-6/7)
+- Editor context integration: automatic TimescaleDB detection, hypertable schema info, function/query suggestions (CTX-1/2/4/5)
+- Docker test environment for TimescaleDB (TEST-1)
+
+### Fixed
+- Glama/Docker image build issues
+
+## [v1.7.0] - 2025-04-24
+
+### Added
+- Per-database query timeout configuration (`query_timeout`) (#31)
+- Multi-arch Docker images (amd64/x86) (#27)
+
 ## [Unreleased]
 
 ### Added
