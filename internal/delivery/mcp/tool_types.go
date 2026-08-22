@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/FreePeak/cortex/pkg/server"
 	"github.com/FreePeak/cortex/pkg/tools"
@@ -267,6 +268,13 @@ type dryRunCapable interface {
 	ExecuteStatementDryRun(ctx context.Context, dbID, statement string) (*usecase.RiskReport, error)
 }
 
+// snapshotCapable is implemented by use cases exposing pre-mutation
+// snapshots for agent-driven undo.
+type snapshotCapable interface {
+	ListSnapshots(dbID string) []usecase.MutationSnapshot
+	RollbackSnapshot(ctx context.Context, dbID, snapshotID string) (string, error)
+}
+
 // CreateTool creates a per-database execute tool
 func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 	return tools.NewTool(
@@ -390,7 +398,7 @@ func (t *TransactionTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Transaction action (begin, commit, rollback, execute)"),
+			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot)"),
 			tools.Required(),
 		),
 		tools.WithString("transactionId",
@@ -419,7 +427,7 @@ func (t *TransactionTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Transaction action (begin, commit, rollback, execute)"),
+			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot)"),
 			tools.Required(),
 		),
 		tools.WithString("transactionId",
@@ -482,6 +490,34 @@ func (t *TransactionTool) HandleRequest(ctx context.Context, request server.Tool
 		if !ok {
 			return nil, fmt.Errorf("readOnly parameter must be a boolean")
 		}
+	}
+
+	// Snapshot management actions (capability-detected so existing mocks
+	// and alternate providers stay compatible).
+	if action == "list_snapshots" || action == "rollback_snapshot" {
+		sc, capable := useCase.(snapshotCapable)
+		if !capable {
+			return nil, fmt.Errorf("%s is not supported by this provider", action)
+		}
+		if action == "list_snapshots" {
+			snaps := sc.ListSnapshots(dbID)
+			var b strings.Builder
+			fmt.Fprintf(&b, "Snapshots for %s: %d\n", dbID, len(snaps))
+			for _, sn := range snaps {
+				fmt.Fprintf(&b, "- %s  %s on %s (%d rows) at %s\n",
+					sn.ID, sn.Kind, sn.Table, len(sn.Rows), sn.Timestamp.Format(time.RFC3339))
+			}
+			return createTextResponse(b.String()), nil
+		}
+		snapID, _ := request.Parameters["snapshot_id"].(string) //nolint:errcheck // absent param handled below
+		if snapID == "" {
+			return nil, fmt.Errorf("snapshot_id parameter is required for rollback_snapshot")
+		}
+		msg, err := sc.RollbackSnapshot(ctx, dbID, snapID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(msg), nil
 	}
 
 	message, metadata, err := useCase.ExecuteTransaction(ctx, dbID, action, txID, statement, params, readOnly)

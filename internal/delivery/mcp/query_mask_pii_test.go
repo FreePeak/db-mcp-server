@@ -146,3 +146,58 @@ func TestExecuteTool_DryRunDoesNotExecute(t *testing.T) {
 		t.Fatal("analyzer did not receive the statement")
 	}
 }
+
+type stubSnapshotUseCase struct {
+	stubMaskingUseCase
+	rolledBack string
+}
+
+func (s *stubSnapshotUseCase) ListSnapshots(dbID string) []usecase.MutationSnapshot {
+	return []usecase.MutationSnapshot{{ID: "snap_1", DatabaseID: dbID, Kind: "delete", Table: "users"}}
+}
+
+func (s *stubSnapshotUseCase) RollbackSnapshot(_ context.Context, _ string, id string) (string, error) {
+	s.rolledBack = id
+	return "Restored 1 row(s) from snapshot " + id, nil
+}
+
+// TestTransactionTool_SnapshotActions proves list_snapshots/rollback_snapshot
+// route to the snapshot-capable use case.
+func TestTransactionTool_SnapshotActions(t *testing.T) {
+	tool := NewTransactionTool()
+
+	t.Run("rollback_snapshot", func(t *testing.T) {
+		uc := &stubSnapshotUseCase{}
+		resp, err := tool.HandleRequest(context.Background(), server.ToolCallRequest{
+			Name: "transaction_db1",
+			Parameters: map[string]interface{}{
+				"action":      "rollback_snapshot",
+				"snapshot_id": "snap_7",
+			},
+		}, "", uc)
+		if err != nil {
+			t.Fatalf("handle failed: %v", err)
+		}
+		if uc.rolledBack != "snap_7" {
+			t.Fatalf("expected rollback of snap_7, got %q", uc.rolledBack)
+		}
+		out := sprintfResponse(resp)
+		if !strings.Contains(out, "snap_7") {
+			t.Fatalf("expected confirmation mentioning snap_7:\n%s", out)
+		}
+	})
+
+	t.Run("list_snapshots", func(t *testing.T) {
+		uc := &stubSnapshotUseCase{}
+		resp, err := tool.HandleRequest(context.Background(), server.ToolCallRequest{
+			Name:       "transaction_db1",
+			Parameters: map[string]interface{}{"action": "list_snapshots"},
+		}, "", uc)
+		if err != nil {
+			t.Fatalf("handle failed: %v", err)
+		}
+		if out := sprintfResponse(resp); !strings.Contains(out, "snap_1") {
+			t.Fatalf("expected listing to include snap_1:\n%s", out)
+		}
+	})
+}
