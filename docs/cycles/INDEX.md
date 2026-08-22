@@ -98,6 +98,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 82 | Trigger listing (schema format=triggers) | ✅ Shipped (hackathon branch) | [cycle-82](cycle-82-triggers.md) |
 | 83 | Stored routine listing (schema format=routines) | ✅ Shipped (hackathon branch) | [cycle-83](cycle-83-routines.md) |
 | 84 | CSV bulk import (execute csv_data=) | ✅ Shipped (hackathon branch) | [cycle-84](cycle-84-csv-import.md) |
+| 85 | Custom type listing (schema format=types) | ✅ Shipped (hackathon branch) | [cycle-85](cycle-85-custom-types.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
