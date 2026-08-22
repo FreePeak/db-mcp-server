@@ -36,6 +36,8 @@ func (uc *DatabaseUseCase) AnalyzePerformance(ctx context.Context, dbID, action,
 			limit = 10
 		}
 		return uc.engineSlowQueries(ctx, dbID, limit)
+	case "suggest_indexes":
+		return uc.SuggestIndexes(ctx, dbID, query)
 	case "suggest":
 		if strings.TrimSpace(query) == "" {
 			return "", fmt.Errorf("query parameter is required for suggest action")

@@ -30,6 +30,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 14 | Engine-level slow queries (pg_stat_statements / MySQL digests) | ✅ Shipped | [cycle-14](cycle-14-engine-slow-queries.md) |
 | 15 | FK referenced-table resolution in describe | ✅ Shipped | [cycle-15](cycle-15-fk-references.md) |
 | 16 | Mermaid ERD via schema tool (`format=mermaid`) | ✅ Shipped | [cycle-16](cycle-16-mermaid-erd.md) |
+| 17 | Index advisor (`suggest_indexes` action, alias-safe) | ✅ Shipped (hackathon branch) | [cycle-17](cycle-17-index-advisor.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
