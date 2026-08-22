@@ -112,8 +112,20 @@ Protect agent sessions against runaway queries and accidental writes:
 | Setting | Scope | Effect |
 |---------|-------|--------|
 | `"read_only": true` | per database | Blocks write statements (`INSERT`, `UPDATE`, `DELETE`, DDL, data-modifying CTEs, stacked writes) through **both** query and execute tools, **and** enforces rejection at the database engine itself on PostgreSQL/TimescaleDB (`default_transaction_read_only=on`) and MySQL (`transaction_read_only=1`); SQLite opens `mode=ro`. Classification strips comments and string literals and defaults to deny for unrecognized statements. |
-| `"max_rows": 1000` | per database | Truncates result sets at N rows and appends an explicit `[Truncated]` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. |
+| `"max_rows": 1000` | per database | Truncates result sets at N rows with an explicit `[Truncated]` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. When set, unbounded SELECTs also get `LIMIT n` injected server-side (engines stop early instead of materializing everything; Oracle excluded; existing LIMITs respected) — see Auto-LIMIT below. |
 | `"mask_pii": true` | per database | **Server-enforced PII masking**: query results have emails, phone numbers, credit cards, SSNs, IP addresses and long numeric identifiers redacted (`[EMAIL]`, `[PHONE]`, …) regardless of per-request parameters. Agents can also opt in per query with `"mask_pii": true`. |
+
+#### Auto-LIMIT
+
+With `max_rows` configured, read queries without their own top-level `LIMIT`
+get one injected before execution:
+
+- `SELECT * FROM users` → `SELECT * FROM users LIMIT 1000`
+- Queries with an existing top-level `LIMIT` pass through untouched
+- A subquery's `LIMIT` does **not** suppress injection (it never bounds the outer result)
+- Non-SELECT statements are never modified; Oracle connections are excluded
+
+This bounds engine work, not just the context window.
 | `"query_timeout": 30` | per database | Cancels queries that exceed the timeout in seconds. |
 
 > **Defense in depth**: read-only is enforced in three layers — application classifier, engine session defaults, and (recommended) least-privilege database users. Oracle currently relies on the classifier plus user privileges.

@@ -60,6 +60,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 44 | Tool-registry integration tests (per-db vs unified verified) | ✅ Shipped (hackathon branch) | [cycle-44](cycle-44-registry-tests.md) |
 | 45 | Declarative env defaults for operator flags | ✅ Shipped (hackathon branch) | [cycle-45](cycle-45-env-defaults.md) |
 | 46 | Auto-LIMIT injection (server-side bound, Oracle-safe) | ✅ Shipped (hackathon branch) | [cycle-46](cycle-46-auto-limit.md) |
+| 47 | Auto-LIMIT documentation (guardrails table + explainer) | ✅ Shipped (hackathon branch) | [cycle-47](cycle-47-auto-limit-docs.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
