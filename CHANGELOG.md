@@ -38,6 +38,7 @@
 - `max_rows` per-database configuration option (all engines): truncates query results with an explicit `[Truncated]` notice to protect agent context windows from large result sets
 - **Engine-level read-only enforcement** (PostgreSQL/TimescaleDB and MySQL): when `read_only: true`, connections are opened with server-side write rejection (`default_transaction_read_only=on` / `transaction_read_only=1`), so guardrails hold even if application-layer checks are bypassed. SQLite already enforces via `mode=ro`; Oracle relies on the application-layer classifier plus least-privilege users.
 - New `explain_<db_id>` tool (unified mode: `explain`): shows the engine's execution plan for a statement without executing it — `EXPLAIN` (PostgreSQL/TimescaleDB), `EXPLAIN ANALYZE` opt-in (MySQL), `EXPLAIN QUERY PLAN` (SQLite), two-step `EXPLAIN PLAN FOR` + `DBMS_XPLAN.DISPLAY` (Oracle)
+- New `describe_<db_id>` tool (unified mode: `describe`): per-table metadata inspection — columns, indexes, and row estimates via engine-appropriate catalog queries, with identifier validation against catalog-query injection
 
 ### Fixed
 - **Read-only bypass (security)**: write statements (`INSERT`/`UPDATE`/`DELETE`/DDL/data-modifying CTEs/stacked statements) executed through the `query_*` tool no longer bypass the per-database `read_only: true` guard; statement classification strips comments and string literals and defaults to deny for unrecognized leading keywords

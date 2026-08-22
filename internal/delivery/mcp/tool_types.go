@@ -74,6 +74,8 @@ type UseCaseProvider interface {
 	IsLazyLoading() bool
 	// ExecuteExplain returns the engine's execution plan for a statement.
 	ExecuteExplain(ctx context.Context, dbID, statement string, analyze bool) (string, error)
+	// DescribeTable returns column/index/row-count metadata for one table.
+	DescribeTable(ctx context.Context, dbID, table string) (map[string]interface{}, error)
 }
 
 // BaseToolType provides common functionality for tool types
@@ -611,7 +613,115 @@ func (t *ExplainTool) HandleRequest(ctx context.Context, request server.ToolCall
 }
 
 //------------------------------------------------------------------------------
-// SchemaTool implementation
+// DescribeTool implementation
+//------------------------------------------------------------------------------
+
+// DescribeTool handles per-table metadata inspection: columns, indexes,
+// and row estimates.
+type DescribeTool struct {
+	BaseToolType
+}
+
+// NewDescribeTool creates a new describe tool type
+func NewDescribeTool() *DescribeTool {
+	return &DescribeTool{
+		BaseToolType: BaseToolType{
+			name:        "describe",
+			description: "Show columns, indexes, and row estimate for a table",
+		},
+	}
+}
+
+// CreateTool creates a describe tool for a specific database
+func (t *DescribeTool) CreateTool(name string, dbID string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetDescription(dbID)),
+		tools.WithString("table",
+			tools.Description("Table name to inspect (schema-qualified allowed, e.g. public.users)"),
+			tools.Required(),
+		),
+	)
+}
+
+// CreateUnifiedTool creates a describe tool with a database parameter
+func (t *DescribeTool) CreateUnifiedTool(name string, dbList []string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetUnifiedDescription(dbList)),
+		tools.WithString("database",
+			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			tools.Required(),
+		),
+		tools.WithString("table",
+			tools.Description("Table name to inspect (schema-qualified allowed, e.g. public.users)"),
+			tools.Required(),
+		),
+	)
+}
+
+// HandleRequest handles describe tool requests
+func (t *DescribeTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	if dbID == "" {
+		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	table, ok := request.Parameters["table"].(string)
+	if !ok {
+		return nil, fmt.Errorf("table parameter must be a string")
+	}
+
+	info, err := useCase.DescribeTable(ctx, dbID, table)
+	if err != nil {
+		return nil, err
+	}
+	return createTextResponse(formatDescribeResult(info)), nil
+}
+
+// mapString safely extracts a string field from a metadata map.
+func mapString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+// formatDescribeResult renders describe output as compact readable text.
+func formatDescribeResult(info map[string]interface{}) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Table %v (database %v, engine %v)\n\n", info["table"], info["database"], info["dbType"])
+
+	b.WriteString("Columns:\n")
+	columns, _ := describeRows(info["columns"])
+	for _, c := range columns {
+		fmt.Fprintf(&b, "  %-28s %-20s nullable=%v default=%s\n",
+			mapString(c, "column_name"), mapString(c, "data_type"),
+			c["is_nullable"], mapString(c, "column_default"))
+	}
+
+	b.WriteString("\nIndexes:\n")
+	indexes, _ := describeRows(info["indexes"])
+	for _, ix := range indexes {
+		name := mapString(ix, "index_name")
+		def := mapString(ix, "definition")
+		if def != "" {
+			fmt.Fprintf(&b, "  %s — %s\n", name, def)
+		} else {
+			fmt.Fprintf(&b, "  %s\n", name)
+		}
+	}
+
+	if rc, ok := info["rowCount"].(string); ok && rc != "" {
+		fmt.Fprintf(&b, "\nRows (estimate): %s\n", rc)
+	}
+	return b.String()
+}
+
+func describeRows(v interface{}) ([]map[string]interface{}, bool) {
+	rows, ok := v.([]map[string]interface{})
+	return rows, ok
+}
+
 //------------------------------------------------------------------------------
 
 // SchemaTool handles database schema exploration
@@ -747,6 +857,7 @@ func NewToolTypeFactory() *ToolTypeFactory {
 	factory.Register(NewTransactionTool())
 	factory.Register(NewPerformanceTool())
 	factory.Register(NewExplainTool())
+	factory.Register(NewDescribeTool())
 	factory.Register(NewSchemaTool())
 	factory.Register(NewListDatabasesTool())
 	factory.Register(NewListDirectoryTool())

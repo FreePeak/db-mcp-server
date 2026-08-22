@@ -64,6 +64,11 @@ func (m *MockDatabaseUseCase) ExecuteExplain(_ context.Context, _, _ string, _ b
 	return "", nil
 }
 
+// DescribeTable mocks the describe method
+func (m *MockDatabaseUseCase) DescribeTable(_ context.Context, _, _ string) (map[string]interface{}, error) {
+	return nil, nil
+}
+
 func TestTimescaleDBTool(t *testing.T) {
 	tool := mcp.NewTimescaleDBTool()
 	assert.Equal(t, "timescaledb", tool.GetName())

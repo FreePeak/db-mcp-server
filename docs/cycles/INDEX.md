@@ -20,7 +20,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 04 | Unified-tools audit + issue triage (#81/#83) | ✅ Actioned | [cycle-04](cycle-04-unified-audit-issue-triage.md) |
 | 05 | explain_<db_id> plan-analysis tool | ✅ Shipped (PR #85) | [cycle-05](cycle-05-explain-tool.md) |
 | 06 | CHANGELOG backfill v1.7.0–v1.9.0 | ✅ Shipped (PR #85) | [cycle-06](cycle-06-changelog-backfill.md) |
-| 07 | Table/column schema depth (describe tool) | 🔄 In progress | [cycle-07](cycle-07-describe-table.md) |
+| 07 | Table/column schema depth (describe tool) | ✅ Shipped (PR #85) | [cycle-07](cycle-07-describe-table.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

@@ -55,6 +55,10 @@ func (m *MockUseCaseProvider) ExecuteExplain(_ context.Context, _, _ string, _ b
 	return "", nil
 }
 
+func (m *MockUseCaseProvider) DescribeTable(_ context.Context, _, _ string) (map[string]interface{}, error) {
+	return nil, nil
+}
+
 func TestListDirectoryTool(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "list_tool_test")

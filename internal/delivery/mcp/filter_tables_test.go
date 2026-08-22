@@ -47,6 +47,9 @@ func (f *fakeFilterUseCase) IsLazyLoading() bool { return true }
 func (f *fakeFilterUseCase) ExecuteExplain(_ context.Context, _, _ string, _ bool) (string, error) {
 	return "", nil
 }
+func (f *fakeFilterUseCase) DescribeTable(_ context.Context, _, _ string) (map[string]interface{}, error) {
+	return nil, nil
+}
 
 func sampleWPInfo() map[string]interface{} {
 	return map[string]interface{}{

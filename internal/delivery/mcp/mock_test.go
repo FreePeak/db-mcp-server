@@ -58,3 +58,12 @@ func (m *MockDatabaseUseCase) ExecuteExplain(_ context.Context, _, _ string, _ b
 	args := m.Called()
 	return args.String(0), args.Error(1)
 }
+
+// DescribeTable mocks the describe method
+func (m *MockDatabaseUseCase) DescribeTable(_ context.Context, _, _ string) (map[string]interface{}, error) {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]interface{}), args.Error(1)
+}
