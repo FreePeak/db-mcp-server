@@ -229,6 +229,7 @@ type schemaCompareUseCase interface {
 // row counts between two databases.
 type dataCompareUseCase interface {
 	CompareTableCounts(ctx context.Context, dbIDA, dbIDB string) (string, error)
+	CompareTableSamples(ctx context.Context, dbIDA, dbIDB, table string, limit int) (string, error)
 }
 
 // piIMaskingUseCase is implemented by use cases that support opt-in PII
@@ -1187,8 +1188,11 @@ func (t *SchemaTool) CreateTool(name string, dbID string) interface{} {
 	return tools.NewTool(
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
+		tools.WithString("table",
+			tools.Description("Table name; required only for format=compare_samples"),
+		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with param)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), or "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table)`),
 		),
 	)
 }
@@ -1202,8 +1206,11 @@ func (t *SchemaTool) CreateUnifiedTool(name string, dbList []string) interface{}
 			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
 			tools.Required(),
 		),
+		tools.WithString("table",
+			tools.Description("Table name; required only for format=compare_samples"),
+		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with param)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), or "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table)`),
 		),
 	)
 }
@@ -1235,6 +1242,28 @@ func (t *SchemaTool) HandleRequest(ctx context.Context, request server.ToolCallR
 			return nil, fmt.Errorf("row-count comparison is not supported by this provider")
 		}
 		out, err := dc.CompareTableCounts(ctx, dbID, compareWith)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "compare_samples":
+		compareWith, _ := request.Parameters["compare_with"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(compareWith) == "" {
+			return nil, fmt.Errorf("format=compare_samples requires the compare_with parameter (database id to diff against)")
+		}
+		table, _ := request.Parameters["table"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(table) == "" {
+			return nil, fmt.Errorf("format=compare_samples requires the table parameter")
+		}
+		limit := 50
+		if v, ok := request.Parameters["limit"].(float64); ok && int(v) > 0 {
+			limit = int(v)
+		}
+		dc, can := useCase.(dataCompareUseCase)
+		if !can {
+			return nil, fmt.Errorf("sample comparison is not supported by this provider")
+		}
+		out, err := dc.CompareTableSamples(ctx, dbID, compareWith, table, limit)
 		if err != nil {
 			return nil, err
 		}

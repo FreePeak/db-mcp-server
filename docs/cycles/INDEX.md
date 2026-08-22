@@ -85,6 +85,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 69 | Single-column statistical profile | ✅ Shipped (hackathon branch) | [cycle-69](cycle-69-column-profile.md) |
 | 70 | SESSION-REPORT refresh for cycles 52-69 | ✅ Shipped (hackathon branch) | [cycle-70](cycle-70-session-report.md) |
 | 71 | Cross-DB row-count compare (compare_data_counts) | ✅ Shipped (hackathon branch) | [cycle-71](cycle-71-row-count-compare.md) |
+| 72 | Sampled row-level diff (compare_samples) | ✅ Shipped (hackathon branch) | [cycle-72](cycle-72-sample-diff.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

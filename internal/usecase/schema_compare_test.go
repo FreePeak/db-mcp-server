@@ -234,3 +234,50 @@ func TestCompareTableCounts(t *testing.T) {
 		t.Fatalf("expected logs 0/0 in:\n%s", out)
 	}
 }
+
+// TestCompareTableSamples proves cycle 72: rows present on only one side
+// of two databases are reported as added/removed within the sampled window.
+func TestCompareTableSamples(t *testing.T) {
+	rawA := openSQLiteForTest(t)
+	rawB := openSQLiteForTest(t)
+	for _, raw := range []*sql.DB{rawA, rawB} {
+		if _, err := raw.Exec(`CREATE TABLE tags (id INTEGER PRIMARY KEY, label TEXT)`); err != nil {
+			t.Fatalf("create failed: %v", err)
+		}
+	}
+	seed := func(raw *sql.DB, rows [][2]interface{}) {
+		t.Helper()
+		for _, r := range rows {
+			if _, err := raw.Exec(`INSERT INTO tags (id, label) VALUES (?, ?)`, r[0], r[1]); err != nil {
+				t.Fatalf("seed failed: %v", err)
+			}
+		}
+	}
+	seed(rawA, [][2]interface{}{{1, "a"}, {2, "b"}, {3, "c"}})
+	seed(rawB, [][2]interface{}{{1, "a"}, {2, "changed"}, {4, "d"}})
+
+	repo := &multiRepo{
+		dbs:   map[string]domain.Database{"a": &sqliteDB{db: rawA}, "b": &sqliteDB{db: rawB}},
+		types: map[string]string{"a": "sqlite", "b": "sqlite"},
+	}
+	uc := NewDatabaseUseCase(repo)
+
+	out, err := uc.CompareTableSamples(context.Background(), "a", "b", "tags", 100)
+	if err != nil {
+		t.Fatalf("compare failed: %v", err)
+	}
+	for _, want := range []string{"(3, c)", "(2, changed)", "(4, d)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+
+	// Identical data reports a clean match.
+	out, err = uc.CompareTableSamples(context.Background(), "a", "a", "tags", 100)
+	if err != nil {
+		t.Fatalf("compare failed: %v", err)
+	}
+	if !strings.Contains(out, "match") {
+		t.Fatalf("expected clean match:\n%s", out)
+	}
+}
