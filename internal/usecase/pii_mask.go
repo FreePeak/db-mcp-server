@@ -52,7 +52,7 @@ func maskPIIInText(value, column string) string {
 	// and IPs before phones (dots are part of the phone charset).
 	out = cardRe.ReplaceAllStringFunc(out, func(m string) string {
 		digits := len(digitCountRe.FindAllString(m, -1))
-		if digits >= 13 && digits <= 19 && !strings.Contains(m, ":") {
+		if digits >= 13 && digits <= 19 && !strings.Contains(m, ":") && luhnValid(m) {
 			return "[CREDIT_CARD]"
 		}
 		return m
@@ -64,6 +64,35 @@ func maskPIIInText(value, column string) string {
 }
 
 var digitCountRe = regexp.MustCompile(`\d`)
+
+// luhnValid checks a candidate card number's checksum, filtering digit runs
+// that merely look like cards (order numbers, timestamps). Non-digit
+// separators are ignored; fewer than two digits fails.
+func luhnValid(s string) bool {
+	digits := make([]int, 0, 19)
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			digits = append(digits, int(r-'0'))
+		}
+	}
+	if len(digits) < 2 {
+		return false
+	}
+	sum := 0
+	double := false
+	for i := len(digits) - 1; i >= 0; i-- {
+		d := digits[i]
+		if double {
+			d *= 2
+			if d > 9 {
+				d -= 9
+			}
+		}
+		sum += d
+		double = !double
+	}
+	return sum%10 == 0
+}
 
 // formatQueryResultsMasked renders query results with PII masking applied to
 // every data cell (headers stay visible).

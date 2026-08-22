@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -32,9 +33,8 @@ func TestCloudRegression(t *testing.T) {
 			database, err := NewDatabase(entry.Config)
 			require.NoError(t, err)
 
-			err = database.Connect()
-			if err != nil {
-				// Free tiers scale to zero / pause; cold starts may refuse.
+			// Free tiers scale to zero / pause; retry absorbs cold-start refusals.
+			if err := connectWithRetry(database, 3, 2*time.Second); err != nil {
 				t.Skipf("Cloud database %s not reachable (%v) — free tier may be asleep", entry.Name, err)
 			}
 			defer func() { _ = database.Close() }()
