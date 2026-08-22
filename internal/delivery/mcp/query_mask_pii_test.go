@@ -201,3 +201,77 @@ func TestTransactionTool_SnapshotActions(t *testing.T) {
 		}
 	})
 }
+
+type stubSchemaDriftUseCase struct {
+	stubMaskingUseCase
+	lastBaseline string
+}
+
+func (s *stubSchemaDriftUseCase) CaptureSchemaSnapshot(_ context.Context, _ string) (*usecase.SchemaSnapshot, error) {
+	return &usecase.SchemaSnapshot{ID: "schema_snap_1", Tables: map[string][]usecase.SchemaColumn{
+		"users": {{Name: "id", Type: "integer"}},
+	}}, nil
+}
+
+func (s *stubSchemaDriftUseCase) CheckSchemaDrift(_ context.Context, _ string, baselineID string) (*usecase.SchemaDriftReport, error) {
+	s.lastBaseline = baselineID
+	return &usecase.SchemaDriftReport{BaselineID: baselineID, Drifted: true,
+		Changes: []string{"users.email added (text)"}}, nil
+}
+
+func (s *stubSchemaDriftUseCase) ListSchemaSnapshots(dbID string) []usecase.SchemaSnapshot {
+	return []usecase.SchemaSnapshot{{ID: "schema_snap_1", DatabaseID: dbID}}
+}
+
+// TestTransactionTool_SchemaDriftActions proves the three drift actions route.
+func TestTransactionTool_SchemaDriftActions(t *testing.T) {
+	tool := NewTransactionTool()
+
+	t.Run("capture", func(t *testing.T) {
+		uc := &stubSchemaDriftUseCase{}
+		resp, err := tool.HandleRequest(context.Background(), server.ToolCallRequest{
+			Name:       "transaction_db1",
+			Parameters: map[string]interface{}{"action": "capture_schema_snapshot"},
+		}, "", uc)
+		if err != nil {
+			t.Fatalf("handle failed: %v", err)
+		}
+		if out := sprintfResponse(resp); !strings.Contains(out, "schema_snap_1") {
+			t.Fatalf("expected new baseline id:\n%s", out)
+		}
+	})
+
+	t.Run("drift_check", func(t *testing.T) {
+		uc := &stubSchemaDriftUseCase{}
+		resp, err := tool.HandleRequest(context.Background(), server.ToolCallRequest{
+			Name: "transaction_db1",
+			Parameters: map[string]interface{}{
+				"action":      "check_schema_drift",
+				"baseline_id": "schema_snap_2",
+			},
+		}, "", uc)
+		if err != nil {
+			t.Fatalf("handle failed: %v", err)
+		}
+		if uc.lastBaseline != "schema_snap_2" {
+			t.Fatalf("expected baseline routing, got %q", uc.lastBaseline)
+		}
+		if out := sprintfResponse(resp); !strings.Contains(out, "users.email") {
+			t.Fatalf("expected change list:\n%s", out)
+		}
+	})
+
+	t.Run("list", func(t *testing.T) {
+		uc := &stubSchemaDriftUseCase{}
+		resp, err := tool.HandleRequest(context.Background(), server.ToolCallRequest{
+			Name:       "transaction_db1",
+			Parameters: map[string]interface{}{"action": "list_schema_snapshots"},
+		}, "", uc)
+		if err != nil {
+			t.Fatalf("handle failed: %v", err)
+		}
+		if out := sprintfResponse(resp); !strings.Contains(out, "schema_snap_1") {
+			t.Fatalf("expected listing:\n%s", out)
+		}
+	})
+}

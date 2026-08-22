@@ -275,6 +275,14 @@ type snapshotCapable interface {
 	RollbackSnapshot(ctx context.Context, dbID, snapshotID string) (string, error)
 }
 
+// schemaDriftCapable is implemented by use cases offering schema baselines
+// and drift detection.
+type schemaDriftCapable interface {
+	CaptureSchemaSnapshot(ctx context.Context, dbID string) (*usecase.SchemaSnapshot, error)
+	CheckSchemaDrift(ctx context.Context, dbID, baselineID string) (*usecase.SchemaDriftReport, error)
+	ListSchemaSnapshots(dbID string) []usecase.SchemaSnapshot
+}
+
 // CreateTool creates a per-database execute tool
 func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 	return tools.NewTool(
@@ -398,7 +406,7 @@ func (t *TransactionTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot)"),
+			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot, capture_schema_snapshot, check_schema_drift, list_schema_snapshots)"),
 			tools.Required(),
 		),
 		tools.WithString("transactionId",
@@ -427,7 +435,7 @@ func (t *TransactionTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot)"),
+			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot, capture_schema_snapshot, check_schema_drift, list_schema_snapshots)"),
 			tools.Required(),
 		),
 		tools.WithString("transactionId",
@@ -518,6 +526,58 @@ func (t *TransactionTool) HandleRequest(ctx context.Context, request server.Tool
 			return nil, err
 		}
 		return createTextResponse(msg), nil
+	}
+
+	// Schema drift actions (capability-detected).
+	if action == "capture_schema_snapshot" || action == "check_schema_drift" || action == "list_schema_snapshots" {
+		sd, capable := useCase.(schemaDriftCapable)
+		if !capable {
+			return nil, fmt.Errorf("%s is not supported by this provider", action)
+		}
+		switch action {
+		case "capture_schema_snapshot":
+			snap, err := sd.CaptureSchemaSnapshot(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			var b strings.Builder
+			fmt.Fprintf(&b, "Schema baseline %s captured: %d tables.\n", snap.ID, len(snap.Tables))
+			for t, cols := range snap.Tables {
+				names := make([]string, 0, len(cols))
+				for _, c := range cols {
+					names = append(names, c.Name+" "+c.Type)
+				}
+				fmt.Fprintf(&b, "- %s (%s)\n", t, strings.Join(names, ", "))
+			}
+			return createTextResponse(b.String()), nil
+		case "check_schema_drift":
+			baselineID, _ := request.Parameters["baseline_id"].(string) //nolint:errcheck // absent handled below
+			if baselineID == "" {
+				return nil, fmt.Errorf("baseline_id parameter is required for check_schema_drift")
+			}
+			report, err := sd.CheckSchemaDrift(ctx, dbID, baselineID)
+			if err != nil {
+				return nil, err
+			}
+			var b strings.Builder
+			if !report.Drifted {
+				b.WriteString("No schema drift detected (matches baseline " + baselineID + ").\n")
+			} else {
+				fmt.Fprintf(&b, "Schema drift detected vs %s:\n", baselineID)
+				for _, ch := range report.Changes {
+					b.WriteString("- " + ch + "\n")
+				}
+			}
+			return createTextResponse(b.String()), nil
+		case "list_schema_snapshots":
+			snaps := sd.ListSchemaSnapshots(dbID)
+			var b strings.Builder
+			fmt.Fprintf(&b, "Schema baselines for %s: %d\n", dbID, len(snaps))
+			for _, sn := range snaps {
+				fmt.Fprintf(&b, "- %s  %d tables  %s\n", sn.ID, len(sn.Tables), sn.Timestamp.Format(time.RFC3339))
+			}
+			return createTextResponse(b.String()), nil
+		}
 	}
 
 	message, metadata, err := useCase.ExecuteTransaction(ctx, dbID, action, txID, statement, params, readOnly)
