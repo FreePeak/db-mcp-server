@@ -534,12 +534,13 @@ agent to fail to load the server, ignore tools, or refuse to call them. Issue #1
 documents this exact symptom: "the db-mcp-server does not function properly with
 Claude, even though it works fine with OpenAI".
 
-For these clients, launch the server with the `--unified-tools` flag to register
-six consolidated tools (`query`, `execute`, `transaction`, `performance`,
-`schema`, `list_databases`) instead of per-database tools:
+For these clients, launch the server with the `--unified-tools` flag to register six consolidated tools (`query`, `execute`, `transaction`, `performance`, `explain`, `describe`, `schema`, `filter_tables`) instead of per-database tools:
 
 ```bash
 ./bin/server -t stdio -c config.json --unified-tools
+```
+
+**Context-window cost (measured, `TestToolTokenBenchmark`):** unified mode costs ~1.1–1.3k tokens **regardless of how many databases are connected**, while per-database mode costs ~800 tokens per database (7 tools each) — 10 connected databases ≈ 8k tokens, a 6.3x difference. With one database only, per-database naming is slightly cheaper; unified wins from two databases onward and scales flat thereafter.
 ```
 
 In unified mode, each tool accepts a required `database` parameter that names
