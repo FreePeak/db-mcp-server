@@ -74,6 +74,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 58 | Per-category hit counts in ContentPIIFinding | ✅ Shipped (hackathon branch) | [cycle-58](cycle-58-pii-hit-counts.md) |
 | 59 | generate_schema tool (Go structs / TS types from live schema) | ✅ Shipped (hackathon branch) | [cycle-59](cycle-59-generate-schema.md) |
 | 60 | Query export formats (CSV RFC4180 / JSON) | ✅ Shipped (hackathon branch) | [cycle-60](cycle-60-query-export.md) |
+| 61 | Session observability (list_sessions / cancel_query) | ✅ Shipped (hackathon branch) | [cycle-61](cycle-61-session-observability.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

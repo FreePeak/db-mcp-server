@@ -193,6 +193,13 @@ type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
 }
 
+// sessionObservabilityUseCase is implemented by use cases that can list
+// active engine sessions and cancel running queries.
+type sessionObservabilityUseCase interface {
+	ListActiveSessions(ctx context.Context, dbID string) (string, error)
+	CancelQuery(ctx context.Context, dbID string, sessionID int64) (string, error)
+}
+
 // piIMaskingUseCase is implemented by use cases that support opt-in PII
 // masking; detection keeps existing mocks and alternate providers compatible.
 type piIMaskingUseCase interface {
@@ -696,7 +703,7 @@ func (t *PerformanceTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold; query required for suggest_indexes)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -721,7 +728,7 @@ func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold; query required for suggest_indexes)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -768,6 +775,36 @@ func (t *PerformanceTool) HandleRequest(ctx context.Context, request server.Tool
 	if request.Parameters["threshold"] != nil {
 		if thresholdParam, ok := request.Parameters["threshold"].(float64); ok {
 			threshold = int(thresholdParam)
+		}
+	}
+
+	// Session observability actions bypass the analyzer: they talk to the
+	// engine's session catalog directly.
+	switch action {
+	case "list_sessions":
+		if s, can := useCase.(sessionObservabilityUseCase); can {
+			out, err := s.ListActiveSessions(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "cancel_query":
+		if s, can := useCase.(sessionObservabilityUseCase); can {
+			sessionID := int64(0)
+			if v, ok := request.Parameters["session_id"].(float64); ok {
+				sessionID = int64(v)
+			} else if vStr, ok := request.Parameters["query_id"].(string); ok && vStr != "" {
+				return nil, fmt.Errorf("session_id parameter must be a number")
+			}
+			if sessionID <= 0 {
+				return nil, fmt.Errorf("session_id parameter is required for cancel_query")
+			}
+			out, err := s.CancelQuery(ctx, dbID, sessionID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
 		}
 	}
 
