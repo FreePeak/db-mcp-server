@@ -43,6 +43,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 27 | Result verbosity modes (`minimal`/`normal`/`full`, token compression) | ✅ Shipped (hackathon branch) | [cycle-27](cycle-27-verbosity.md) |
 | 28 | Per-database default verbosity (config-level, precedence-safe) | ✅ Shipped (hackathon branch) | [cycle-28](cycle-28-db-verbosity.md) |
 | 29 | Offline DDL risk analysis (`dry_run`, multi-engine pre-flight) | ✅ Shipped (hackathon branch) | [cycle-29](cycle-29-ddl-safety.md) |
+| 30 | Post-execution risk advisories (non-blocking warnings) | ✅ Shipped (hackathon branch) | [cycle-30](cycle-30-risk-advisories.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

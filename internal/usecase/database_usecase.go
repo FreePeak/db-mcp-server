@@ -4,6 +4,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -395,7 +396,19 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 		lastInsertID = 0
 	}
 
-	return fmt.Sprintf("Statement executed successfully.\nRows affected: %d\nLast insert ID: %d", rowsAffected, lastInsertID), nil
+	out := fmt.Sprintf("Statement executed successfully.\nRows affected: %d\nLast insert ID: %d", rowsAffected, lastInsertID)
+
+	// Non-blocking post-execution advisory: high/critical statements get an
+	// explicit notice so the agent (and any human reviewing the transcript)
+	// sees what just happened. Execution itself is never blocked here.
+	risk := AnalyzeStatementRisk(statement)
+	if risk.Risk == "high" || risk.Risk == "critical" {
+		out += "\n⚠ Risk notice: this statement was " + strings.ToUpper(risk.Risk[:1]) + risk.Risk[1:] + " risk"
+		for _, n := range risk.Notes {
+			out += "\n- " + n
+		}
+	}
+	return out, nil
 }
 
 // ExecuteTransaction executes operations in a transaction. Actions:
