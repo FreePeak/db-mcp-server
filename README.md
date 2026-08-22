@@ -312,6 +312,8 @@ export DB_CONFIG='{"connections":[...]}'
 - `-masking-audit-log`: JSONL file path for durable PII-masking audit events (append mode; survives restarts)
 - `-risk-warn-at`: Minimum post-execution advisory level — `low`, `medium`, `high` (default), `critical`
 
+**Environment defaults:** `-masking-audit-log` and `-risk-warn-at` can also be set declaratively via `DB_MCP_MASKING_AUDIT_LOG` and `DB_MCP_RISK_WARN_AT`; explicit flags win over env values.
+
 ## Testing Without Docker (Free Cloud Databases)
 
 The regression suite runs against free-tier managed cloud databases — no local containers needed:

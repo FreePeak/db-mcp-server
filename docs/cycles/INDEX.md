@@ -58,6 +58,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 42 | Operator surface: -risk-warn-at flag + docs coverage | ✅ Shipped (hackathon branch) | [cycle-42](cycle-42-operator-surface.md) |
 | 43 | Coverage audit & gap closure (usecase 83.3%) | ✅ Shipped (hackathon branch) | [cycle-43](cycle-43-coverage-audit.md) |
 | 44 | Tool-registry integration tests (per-db vs unified verified) | ✅ Shipped (hackathon branch) | [cycle-44](cycle-44-registry-tests.md) |
+| 45 | Declarative env defaults for operator flags | ✅ Shipped (hackathon branch) | [cycle-45](cycle-45-env-defaults.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

@@ -74,8 +74,14 @@ func main() {
 	lazyLoading := flag.Bool("lazy-loading", false, "Enable lazy loading: connections established on first use (recommended for 10+ databases)")
 	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
 	unifiedTools := flag.Bool("unified-tools", false, "Register unified tools with database parameter instead of per-database tools")
-	maskingAuditLog := flag.String("masking-audit-log", "", "JSONL file path for durable PII-masking audit events (append mode)")
-	riskWarnAt := flag.String("risk-warn-at", "high", "Minimum post-execution advisory level (low, medium, high, critical)")
+	// Environment variables act as declarative defaults; explicit flags win.
+	maskingAuditDefault := os.Getenv("DB_MCP_MASKING_AUDIT_LOG")
+	riskWarnDefault := "high"
+	if v := os.Getenv("DB_MCP_RISK_WARN_AT"); v != "" {
+		riskWarnDefault = v
+	}
+	maskingAuditLog := flag.String("masking-audit-log", maskingAuditDefault, "JSONL file path for durable PII-masking audit events (append mode; env: DB_MCP_MASKING_AUDIT_LOG)")
+	riskWarnAt := flag.String("risk-warn-at", riskWarnDefault, "Minimum post-execution advisory level (low, medium, high, critical; env: DB_MCP_RISK_WARN_AT)")
 	healthPort := flag.Int("health-port", 9093, "Port for the /health HTTP endpoint (0 to disable; only used in SSE mode)")
 	apiKey := flag.String("api-key", os.Getenv("DB_MCP_API_KEY"), "API key required to authenticate HTTP/SSE clients (Authorization: Bearer <key>); empty disables auth. Applied to the streamable HTTP transport; compose with mcp.APIKeyAuth in your own reverse proxy for the SSE transport.")
 	flag.Parse()
