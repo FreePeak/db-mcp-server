@@ -97,6 +97,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 81 | Atomic multi-statement scripts (execute script=) | ✅ Shipped (hackathon branch) | [cycle-81](cycle-81-scripts.md) |
 | 82 | Trigger listing (schema format=triggers) | ✅ Shipped (hackathon branch) | [cycle-82](cycle-82-triggers.md) |
 | 83 | Stored routine listing (schema format=routines) | ✅ Shipped (hackathon branch) | [cycle-83](cycle-83-routines.md) |
+| 84 | CSV bulk import (execute csv_data=) | ✅ Shipped (hackathon branch) | [cycle-84](cycle-84-csv-import.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

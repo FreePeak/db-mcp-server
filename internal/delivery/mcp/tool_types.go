@@ -241,6 +241,12 @@ type viewListingUseCase interface {
 	ListViews(ctx context.Context, dbID string) (string, error)
 }
 
+// csvImportUseCase is implemented by use cases that can bulk-load CSV
+// content atomically.
+type csvImportUseCase interface {
+	ImportCSV(ctx context.Context, dbID, table, csvContent string) (string, error)
+}
+
 // scriptExecutionUseCase is implemented by use cases that can run a
 // multi-statement script atomically.
 type scriptExecutionUseCase interface {
@@ -533,6 +539,12 @@ func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithString("script",
 			tools.Description("Multi-statement script (semicolon-separated) executed atomically: all commit or all roll back with the failing statement named"),
 		),
+		tools.WithString("csv_data",
+			tools.Description("CSV content (header + rows) to bulk-insert atomically; requires csv_table; capped at 10k rows"),
+		),
+		tools.WithString("csv_table",
+			tools.Description("Target table for csv_data imports"),
+		),
 		tools.WithBoolean("dry_run",
 			tools.Description("Analyze the statement's risk (destructive ops, missing WHERE, table rewrites) WITHOUT executing it"),
 		),
@@ -559,6 +571,12 @@ func (t *ExecuteTool) CreateUnifiedTool(name string, dbList []string) interface{
 		tools.WithString("script",
 			tools.Description("Multi-statement script (semicolon-separated) executed atomically: all commit or all roll back with the failing statement named"),
 		),
+		tools.WithString("csv_data",
+			tools.Description("CSV content (header + rows) to bulk-insert atomically; requires csv_table; capped at 10k rows"),
+		),
+		tools.WithString("csv_table",
+			tools.Description("Target table for csv_data imports"),
+		),
 		tools.WithBoolean("dry_run",
 			tools.Description("Analyze the statement's risk (destructive ops, missing WHERE, table rewrites) WITHOUT executing it"),
 		),
@@ -570,6 +588,23 @@ func (t *ExecuteTool) HandleRequest(ctx context.Context, request server.ToolCall
 	// If dbID is not provided, extract it from the tool name
 	if dbID == "" {
 		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	// CSV import: atomic bulk insert.
+	if csvData, ok := request.Parameters["csv_data"].(string); ok && strings.TrimSpace(csvData) != "" {
+		csvTable, _ := request.Parameters["csv_table"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(csvTable) == "" {
+			return nil, fmt.Errorf("csv_table is required when csv_data is provided")
+		}
+		im, can := useCase.(csvImportUseCase)
+		if !can {
+			return nil, fmt.Errorf("CSV import is not supported by this provider")
+		}
+		out, err := im.ImportCSV(ctx, dbID, csvTable, csvData)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
 	}
 
 	// Atomic multi-statement scripts.
