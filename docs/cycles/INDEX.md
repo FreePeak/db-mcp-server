@@ -89,6 +89,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 73 | Per-query timeout (timeout_ms param) | ✅ Shipped (hackathon branch) | [cycle-73](cycle-73-query-timeout.md) |
 | 74 | Continuity doc sync (SESSION-REPORT, LOOP_STATE) | ✅ Shipped (hackathon branch) | [cycle-74](cycle-74-doc-sync.md) |
 | 75 | Cross-table value search (filter_tables value=) | ✅ Shipped (hackathon branch) | [cycle-75](cycle-75-value-search.md) |
+| 76 | FK traversal for one row (describe related_key=) | ✅ Shipped (hackathon branch) | [cycle-76](cycle-76-related-rows.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

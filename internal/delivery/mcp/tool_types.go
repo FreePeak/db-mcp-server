@@ -205,6 +205,12 @@ type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
 }
 
+// relatedRowsUseCase is implemented by use cases that can traverse
+// foreign keys for one row.
+type relatedRowsUseCase interface {
+	RelatedRows(ctx context.Context, dbID, table, keyValue string) (string, error)
+}
+
 // valueSearchUseCase is implemented by use cases that can locate a literal
 // across every textual column of a database.
 type valueSearchUseCase interface {
@@ -1017,6 +1023,9 @@ func (t *DescribeTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithString("profile_column",
 			tools.Description("Profile one column instead of describing the table: rows, null count, cardinality, min/max, top values"),
 		),
+		tools.WithString("related_key",
+			tools.Description("Primary-key value: follow this row's foreign keys to parents and list referencing children"),
+		),
 	)
 }
 
@@ -1036,6 +1045,9 @@ func (t *DescribeTool) CreateUnifiedTool(name string, dbList []string) interface
 		tools.WithString("profile_column",
 			tools.Description("Profile one column instead of describing the table: rows, null count, cardinality, min/max, top values"),
 		),
+		tools.WithString("related_key",
+			tools.Description("Primary-key value: follow this row's foreign keys to parents and list referencing children"),
+		),
 	)
 }
 
@@ -1048,6 +1060,17 @@ func (t *DescribeTool) HandleRequest(ctx context.Context, request server.ToolCal
 	table, ok := request.Parameters["table"].(string)
 	if !ok {
 		return nil, fmt.Errorf("table parameter must be a string")
+	}
+
+	// FK traversal: resolve one row by PK and render its relations.
+	if keyVal, ok := request.Parameters["related_key"].(string); ok && strings.TrimSpace(keyVal) != "" {
+		if rr, can := useCase.(relatedRowsUseCase); can {
+			out, err := rr.RelatedRows(ctx, dbID, table, keyVal)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
 	}
 
 	if col, ok := request.Parameters["profile_column"].(string); ok && strings.TrimSpace(col) != "" {
