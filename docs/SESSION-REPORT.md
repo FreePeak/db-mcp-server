@@ -64,6 +64,20 @@ cycle-17 work) with no recovery notes. Fixes applied at loop start:
 | Coverage audit (usecase → 83.3%) | 43 | `gap_coverage_test.go` |
 | Operator surface: env defaults, docs | 42, 45 | `main.go`, README |
 
+### Cycles 52-69: Observability, Codegen, Cross-DB, Data Tooling
+| Feature | Cycles | Key files |
+|---|---|---|
+| Oracle ROWNUM auto-limit wrap | 54 | `auto_limit.go` |
+| Content-PII noise floor + per-category hit counts | 57, 58 | `content_pii.go` |
+| generate_schema tool (Go structs / TS interfaces) | 59 | `generate_schema.go` |
+| Query export formats csv / json / inserts | 60, 66 | `query_export.go` |
+| Session observability (list_sessions, cancel_query) | 61 | `session_ops.go` |
+| Lock-wait view (lock_waits) | 62 | `session_ops.go` |
+| Cross-DB schema compare (+ indexes, constraints) | 63-65 | `schema_compare.go` |
+| PR #87 description refresh | 67 | GitHub PR |
+| count_only row-count preview | 68 | `query_count.go` |
+| Column statistical profile (describe profile_column) | 69 | `column_profile.go` |
+
 ### Testing Infrastructure (Docker-free mandate honored)
 | Feature | Cycles | Key files |
 |---|---|---|

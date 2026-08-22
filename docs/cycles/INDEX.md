@@ -83,6 +83,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 67 | PR #87 description refresh (cycles 52-66) | ✅ Shipped (hackathon branch) | [cycle-67](cycle-67-pr-refresh.md) |
 | 68 | count_only row-count preview on query tool | ✅ Shipped (hackathon branch) | [cycle-68](cycle-68-count-only.md) |
 | 69 | Single-column statistical profile | ✅ Shipped (hackathon branch) | [cycle-69](cycle-69-column-profile.md) |
+| 70 | SESSION-REPORT refresh for cycles 52-69 | ✅ Shipped (hackathon branch) | [cycle-70](cycle-70-session-report.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
