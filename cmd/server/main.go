@@ -75,6 +75,7 @@ func main() {
 	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
 	unifiedTools := flag.Bool("unified-tools", false, "Register unified tools with database parameter instead of per-database tools")
 	maskingAuditLog := flag.String("masking-audit-log", "", "JSONL file path for durable PII-masking audit events (append mode)")
+	riskWarnAt := flag.String("risk-warn-at", "high", "Minimum post-execution advisory level (low, medium, high, critical)")
 	healthPort := flag.Int("health-port", 9093, "Port for the /health HTTP endpoint (0 to disable; only used in SSE mode)")
 	apiKey := flag.String("api-key", os.Getenv("DB_MCP_API_KEY"), "API key required to authenticate HTTP/SSE clients (Authorization: Bearer <key>); empty disables auth. Applied to the streamable HTTP transport; compose with mcp.APIKeyAuth in your own reverse proxy for the SSE transport.")
 	flag.Parse()
@@ -165,6 +166,7 @@ func main() {
 	// Set up Clean Architecture layers
 	dbRepo := repository.NewDatabaseRepository()
 	dbUseCase := usecase.NewDatabaseUseCase(dbRepo)
+	dbUseCase.SetRiskWarnAt(*riskWarnAt)
 	if *maskingAuditLog != "" {
 		if err := dbUseCase.EnableMaskingAuditFile(*maskingAuditLog); err != nil {
 			logger.Error("failed to open masking audit log: %v", err)
