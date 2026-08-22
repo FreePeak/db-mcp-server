@@ -82,6 +82,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 66 | INSERT generation via query format=inserts | ✅ Shipped (hackathon branch) | [cycle-66](cycle-66-insert-generation.md) |
 | 67 | PR #87 description refresh (cycles 52-66) | ✅ Shipped (hackathon branch) | [cycle-67](cycle-67-pr-refresh.md) |
 | 68 | count_only row-count preview on query tool | ✅ Shipped (hackathon branch) | [cycle-68](cycle-68-count-only.md) |
+| 69 | Single-column statistical profile | ✅ Shipped (hackathon branch) | [cycle-69](cycle-69-column-profile.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

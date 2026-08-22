@@ -199,6 +199,12 @@ type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
 }
 
+// columnProfilingUseCase is implemented by use cases that can compute a
+// single-column statistical profile.
+type columnProfilingUseCase interface {
+	ProfileColumn(ctx context.Context, dbID, table, column string) (string, error)
+}
+
 // rowCountPreviewUseCase is implemented by use cases that can price a
 // SELECT via a COUNT(*) wrap without fetching rows.
 type rowCountPreviewUseCase interface {
@@ -961,6 +967,9 @@ func (t *DescribeTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Table name to inspect (schema-qualified allowed, e.g. public.users)"),
 			tools.Required(),
 		),
+		tools.WithString("profile_column",
+			tools.Description("Profile one column instead of describing the table: rows, null count, cardinality, min/max, top values"),
+		),
 	)
 }
 
@@ -977,6 +986,9 @@ func (t *DescribeTool) CreateUnifiedTool(name string, dbList []string) interface
 			tools.Description("Table name to inspect (schema-qualified allowed, e.g. public.users)"),
 			tools.Required(),
 		),
+		tools.WithString("profile_column",
+			tools.Description("Profile one column instead of describing the table: rows, null count, cardinality, min/max, top values"),
+		),
 	)
 }
 
@@ -989,6 +1001,16 @@ func (t *DescribeTool) HandleRequest(ctx context.Context, request server.ToolCal
 	table, ok := request.Parameters["table"].(string)
 	if !ok {
 		return nil, fmt.Errorf("table parameter must be a string")
+	}
+
+	if col, ok := request.Parameters["profile_column"].(string); ok && strings.TrimSpace(col) != "" {
+		if pc, can := useCase.(columnProfilingUseCase); can {
+			out, err := pc.ProfileColumn(ctx, dbID, table, col)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
 	}
 
 	info, err := useCase.DescribeTable(ctx, dbID, table)
