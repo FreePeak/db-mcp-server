@@ -2,7 +2,9 @@ package usecase
 
 import (
 	"context"
+
 	"fmt"
+	"github.com/FreePeak/db-mcp-server/internal/logger"
 	"sort"
 	"strings"
 )
@@ -17,6 +19,7 @@ type schemaSnapshot struct {
 	columns     map[string]map[string]string
 	indexes     map[string]map[string]string
 	constraints map[string]map[string]bool
+	views       map[string]bool
 }
 
 func newSchemaSnapshot() *schemaSnapshot {
@@ -24,6 +27,7 @@ func newSchemaSnapshot() *schemaSnapshot {
 		columns:     map[string]map[string]string{},
 		indexes:     map[string]map[string]string{},
 		constraints: map[string]map[string]bool{},
+		views:       map[string]bool{},
 	}
 }
 
@@ -106,6 +110,24 @@ func (uc *DatabaseUseCase) collectSchemaSnapshot(ctx context.Context, dbID strin
 				snap.constraints[tableName] = map[string]bool{}
 			}
 			snap.constraints[tableName][fp] = true
+		}
+	}
+	if dbType, terr := uc.repo.GetDatabaseType(dbID); terr == nil {
+		if vq, _, _ := viewsQuery(dbType); vq != "" {
+			if db, derr := uc.repo.GetDatabase(dbID); derr == nil {
+				vrows, qerr := db.Query(ctx, vq)
+				if qerr == nil {
+					for vrows.Next() {
+						var name, def interface{}
+						if serr := vrows.Scan(&name, &def); serr == nil {
+							snap.views[renderScalar(name)] = true
+						}
+					}
+					if cerr := vrows.Close(); cerr != nil {
+						logger.Error("error closing view rows: %v", cerr)
+					}
+				}
+			}
 		}
 	}
 	return *snap, nil
@@ -220,6 +242,27 @@ func (uc *DatabaseUseCase) CompareSchemas(ctx context.Context, dbIDA, dbIDB stri
 			case !inA:
 				lines = append(lines, fmt.Sprintf("table %q constraint %s: only in %s", t, c, dbIDB))
 			}
+		}
+	}
+
+	viewNames := make([]string, 0, len(snapA.views)+len(snapB.views))
+	for v := range snapA.views {
+		viewNames = append(viewNames, v)
+	}
+	for v := range snapB.views {
+		if !snapA.views[v] {
+			viewNames = append(viewNames, v)
+		}
+	}
+	sort.Strings(viewNames)
+	for _, v := range viewNames {
+		inA := snapA.views[v]
+		inB := snapB.views[v]
+		switch {
+		case !inB:
+			lines = append(lines, fmt.Sprintf("view %q: only in %s", v, dbIDA))
+		case !inA:
+			lines = append(lines, fmt.Sprintf("view %q: only in %s", v, dbIDB))
 		}
 	}
 

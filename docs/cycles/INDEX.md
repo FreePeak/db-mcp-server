@@ -102,6 +102,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 86 | Verbatim DDL dump (schema format=ddl, sqlite) | ✅ Shipped (hackathon branch) | [cycle-86](cycle-86-ddl-dump.md) |
 | 87 | Continuity doc sync (second pass) | ✅ Shipped (hackathon branch) | [cycle-87](cycle-87-doc-sync-2.md) |
 | 88 | Cross-database fan-out (query databases=) | ✅ Shipped (hackathon branch) | [cycle-88](cycle-88-query-across.md) |
+| 89 | View drift in schema compare | ✅ Shipped (hackathon branch) | [cycle-89](cycle-89-view-drift.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

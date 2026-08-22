@@ -331,3 +331,32 @@ func TestExecuteQueryAcross(t *testing.T) {
 		t.Fatalf("ghost section should report failure:\n%s", out)
 	}
 }
+
+// TestCompareSchemas_Views proves cycle 89: views missing on either side
+// are reported in the structural diff.
+func TestCompareSchemas_Views(t *testing.T) {
+	rawA := openSQLiteForTest(t)
+	rawB := openSQLiteForTest(t)
+	for _, raw := range []*sql.DB{rawA, rawB} {
+		if _, err := raw.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY)`); err != nil {
+			t.Fatalf("create failed: %v", err)
+		}
+	}
+	if _, err := rawA.Exec(`CREATE VIEW v_missing AS SELECT id FROM t`); err != nil {
+		t.Fatalf("view failed: %v", err)
+	}
+
+	repo := &multiRepo{
+		dbs:   map[string]domain.Database{"a": &sqliteDB{db: rawA}, "b": &sqliteDB{db: rawB}},
+		types: map[string]string{"a": "sqlite", "b": "sqlite"},
+	}
+	uc := NewDatabaseUseCase(repo)
+
+	out, err := uc.CompareSchemas(context.Background(), "a", "b")
+	if err != nil {
+		t.Fatalf("compare failed: %v", err)
+	}
+	if !strings.Contains(out, "v_missing") || !strings.Contains(out, "view") {
+		t.Fatalf("missing view drift in:\n%s", out)
+	}
+}
