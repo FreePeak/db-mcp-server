@@ -103,6 +103,19 @@ The server follows Clean Architecture principles with these layers:
 - **Unified Interface**: Consistent interaction patterns across different database types
 - **Connection Management**: Simple configuration for multiple database connections
 - **Health Check**: Automatic validation of database connectivity on startup
+- **Production Guardrails**: Per-database `read_only` enforcement (blocks writes through both `query_*` and `execute_*` tools), `max_rows` result truncation with explicit notices, and per-query timeouts
+
+### Production Guardrails
+
+Protect agent sessions against runaway queries and accidental writes:
+
+| Setting | Scope | Effect |
+|---------|-------|--------|
+| `"read_only": true` | per database | Blocks write statements (`INSERT`, `UPDATE`, `DELETE`, DDL, data-modifying CTEs, stacked writes) through **both** query and execute tools, **and** enforces rejection at the database engine itself on PostgreSQL/TimescaleDB (`default_transaction_read_only=on`) and MySQL (`transaction_read_only=1`); SQLite opens `mode=ro`. Classification strips comments and string literals and defaults to deny for unrecognized statements. |
+| `"max_rows": 1000` | per database | Truncates result sets at N rows and appends an explicit `[Truncated]` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. |
+| `"query_timeout": 30` | per database | Cancels queries that exceed the timeout in seconds. |
+
+> **Defense in depth**: read-only is enforced in three layers — application classifier, engine session defaults, and (recommended) least-privilege database users. Oracle currently relies on the classifier plus user privileges.
 
 ## Supported Databases
 
@@ -218,7 +231,9 @@ Create a `config.json` file with your database connections:
       "max_open_conns": 20,
       "max_idle_conns": 5,
       "conn_max_lifetime_seconds": 300,
-      "conn_max_idle_time_seconds": 60
+      "conn_max_idle_time_seconds": 60,
+      "read_only": false,
+      "max_rows": 1000
     },
     {
       "id": "postgres1",
@@ -303,6 +318,7 @@ When using SQLite databases, you can leverage these additional configuration opt
 | `database_path` | string | Required | Path to SQLite database file or `:memory:` for in-memory |
 | `encryption_key` | string | - | Key for SQLCipher encrypted databases |
 | `read_only` | boolean | false | Open database in read-only mode |
+| `max_rows` | integer | unlimited | Maximum rows returned per query; larger results are truncated with an explicit notice. Works on all database types |
 | `cache_size` | integer | 2000 | SQLite cache size in pages |
 | `journal_mode` | string | "WAL" | Journal mode: DELETE, TRUNCATE, PERSIST, WAL, OFF |
 | `use_modernc_driver` | boolean | true | Use modernc.org/sqlite (CGO-free) or mattn/go-sqlite3 |
@@ -490,6 +506,8 @@ For each connected database, DB MCP Server automatically generates these special
 | Tool Name | Description |
 |-----------|-------------|
 | `performance_<db_id>` | Analyze query performance and get optimization suggestions |
+| `explain_<db_id>` | Show the execution plan for a SQL statement without running it; `analyze: true` executes with timing/buffer stats (PostgreSQL/MySQL). Writes stay blocked on read-only databases |
+| `describe_<db_id>` | Inspect one table's columns, indexes, and row estimate via engine catalog queries |
 
 ### TimescaleDB Tools
 
@@ -554,19 +572,28 @@ query_oracle_dev("SELECT * FROM employees WHERE hire_date > SYSDATE - 30")
 
 ### Managing Transactions
 
-```sql
--- Start a transaction
-transaction_mysql1("BEGIN")
+The `transaction_<db_id>` tool supports `begin`, `execute`, `commit`, and `rollback` actions. Each `begin` returns a `transactionId`; pass it back to stage statements and to commit or roll back:
 
--- Execute statements within the transaction
-execute_mysql1("INSERT INTO orders (customer_id, product_id) VALUES (1, 2)")
-execute_mysql1("UPDATE inventory SET stock = stock - 1 WHERE product_id = 2")
+```json
+// 1. Start a transaction
+{ "action": "begin" }
+// → { "transactionId": "tx_mysql1_1730000000000000000" }
 
--- Commit or rollback
-transaction_mysql1("COMMIT")
--- OR
-transaction_mysql1("ROLLBACK")
+// 2. Execute statements within the transaction
+{
+  "action": "execute",
+  "transactionId": "tx_mysql1_1730000000000000000",
+  "statement": "INSERT INTO orders (customer_id, product_id) VALUES (1, 2)"
+}
+
+// 3a. Commit — persists all staged statements
+{ "action": "commit", "transactionId": "tx_mysql1_1730000000000000000" }
+
+// 3b. OR rollback — discards all staged statements
+{ "action": "rollback", "transactionId": "tx_mysql1_1730000000000000000" }
 ```
+
+Unknown or already-retired transaction IDs return a clear error instead of a silent success, so agents can detect and recover from lost-transaction situations.
 
 ### Exploring Database Schema
 

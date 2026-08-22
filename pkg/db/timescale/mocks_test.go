@@ -199,6 +199,11 @@ func (m *MockDB) IsReadOnly() bool {
 	return false
 }
 
+// MaxRows implements db.Database.MaxRows.
+func (m *MockDB) MaxRows() int {
+	return 0
+}
+
 // MockResult implements sql.Result
 type MockResult struct{}
 

@@ -99,6 +99,14 @@ func (a *DatabaseAdapter) IsReadOnly() bool {
 	return a.db.IsReadOnly()
 }
 
+// MaxRows returns the configured query row limit for this database.
+func (a *DatabaseAdapter) MaxRows() int {
+	if r, ok := a.db.(interface{ MaxRows() int }); ok {
+		return r.MaxRows()
+	}
+	return 0
+}
+
 // RowsAdapter adapts sql.Rows to domain.Rows
 type RowsAdapter struct {
 	rows *sql.Rows

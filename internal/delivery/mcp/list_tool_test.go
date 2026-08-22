@@ -51,6 +51,18 @@ func (m *MockUseCaseProvider) IsLazyLoading() bool {
 	return args.Bool(0)
 }
 
+func (m *MockUseCaseProvider) ExecuteExplain(_ context.Context, _, _ string, _ bool) (string, error) {
+	return "", nil
+}
+
+func (m *MockUseCaseProvider) DescribeTable(_ context.Context, _, _ string) (map[string]interface{}, error) {
+	return nil, nil
+}
+
+func (m *MockUseCaseProvider) AnalyzePerformance(_ context.Context, _, _, _ string, _, _ int) (string, error) {
+	return "", nil
+}
+
 func TestListDirectoryTool(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "list_tool_test")

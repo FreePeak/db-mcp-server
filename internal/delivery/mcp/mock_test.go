@@ -52,3 +52,24 @@ func (m *MockDatabaseUseCase) IsLazyLoading() bool {
 	args := m.Called()
 	return args.Bool(0)
 }
+
+// ExecuteExplain mocks the explain method
+func (m *MockDatabaseUseCase) ExecuteExplain(_ context.Context, _, _ string, _ bool) (string, error) {
+	args := m.Called()
+	return args.String(0), args.Error(1)
+}
+
+// DescribeTable mocks the describe method
+func (m *MockDatabaseUseCase) DescribeTable(_ context.Context, _, _ string) (map[string]interface{}, error) {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]interface{}), args.Error(1)
+}
+
+// AnalyzePerformance mocks the performance analysis method
+func (m *MockDatabaseUseCase) AnalyzePerformance(_ context.Context, _, _, _ string, _, _ int) (string, error) {
+	args := m.Called()
+	return args.String(0), args.Error(1)
+}

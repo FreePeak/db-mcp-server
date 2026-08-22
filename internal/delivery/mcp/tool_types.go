@@ -72,6 +72,13 @@ type UseCaseProvider interface {
 	ListDatabases() []string
 	GetDatabaseType(dbID string) (string, error)
 	IsLazyLoading() bool
+	// ExecuteExplain returns the engine's execution plan for a statement.
+	ExecuteExplain(ctx context.Context, dbID, statement string, analyze bool) (string, error)
+	// DescribeTable returns column/index/row-count metadata for one table.
+	DescribeTable(ctx context.Context, dbID, table string) (map[string]interface{}, error)
+	// AnalyzePerformance reports tracked query metrics, slow queries, and
+	// static SQL issue suggestions.
+	AnalyzePerformance(ctx context.Context, dbID, action, query string, limit, thresholdMs int) (string, error)
 }
 
 // BaseToolType provides common functionality for tool types
@@ -473,14 +480,11 @@ func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interf
 }
 
 // HandleRequest handles performance tool requests
-func (t *PerformanceTool) HandleRequest(_ context.Context, request server.ToolCallRequest, dbID string, _ UseCaseProvider) (interface{}, error) {
+func (t *PerformanceTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// If dbID is not provided, extract it from the tool name
 	if dbID == "" {
 		dbID = extractDatabaseIDFromName(request.Name)
 	}
-
-	// This is a simplified implementation
-	// In a real implementation, this would analyze query performance
 
 	action, ok := request.Parameters["action"].(string)
 	if !ok {
@@ -510,27 +514,212 @@ func (t *PerformanceTool) HandleRequest(_ context.Context, request server.ToolCa
 		}
 	}
 
-	// This is where we would call the useCase to analyze performance
-	// For now, just return a placeholder
-	output := fmt.Sprintf("Performance analysis for action '%s' on database '%s'\n", action, dbID)
-
-	if query != "" {
-		output += fmt.Sprintf("Query: %s\n", query)
+	output, err := useCase.AnalyzePerformance(ctx, dbID, action, query, limit, threshold)
+	if err != nil {
+		return nil, err
 	}
-
-	if limit > 0 {
-		output += fmt.Sprintf("Limit: %d\n", limit)
-	}
-
-	if threshold > 0 {
-		output += fmt.Sprintf("Threshold: %d ms\n", threshold)
-	}
-
 	return createTextResponse(output), nil
 }
 
 //------------------------------------------------------------------------------
-// SchemaTool implementation
+// ExplainTool implementation
+//------------------------------------------------------------------------------
+
+// ExplainTool handles execution-plan analysis without (normally) running
+// the statement.
+type ExplainTool struct {
+	BaseToolType
+}
+
+// NewExplainTool creates a new explain tool type
+func NewExplainTool() *ExplainTool {
+	return &ExplainTool{
+		BaseToolType: BaseToolType{
+			name:        "explain",
+			description: "Show the database execution plan for a SQL statement",
+		},
+	}
+}
+
+// CreateTool creates an explain tool for a specific database
+func (t *ExplainTool) CreateTool(name string, dbID string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetDescription(dbID)),
+		tools.WithString("statement",
+			tools.Description("SQL statement to explain (SELECT, INSERT, UPDATE, or DELETE)"),
+			tools.Required(),
+		),
+		tools.WithBoolean("analyze",
+			tools.Description("Execute the statement and include real timing/buffer statistics (writes still refused on read-only databases)"),
+		),
+	)
+}
+
+// CreateUnifiedTool creates an explain tool with a database parameter
+func (t *ExplainTool) CreateUnifiedTool(name string, dbList []string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetUnifiedDescription(dbList)),
+		tools.WithString("database",
+			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			tools.Required(),
+		),
+		tools.WithString("statement",
+			tools.Description("SQL statement to explain (SELECT, INSERT, UPDATE, or DELETE)"),
+			tools.Required(),
+		),
+		tools.WithBoolean("analyze",
+			tools.Description("Execute the statement and include real timing/buffer statistics (writes still refused on read-only databases)"),
+		),
+	)
+}
+
+// HandleRequest handles explain tool requests
+func (t *ExplainTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	if dbID == "" {
+		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	statement, ok := request.Parameters["statement"].(string)
+	if !ok {
+		return nil, fmt.Errorf("statement parameter must be a string")
+	}
+
+	analyze := false
+	if request.Parameters["analyze"] != nil {
+		if b, ok := request.Parameters["analyze"].(bool); ok {
+			analyze = b
+		}
+	}
+
+	result, err := useCase.ExecuteExplain(ctx, dbID, statement, analyze)
+	if err != nil {
+		return nil, err
+	}
+	return createTextResponse(result), nil
+}
+
+//------------------------------------------------------------------------------
+// DescribeTool implementation
+//------------------------------------------------------------------------------
+
+// DescribeTool handles per-table metadata inspection: columns, indexes,
+// and row estimates.
+type DescribeTool struct {
+	BaseToolType
+}
+
+// NewDescribeTool creates a new describe tool type
+func NewDescribeTool() *DescribeTool {
+	return &DescribeTool{
+		BaseToolType: BaseToolType{
+			name:        "describe",
+			description: "Show columns, indexes, and row estimate for a table",
+		},
+	}
+}
+
+// CreateTool creates a describe tool for a specific database
+func (t *DescribeTool) CreateTool(name string, dbID string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetDescription(dbID)),
+		tools.WithString("table",
+			tools.Description("Table name to inspect (schema-qualified allowed, e.g. public.users)"),
+			tools.Required(),
+		),
+	)
+}
+
+// CreateUnifiedTool creates a describe tool with a database parameter
+func (t *DescribeTool) CreateUnifiedTool(name string, dbList []string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetUnifiedDescription(dbList)),
+		tools.WithString("database",
+			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			tools.Required(),
+		),
+		tools.WithString("table",
+			tools.Description("Table name to inspect (schema-qualified allowed, e.g. public.users)"),
+			tools.Required(),
+		),
+	)
+}
+
+// HandleRequest handles describe tool requests
+func (t *DescribeTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	if dbID == "" {
+		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	table, ok := request.Parameters["table"].(string)
+	if !ok {
+		return nil, fmt.Errorf("table parameter must be a string")
+	}
+
+	info, err := useCase.DescribeTable(ctx, dbID, table)
+	if err != nil {
+		return nil, err
+	}
+	return createTextResponse(formatDescribeResult(info)), nil
+}
+
+// mapString safely extracts a string field from a metadata map.
+func mapString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+// formatDescribeResult renders describe output as compact readable text.
+func formatDescribeResult(info map[string]interface{}) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Table %v (database %v, engine %v)\n\n", info["table"], info["database"], info["dbType"])
+
+	b.WriteString("Columns:\n")
+	columns, _ := describeRows(info["columns"])
+	for _, c := range columns {
+		fmt.Fprintf(&b, "  %-28s %-20s nullable=%v default=%s\n",
+			mapString(c, "column_name"), mapString(c, "data_type"),
+			c["is_nullable"], mapString(c, "column_default"))
+	}
+
+	b.WriteString("\nIndexes:\n")
+	indexes, _ := describeRows(info["indexes"])
+	for _, ix := range indexes {
+		name := mapString(ix, "index_name")
+		def := mapString(ix, "definition")
+		if def != "" {
+			fmt.Fprintf(&b, "  %s — %s\n", name, def)
+		} else {
+			fmt.Fprintf(&b, "  %s\n", name)
+		}
+	}
+
+	b.WriteString("\nConstraints:\n")
+	constraints, _ := describeRows(info["constraints"])
+	if len(constraints) == 0 {
+		b.WriteString("  (none found)\n")
+	}
+	for _, c := range constraints {
+		fmt.Fprintf(&b, "  %s %s (%s)\n",
+			mapString(c, "constraint_type"), mapString(c, "constraint_name"), mapString(c, "column_name"))
+	}
+
+	if rc, ok := info["rowCount"].(string); ok && rc != "" {
+		fmt.Fprintf(&b, "\nRows (estimate): %s\n", rc)
+	}
+	return b.String()
+}
+
+func describeRows(v interface{}) ([]map[string]interface{}, bool) {
+	rows, ok := v.([]map[string]interface{})
+	return rows, ok
+}
+
 //------------------------------------------------------------------------------
 
 // SchemaTool handles database schema exploration
@@ -665,6 +854,8 @@ func NewToolTypeFactory() *ToolTypeFactory {
 	factory.Register(NewExecuteTool())
 	factory.Register(NewTransactionTool())
 	factory.Register(NewPerformanceTool())
+	factory.Register(NewExplainTool())
+	factory.Register(NewDescribeTool())
 	factory.Register(NewSchemaTool())
 	factory.Register(NewListDatabasesTool())
 	factory.Register(NewListDirectoryTool())

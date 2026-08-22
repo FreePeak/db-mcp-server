@@ -43,6 +43,9 @@ type DatabaseConnectionConfig struct {
 	MaxIdleConns    int `json:"max_idle_conns,omitempty"`
 	ConnMaxLifetime int `json:"conn_max_lifetime_seconds,omitempty"`  // in seconds
 	ConnMaxIdleTime int `json:"conn_max_idle_time_seconds,omitempty"` // in seconds
+
+	// Result guardrails (all engines)
+	MaxRows int `json:"max_rows,omitempty"` // Maximum rows returned per query; 0 means unlimited
 }
 
 // MultiDBConfig represents the configuration for multiple database connections
@@ -215,6 +218,9 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 		dbConfig.Options = cfg.Options
 		dbConfig.ReadOnly = cfg.ReadOnly
 	}
+
+	// Result guardrails (all engines)
+	dbConfig.MaxRows = cfg.MaxRows
 
 	// Connection pool settings
 	if cfg.MaxOpenConns > 0 {

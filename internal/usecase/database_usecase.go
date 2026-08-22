@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/FreePeak/db-mcp-server/internal/domain"
@@ -128,13 +129,44 @@ func executeQueriesWithFallback(ctx context.Context, db domain.Database, queries
 // DatabaseUseCase defines operations for managing database functionality
 type DatabaseUseCase struct {
 	repo domain.DatabaseRepository
+
+	// transactions holds live transactions keyed by their generated
+	// transaction ID so begin/execute/commit/rollback act on the same
+	// underlying transaction instead of stubbed no-ops.
+	txMu         sync.Mutex
+	transactions map[string]domain.Tx
 }
 
 // NewDatabaseUseCase creates a new database use case
 func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 	return &DatabaseUseCase{
-		repo: repo,
+		repo:         repo,
+		transactions: make(map[string]domain.Tx),
 	}
+}
+
+func (uc *DatabaseUseCase) storeTx(id string, tx domain.Tx) {
+	uc.txMu.Lock()
+	defer uc.txMu.Unlock()
+	uc.transactions[id] = tx
+}
+
+func (uc *DatabaseUseCase) getTx(id string) (domain.Tx, bool) {
+	uc.txMu.Lock()
+	defer uc.txMu.Unlock()
+	tx, ok := uc.transactions[id]
+	return tx, ok
+}
+
+// takeTx removes and returns the transaction registered under id.
+func (uc *DatabaseUseCase) takeTx(id string) (domain.Tx, bool) {
+	uc.txMu.Lock()
+	defer uc.txMu.Unlock()
+	tx, ok := uc.transactions[id]
+	if ok {
+		delete(uc.transactions, id)
+	}
+	return tx, ok
 }
 
 // ListDatabases returns a list of available databases
@@ -230,6 +262,14 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 		return "", fmt.Errorf("failed to get database: %w", err)
 	}
 
+	// Read-only enforcement: the query tool previously accepted any
+	// statement, so an agent could mutate a read_only database through it
+	// even though the execute tool refused writes. Classify the statement
+	// first and fail closed before touching the database.
+	if db.IsReadOnly() && IsWriteStatement(query) {
+		return "", fmt.Errorf("database %q is configured as read-only; write statements are not allowed via queries", dbID)
+	}
+
 	// Execute query
 	rows, err := db.Query(ctx, query, params...)
 	if err != nil {
@@ -237,17 +277,22 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 	}
 	defer func() {
 		if closeErr := rows.Close(); closeErr != nil {
-			err = fmt.Errorf("error closing rows: %w", closeErr)
+			logger.Error("error closing rows: %v", closeErr)
 		}
 	}()
 
-	// Process results into a readable format
+	return formatQueryResults(rows, db.MaxRows())
+}
+
+// formatQueryResults renders query results as text, stopping after maxRows
+// rows when maxRows > 0 so large result sets cannot flood the client's
+// context window. The caller owns closing rows.
+func formatQueryResults(rows domain.Rows, maxRows int) (string, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return "", fmt.Errorf("failed to get column names: %w", err)
 	}
 
-	// Format results as text
 	var resultText strings.Builder
 	resultText.WriteString("Results:\n\n")
 	resultText.WriteString(strings.Join(columns, "\t") + "\n")
@@ -260,12 +305,15 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 		valuePtrs[i] = &values[i]
 	}
 
-	// Process rows
 	rowCount := 0
+	truncated := false
 	for rows.Next() {
+		if maxRows > 0 && rowCount >= maxRows {
+			truncated = true
+			break
+		}
 		rowCount++
-		scanErr := rows.Scan(valuePtrs...)
-		if scanErr != nil {
+		if scanErr := rows.Scan(valuePtrs...); scanErr != nil {
 			return "", fmt.Errorf("failed to scan row: %w", scanErr)
 		}
 
@@ -286,12 +334,16 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 		}
 		resultText.WriteString(strings.Join(rowText, "\t") + "\n")
 	}
-
 	if err = rows.Err(); err != nil {
 		return "", fmt.Errorf("error reading rows: %w", err)
 	}
 
-	resultText.WriteString(fmt.Sprintf("\nTotal rows: %d", rowCount))
+	if truncated {
+		resultText.WriteString(fmt.Sprintf("\nTruncated: showing first %d rows (max_rows=%d). Refine the query with LIMIT or tighter filters to see more.", rowCount, maxRows))
+		resultText.WriteString(fmt.Sprintf("\nTotal rows shown: %d", rowCount))
+	} else {
+		resultText.WriteString(fmt.Sprintf("\nTotal rows: %d", rowCount))
+	}
 	return resultText.String(), nil
 }
 
@@ -330,17 +382,13 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 	return fmt.Sprintf("Statement executed successfully.\nRows affected: %d\nLast insert ID: %d", rowsAffected, lastInsertID), nil
 }
 
-// ExecuteTransaction executes operations in a transaction
-func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action string, _ string,
-	_ string, _ []interface{}, readOnly bool) (string, map[string]interface{}, error) {
-
-	// Read-only enforcement: refuse non-read-only transaction requests when
-	// the connection was opened with read_only: true (issue #41).
-	if !readOnly && action != "commit" && action != "rollback" {
-		if db, err := uc.repo.GetDatabase(dbID); err == nil && db.IsReadOnly() {
-			return "", nil, fmt.Errorf("database %q is configured as read-only; write transactions are not allowed", dbID)
-		}
-	}
+// ExecuteTransaction executes operations in a transaction. Actions:
+//   - "begin": opens a real transaction and returns its ID in metadata
+//   - "execute": runs a statement inside the transaction identified by txID
+//   - "commit": commits and retires the transaction ID
+//   - "rollback": rolls back and retires the transaction ID
+func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action string, txID string,
+	statement string, params []interface{}, readOnly bool) (string, map[string]interface{}, error) {
 
 	switch action {
 	case "begin":
@@ -349,44 +397,84 @@ func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action 
 			return "", nil, fmt.Errorf("failed to get database: %w", err)
 		}
 
-		// Start a new transaction
-		txOpts := &domain.TxOptions{ReadOnly: readOnly}
-		tx, err := db.Begin(ctx, txOpts)
+		// Read-only enforcement: refuse write transactions when the
+		// connection was opened with read_only: true (issue #41).
+		if !readOnly && db.IsReadOnly() {
+			return "", nil, fmt.Errorf("database %q is configured as read-only; write transactions are not allowed", dbID)
+		}
+
+		tx, err := db.Begin(ctx, &domain.TxOptions{ReadOnly: readOnly})
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to start transaction: %w", err)
 		}
 
-		// In a real implementation, we would store the transaction for later use
-		// For now, we just commit right away to avoid the unused variable warning
-		if err := tx.Commit(); err != nil {
-			return "", nil, fmt.Errorf("failed to commit transaction: %w", err)
-		}
-
-		// Generate transaction ID
-		newTxID := fmt.Sprintf("tx_%s_%d", dbID, timeNowUnix())
+		newTxID := fmt.Sprintf("tx_%s_%d", dbID, timeNowUnixNano())
+		uc.storeTx(newTxID, tx)
 
 		return "Transaction started", map[string]interface{}{"transactionId": newTxID}, nil
 
 	case "commit":
-		// Implement commit logic (would need access to stored transaction)
-		return "Transaction committed", nil, nil
+		tx, ok := uc.takeTx(txID)
+		if !ok {
+			return "", nil, fmt.Errorf("unknown transaction ID %q; use the transactionId returned by a previous begin action", txID)
+		}
+		if err := tx.Commit(); err != nil {
+			return "", nil, fmt.Errorf("failed to commit transaction %q: %w", txID, err)
+		}
+		return "Transaction committed", map[string]interface{}{"transactionId": txID}, nil
 
 	case "rollback":
-		// Implement rollback logic (would need access to stored transaction)
-		return "Transaction rolled back", nil, nil
+		tx, ok := uc.takeTx(txID)
+		if !ok {
+			return "", nil, fmt.Errorf("unknown transaction ID %q; use the transactionId returned by a previous begin action", txID)
+		}
+		if err := tx.Rollback(); err != nil {
+			return "", nil, fmt.Errorf("failed to roll back transaction %q: %w", txID, err)
+		}
+		return "Transaction rolled back", map[string]interface{}{"transactionId": txID}, nil
 
 	case "execute":
-		// Implement execute within transaction logic (would need access to stored transaction)
-		return "Statement executed in transaction", nil, nil
+		db, err := uc.repo.GetDatabase(dbID)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to get database: %w", err)
+		}
+		tx, ok := uc.getTx(txID)
+		if !ok {
+			return "", nil, fmt.Errorf("unknown transaction ID %q; use the transactionId returned by a previous begin action", txID)
+		}
+
+		// Defense-in-depth read-only guard for engines that do not enforce
+		// read-only transactions themselves.
+		if db.IsReadOnly() && IsWriteStatement(statement) {
+			return "", nil, fmt.Errorf("database %q is configured as read-only; write statements are not allowed inside transactions", dbID)
+		}
+
+		result, err := tx.Exec(ctx, statement, params...)
+		if err != nil {
+			return "", nil, fmt.Errorf("statement execution failed in transaction: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			rowsAffected = 0
+		}
+		lastInsertID, err := result.LastInsertId()
+		if err != nil {
+			lastInsertID = 0
+		}
+
+		return fmt.Sprintf("Statement executed in transaction.\nRows affected: %d\nLast insert ID: %d", rowsAffected, lastInsertID),
+			map[string]interface{}{"transactionId": txID}, nil
 
 	default:
 		return "", nil, fmt.Errorf("invalid transaction action: %s", action)
 	}
 }
 
-// Helper function to get current Unix timestamp
-func timeNowUnix() int64 {
-	return time.Now().Unix()
+// Helper function to get a nanosecond-resolution timestamp for unique
+// transaction IDs under rapid successive calls.
+func timeNowUnixNano() int64 {
+	return time.Now().UnixNano()
 }
 
 // GetDatabaseType returns the type of a database by ID

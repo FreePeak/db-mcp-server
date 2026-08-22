@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/FreePeak/db-mcp-server/pkg/logger"
@@ -23,6 +24,7 @@ type QueryMetrics struct {
 
 // PerformanceAnalyzer tracks query performance and provides optimization suggestions
 type PerformanceAnalyzer struct {
+	mu            sync.Mutex
 	slowThreshold time.Duration
 	queryHistory  []QueryRecord
 	maxHistory    int
@@ -228,8 +230,7 @@ func StripComments(input string) string {
 }
 
 // GetAllMetrics returns all collected metrics
-func (pa *PerformanceAnalyzer) GetAllMetrics() []*QueryMetrics {
-	// Group query history by normalized query text
+func (pa *PerformanceAnalyzer) GetAllMetrics() []*QueryMetrics { // Group query history by normalized query text
 	queryMap := make(map[string]*QueryMetrics)
 
 	for _, record := range pa.queryHistory {
@@ -273,7 +274,21 @@ func (pa *PerformanceAnalyzer) GetAllMetrics() []*QueryMetrics {
 	return metrics
 }
 
-// Reset clears all collected metrics
+// SlowQueries returns the recorded queries at or above the slow threshold,
+// oldest first.
+func (pa *PerformanceAnalyzer) SlowQueries() []QueryRecord {
+	pa.mu.Lock()
+	defer pa.mu.Unlock()
+	slow := make([]QueryRecord, 0)
+	for _, r := range pa.queryHistory {
+		if r.Duration >= pa.slowThreshold {
+			slow = append(slow, r)
+		}
+	}
+	return slow
+}
+
+// Reset clears collected query history
 func (pa *PerformanceAnalyzer) Reset() {
 	pa.queryHistory = make([]QueryRecord, 0)
 }
