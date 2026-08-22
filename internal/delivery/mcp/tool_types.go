@@ -154,6 +154,9 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithString("format",
 			tools.Description(`Output format: text (default, human-readable table), csv (RFC4180), json (array of row objects), or inserts (INSERT INTO statements for the queried table)`),
 		),
+		tools.WithBoolean("count_only",
+			tools.Description("Return the row COUNT(*) for the statement instead of rows"),
+		),
 	)
 }
 
@@ -183,6 +186,9 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 		tools.WithString("format",
 			tools.Description(`Output format: text (default, human-readable table), csv (RFC4180), json (array of row objects), or inserts (INSERT INTO statements for the queried table)`),
 		),
+		tools.WithBoolean("count_only",
+			tools.Description("Return the row COUNT(*) for the statement instead of rows"),
+		),
 	)
 }
 
@@ -191,6 +197,12 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 // providers compatible.
 type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
+}
+
+// rowCountPreviewUseCase is implemented by use cases that can price a
+// SELECT via a COUNT(*) wrap without fetching rows.
+type rowCountPreviewUseCase interface {
+	CountQueryRows(ctx context.Context, dbID, query string, params []interface{}) (string, error)
 }
 
 // sessionObservabilityUseCase is implemented by use cases that can list
@@ -244,6 +256,17 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 			verbosity = usecase.ResultVerbosity(v)
 		}
 	}
+	// count_only prices the statement instead of fetching rows.
+	if countOnly, ok := request.Parameters["count_only"].(bool); ok && countOnly {
+		if c, can := useCase.(rowCountPreviewUseCase); can {
+			result, err := c.CountQueryRows(ctx, dbID, query, queryParams)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(result), nil
+		}
+	}
+
 	// Export formats bypass the text renderer entirely.
 	if format, _ := request.Parameters["format"].(string); format == "csv" || format == "json" || format == "inserts" { //nolint:errcheck // absent means text
 		if x, canExport := useCase.(queryExportUseCase); canExport {

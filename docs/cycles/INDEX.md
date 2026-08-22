@@ -81,6 +81,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 65 | Constraint fingerprints (PK/FK) in schema compare | ✅ Shipped (hackathon branch) | [cycle-65](cycle-65-schema-compare-constraints.md) |
 | 66 | INSERT generation via query format=inserts | ✅ Shipped (hackathon branch) | [cycle-66](cycle-66-insert-generation.md) |
 | 67 | PR #87 description refresh (cycles 52-66) | ✅ Shipped (hackathon branch) | [cycle-67](cycle-67-pr-refresh.md) |
+| 68 | count_only row-count preview on query tool | ✅ Shipped (hackathon branch) | [cycle-68](cycle-68-count-only.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

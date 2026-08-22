@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -104,5 +105,34 @@ func TestExecuteQueryFormat_InsertsErrors(t *testing.T) {
 	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
 	if _, err := uc.ExecuteQueryFormat(context.Background(), "db1", "SELECT 1", nil, "inserts"); err == nil {
 		t.Fatal("inserts without a FROM table must error")
+	}
+}
+
+// TestCountQueryRows proves cycle 68: count_only wraps the statement in
+// COUNT(*) so an agent can price a SELECT before fetching rows.
+func TestCountQueryRows(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	must := func(q string) {
+		t.Helper()
+		if _, err := raw.Exec(q); err != nil {
+			t.Fatalf("exec failed: %v", err)
+		}
+	}
+	must(`CREATE TABLE nums (n INTEGER)`)
+	for i := 1; i <= 7; i++ {
+		must(`INSERT INTO nums (n) VALUES (` + fmt.Sprint(i) + `)`)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	out, err := uc.CountQueryRows(context.Background(), "db1", "SELECT n FROM nums WHERE n > 2", nil)
+	if err != nil {
+		t.Fatalf("count failed: %v", err)
+	}
+	if !strings.Contains(out, "5") {
+		t.Fatalf("expected count 5 in:\n%s", out)
+	}
+
+	if _, err := uc.CountQueryRows(context.Background(), "db1", "DELETE FROM nums", nil); err == nil {
+		t.Fatal("non-SELECT must be rejected")
 	}
 }

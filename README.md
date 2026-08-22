@@ -531,7 +531,7 @@ For each connected database, DB MCP Server automatically generates these special
 
 | Tool Name | Description |
 |-----------|-------------|
-| `query_<db_id>` | Execute SELECT queries and get results as a tabular dataset; `format: "csv"` / `"json"` / `"inserts"` return machine-readable output (RFC4180 CSV, array of row objects, or INSERT INTO DML for the queried table), honoring max_rows and PII masking |
+| `query_<db_id>` | Execute SELECT queries and get results as a tabular dataset; `format: "csv"` / `"json"` / `"inserts"` return machine-readable output (RFC4180 CSV, array of row objects, or INSERT INTO DML for the queried table), honoring max_rows and PII masking; `count_only: true` returns the statement's row COUNT(*) without fetching rows |
 | `execute_<db_id>` | Run data manipulation statements (INSERT, UPDATE, DELETE) |
 | `transaction_<db_id>` | Begin, commit, and rollback transactions |
 
