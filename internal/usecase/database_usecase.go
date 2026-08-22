@@ -137,6 +137,11 @@ type DatabaseUseCase struct {
 	transactions map[string]domain.Tx
 	// maskingAudit records PII redaction events for operator visibility.
 	maskingAudit *maskingAudit
+
+	// riskWarnMu guards riskWarnAt.
+	riskWarnMu sync.Mutex
+	// riskWarnAt is the minimum post-execution advisory level (default high).
+	riskWarnAt string
 }
 
 // NewDatabaseUseCase creates a new database use case
@@ -145,7 +150,26 @@ func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 		repo:         repo,
 		transactions: make(map[string]domain.Tx),
 		maskingAudit: newMaskingAudit(),
+		riskWarnAt:   "high",
 	}
+}
+
+// SetRiskWarnAt configures the minimum post-execution advisory level
+// (low|medium|high|critical). Invalid values fall back to the default high.
+func (uc *DatabaseUseCase) SetRiskWarnAt(level string) {
+	valid := map[string]bool{"low": true, "medium": true, "high": true, "critical": true}
+	uc.riskWarnMu.Lock()
+	defer uc.riskWarnMu.Unlock()
+	if !valid[level] {
+		level = "high"
+	}
+	uc.riskWarnAt = level
+}
+
+func (uc *DatabaseUseCase) currentRiskWarnAt() string {
+	uc.riskWarnMu.Lock()
+	defer uc.riskWarnMu.Unlock()
+	return uc.riskWarnAt
 }
 
 // GetMaskingAudit returns a snapshot of recent PII-redaction events for the
@@ -402,7 +426,7 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 	// explicit notice so the agent (and any human reviewing the transcript)
 	// sees what just happened. Execution itself is never blocked here.
 	risk := AnalyzeStatementRisk(statement)
-	if risk.Risk == "high" || risk.Risk == "critical" {
+	if riskOrder[strings.ToLower(risk.Risk)] >= riskOrder[uc.currentRiskWarnAt()] {
 		out += "\n⚠ Risk notice: this statement was " + strings.ToUpper(risk.Risk[:1]) + risk.Risk[1:] + " risk"
 		for _, n := range risk.Notes {
 			out += "\n- " + n
