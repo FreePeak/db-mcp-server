@@ -13,6 +13,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing git tag to build and publish (e.g. v1.9.0). Leave empty for a normal main build.'
+        required: false
+        type: string
 
 env:
   REGISTRY: docker.io
@@ -26,6 +31,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Backfill mode (issue #83): when dispatched with a tag input, check
+          # out that existing tag; otherwise use the default triggering ref.
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -43,6 +52,9 @@ jobs:
 
       - name: Compute metadata
         id: meta
+        # Skipped in backfill mode (issue #83): its tag rules would add
+        # `latest` and sha tags, which must not be pushed for old releases.
+        if: github.event_name != 'workflow_dispatch' || inputs.tag == ''
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
@@ -54,13 +66,35 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=long
 
+      - name: Compute backfill tags
+        id: backfill_tags
+        # Backfill mode only: publish an old tag as bare <version> and
+        # <major.minor>, never `latest` or `sha-*` (issue #83).
+        if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+        run: |
+          tag="${{ inputs.tag }}"
+          version="${tag#v}"
+          majmin="${version%.*}"
+          echo "Backfilling ${tag} as ${REGISTRY}/${IMAGE_NAME}:${version} and :${majmin} (no latest/sha tags)"
+          {
+            echo "version=${version}"
+            echo "majmin=${majmin}"
+            echo "tags<<TAGS_EOF"
+            echo "${REGISTRY}/${IMAGE_NAME}:${version}"
+            echo "${REGISTRY}/${IMAGE_NAME}:${majmin}"
+            echo "TAGS_EOF"
+            echo "labels<<LABELS_EOF"
+            echo "org.opencontainers.image.version=${version}"
+            echo "LABELS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.backfill_tags.outputs.tags || steps.meta.outputs.tags }}
+          labels: ${{ steps.backfill_tags.outputs.labels || steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
