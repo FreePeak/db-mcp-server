@@ -97,16 +97,21 @@ func luhnValid(s string) bool {
 // formatQueryResultsMasked renders query results with PII masking applied to
 // every data cell (headers stay visible).
 func formatQueryResultsMasked(rows domain.Rows, maxRows int) (string, error) {
-	return renderQueryResults(rows, maxRows, true)
+	out, _, err := renderQueryResults(rows, maxRows, true)
+	return out, err
 }
 
 // renderQueryResults is the single result-rendering path; masking toggles
 // the cell transformer without duplicating scan/format logic.
-func renderQueryResults(rows domain.Rows, maxRows int, mask bool) (string, error) {
+// renderQueryResults returns the rendered text plus the number of cells
+// that were redacted (0 when masking is off or nothing matched).
+func renderQueryResults(rows domain.Rows, maxRows int, mask bool) (string, int, error) {
 	columns, err := rows.Columns()
 	if err != nil {
-		return "", fmt.Errorf("failed to get column names: %w", err)
+		return "", 0, fmt.Errorf("failed to get column names: %w", err)
 	}
+
+	cellsMasked := 0
 
 	var resultText strings.Builder
 	resultText.WriteString("Results:\n\n")
@@ -128,7 +133,7 @@ func renderQueryResults(rows domain.Rows, maxRows int, mask bool) (string, error
 		}
 		rowCount++
 		if scanErr := rows.Scan(valuePtrs...); scanErr != nil {
-			return "", fmt.Errorf("failed to scan row: %w", scanErr)
+			return "", 0, fmt.Errorf("failed to scan row: %w", scanErr)
 		}
 
 		var rowText []string
@@ -146,14 +151,17 @@ func renderQueryResults(rows domain.Rows, maxRows int, mask bool) (string, error
 				s = fmt.Sprintf("%v", v)
 			}
 			if mask {
-				s = maskPIIInText(s, columns[i])
+				if masked := maskPIIInText(s, columns[i]); masked != s {
+					s = masked
+					cellsMasked++
+				}
 			}
 			rowText = append(rowText, s)
 		}
 		resultText.WriteString(strings.Join(rowText, "\t") + "\n")
 	}
 	if err = rows.Err(); err != nil {
-		return "", fmt.Errorf("error reading rows: %w", err)
+		return "", 0, fmt.Errorf("error reading rows: %w", err)
 	}
 
 	if truncated {
@@ -162,5 +170,5 @@ func renderQueryResults(rows domain.Rows, maxRows int, mask bool) (string, error
 	} else {
 		resultText.WriteString(fmt.Sprintf("\nTotal rows: %d", rowCount))
 	}
-	return resultText.String(), nil
+	return resultText.String(), cellsMasked, nil
 }

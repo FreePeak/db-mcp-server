@@ -134,6 +134,8 @@ type DatabaseUseCase struct {
 	// underlying transaction instead of stubbed no-ops.
 	txMu         sync.Mutex
 	transactions map[string]domain.Tx
+	// maskingAudit records PII redaction events for operator visibility.
+	maskingAudit *maskingAudit
 }
 
 // NewDatabaseUseCase creates a new database use case
@@ -141,7 +143,14 @@ func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 	return &DatabaseUseCase{
 		repo:         repo,
 		transactions: make(map[string]domain.Tx),
+		maskingAudit: newMaskingAudit(),
 	}
+}
+
+// GetMaskingAudit returns a snapshot of recent PII-redaction events for the
+// given database, oldest first. Bounded by maskingAuditCapacity.
+func (uc *DatabaseUseCase) GetMaskingAudit(dbID string) []MaskingAuditEvent {
+	return uc.maskingAudit.snapshot(dbID)
 }
 
 func (uc *DatabaseUseCase) storeTx(id string, tx domain.Tx) {
@@ -282,7 +291,12 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 
 	// Server-level masking config applies even on the legacy path so
 	// clients cannot bypass governance by omitting the parameter.
-	return renderQueryResults(rows, db.MaxRows(), db.MaskPII())
+	out, masked, rerr := renderQueryResults(rows, db.MaxRows(), db.MaskPII())
+	if rerr != nil {
+		return "", rerr
+	}
+	uc.maskingAudit.record(dbID, query, masked)
+	return out, nil
 }
 
 // ExecuteQueryMasked executes a query with optional PII masking applied to
@@ -308,14 +322,19 @@ func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query s
 		}
 	}()
 
-	return renderQueryResults(rows, db.MaxRows(), mask || db.MaskPII())
+	out, masked, err2 := renderQueryResults(rows, db.MaxRows(), mask || db.MaskPII())
+	if err2 == nil {
+		uc.maskingAudit.record(dbID, query, masked)
+	}
+	return out, err2
 }
 
 // formatQueryResults renders query results as text, stopping after maxRows
 // rows when maxRows > 0 so large result sets cannot flood the client's
 // context window. The caller owns closing rows.
 func formatQueryResults(rows domain.Rows, maxRows int) (string, error) {
-	return renderQueryResults(rows, maxRows, false)
+	out, _, err := renderQueryResults(rows, maxRows, false)
+	return out, err
 }
 
 // ExecuteStatement executes a SQL statement (INSERT, UPDATE, DELETE)
