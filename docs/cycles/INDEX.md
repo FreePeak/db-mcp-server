@@ -56,6 +56,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 40 | Content-based PII detection (sampled, pattern-confirmed) | ✅ Shipped (hackathon branch) | [cycle-40](cycle-40-content-pii.md) |
 | 41 | Merged sensitive report (name + content sections in one payload) | ✅ Shipped (hackathon branch) | [cycle-41](cycle-41-merged-report.md) |
 | 42 | Operator surface: -risk-warn-at flag + docs coverage | ✅ Shipped (hackathon branch) | [cycle-42](cycle-42-operator-surface.md) |
+| 43 | Coverage audit & gap closure (usecase 83.3%) | ✅ Shipped (hackathon branch) | [cycle-43](cycle-43-coverage-audit.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
