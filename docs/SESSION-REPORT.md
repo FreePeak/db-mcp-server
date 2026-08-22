@@ -77,6 +77,12 @@ cycle-17 work) with no recovery notes. Fixes applied at loop start:
 | PR #87 description refresh | 67 | GitHub PR |
 | count_only row-count preview | 68 | `query_count.go` |
 | Column statistical profile (describe profile_column) | 69 | `column_profile.go` |
+| Cross-DB row-count compare + sampled row diff | 71, 72 | `data_compare.go` |
+| Per-query timeout (timeout_ms) | 73 | `query_timeout.go` |
+
+### Cycles 67-74: Documentation Continuity
+PR #87 description refresh, per-cycle docs, INDEX updates, and this
+report kept current every cycle (67, 70, 74).
 
 ### Testing Infrastructure (Docker-free mandate honored)
 | Feature | Cycles | Key files |
