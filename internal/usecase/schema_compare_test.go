@@ -133,3 +133,59 @@ func TestCompareSchemas_Indexes(t *testing.T) {
 		t.Fatalf("identical index reported as difference:\n%s", out)
 	}
 }
+
+// TestCompareSchemas_Constraints proves cycle 65: primary keys and foreign
+// keys participate in the diff as per-table fingerprints.
+func TestCompareSchemas_Constraints(t *testing.T) {
+	rawA := openSQLiteForTest(t)
+	rawB := openSQLiteForTest(t)
+	if _, err := rawA.Exec(`CREATE TABLE p (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	if _, err := rawA.Exec(`CREATE TABLE c (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES p(id))`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	// B lacks the FK and demotes c's PK.
+	if _, err := rawB.Exec(`CREATE TABLE p (id INTEGER)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	if _, err := rawB.Exec(`CREATE TABLE c (id INTEGER, pid INTEGER)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	repo := &multiRepo{
+		dbs:   map[string]domain.Database{"a": &sqliteDB{db: rawA}, "b": &sqliteDB{db: rawB}},
+		types: map[string]string{"a": "sqlite", "b": "sqlite"},
+	}
+	uc := NewDatabaseUseCase(repo)
+
+	out, err := uc.CompareSchemas(context.Background(), "a", "b")
+	if err != nil {
+		t.Fatalf("compare failed: %v", err)
+	}
+	for _, want := range []string{
+		`PRIMARY KEY`, `FOREIGN KEY`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+
+	// Identical constraints must not be reported.
+	rawC := openSQLiteForTest(t)
+	rawD := openSQLiteForTest(t)
+	for _, raw := range []*sql.DB{rawC, rawD} {
+		if _, err := raw.Exec(`CREATE TABLE p (id INTEGER PRIMARY KEY)`); err != nil {
+			t.Fatalf("create failed: %v", err)
+		}
+	}
+	repo.dbs["a"] = &sqliteDB{db: rawC}
+	repo.dbs["b"] = &sqliteDB{db: rawD}
+	out, err = uc.CompareSchemas(context.Background(), "a", "b")
+	if err != nil {
+		t.Fatalf("compare failed: %v", err)
+	}
+	if strings.Contains(out, "PRIMARY KEY") {
+		t.Fatalf("identical PKs reported as difference:\n%s", out)
+	}
+}

@@ -14,14 +14,16 @@ import (
 // schemaSnapshot is one database's tables mapped to column-name → type,
 // plus per-table index fingerprints (name → normalized definition).
 type schemaSnapshot struct {
-	columns map[string]map[string]string
-	indexes map[string]map[string]string
+	columns     map[string]map[string]string
+	indexes     map[string]map[string]string
+	constraints map[string]map[string]bool
 }
 
 func newSchemaSnapshot() *schemaSnapshot {
 	return &schemaSnapshot{
-		columns: map[string]map[string]string{},
-		indexes: map[string]map[string]string{},
+		columns:     map[string]map[string]string{},
+		indexes:     map[string]map[string]string{},
+		constraints: map[string]map[string]bool{},
 	}
 }
 
@@ -92,6 +94,18 @@ func (uc *DatabaseUseCase) collectSchemaSnapshot(ctx context.Context, dbID strin
 				continue
 			}
 			snap.indexes[tableName][name] = normalizeDefinition(def)
+		}
+
+		conRaw, _ := desc["constraints"].([]map[string]interface{}) //nolint:errcheck // absent constraints means none
+		for _, cr := range conRaw {
+			fp := constraintFingerprint(cr)
+			if fp == "" {
+				continue
+			}
+			if snap.constraints[tableName] == nil {
+				snap.constraints[tableName] = map[string]bool{}
+			}
+			snap.constraints[tableName][fp] = true
 		}
 	}
 	return *snap, nil
@@ -184,6 +198,29 @@ func (uc *DatabaseUseCase) CompareSchemas(ctx context.Context, dbIDA, dbIDB stri
 				lines = append(lines, fmt.Sprintf("table %q index %q: definition differs (%s=%s, %s=%s)", t, i, dbIDA, fa, dbIDB, fb))
 			}
 		}
+
+		conNames := map[string]bool{}
+		for c := range snapA.constraints[t] {
+			conNames[c] = true
+		}
+		for c := range snapB.constraints[t] {
+			conNames[c] = true
+		}
+		sortedCons := make([]string, 0, len(conNames))
+		for c := range conNames {
+			sortedCons = append(sortedCons, c)
+		}
+		sort.Strings(sortedCons)
+		for _, c := range sortedCons {
+			inA := snapA.constraints[t][c]
+			inB := snapB.constraints[t][c]
+			switch {
+			case !inB:
+				lines = append(lines, fmt.Sprintf("table %q constraint %s: only in %s", t, c, dbIDA))
+			case !inA:
+				lines = append(lines, fmt.Sprintf("table %q constraint %s: only in %s", t, c, dbIDB))
+			}
+		}
 	}
 
 	if len(lines) == 0 {
@@ -191,4 +228,29 @@ func (uc *DatabaseUseCase) CompareSchemas(ctx context.Context, dbIDA, dbIDB stri
 	}
 	sort.Strings(lines)
 	return "Schema differences between " + dbIDA + " and " + dbIDB + ":\n- " + strings.Join(lines, "\n- "), nil
+}
+
+// constraintFingerprint renders one constraint row as a comparable
+// string: "PRIMARY KEY(id)", "FOREIGN KEY(pid)->p.id". Unidentifiable
+// rows render "" and are skipped.
+func constraintFingerprint(cr map[string]interface{}) string {
+	get := func(keys ...string) string {
+		for _, k := range keys {
+			if v, ok := cr[k].(string); ok && v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	typ := get("constraint_type", "CONSTRAINT_TYPE")
+	col := get("column_name", "COLUMN_NAME")
+	if typ == "" || col == "" {
+		return ""
+	}
+	refTable := get("referenced_table", "REFERENCED_TABLE")
+	refCol := get("referenced_column", "REFERENCED_COLUMN")
+	if refTable != "" && refCol != "" {
+		return fmt.Sprintf("%s(%s)->%s.%s", typ, col, refTable, refCol)
+	}
+	return fmt.Sprintf("%s(%s)", typ, col)
 }
