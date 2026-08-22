@@ -553,7 +553,7 @@ For each connected database, DB MCP Server automatically generates these special
 | `health_<db_id>` | Report connectivity, ping latency, connection-pool state, engine stats (PostgreSQL buffer-cache hit ratio, MySQL InnoDB buffer efficiency), and recent PII-masking redaction counts when masking is active |
 | `filter_tables` | Find tables whose names contain a substring; pass `value` instead to search every textual column of every table for a literal (e.g. locate which table holds an email or UUID) with per-column match counts |
 | `transaction_<db_id>` | Multi-statement transactions (`begin`/`execute`/`commit`/`rollback`), pre-mutation safety net (every DELETE/UPDATE auto-captures affected rows; `list_snapshots`, `rollback_snapshot` undo a mutation), and schema lifecycle (`capture_schema_snapshot`, `check_schema_drift`, `list_schema_snapshots`) for migration verification |
-| `execute_<db_id>` | Run write/DDL statements with `dry_run: true` for offline risk analysis (destructive ops, missing WHERE, rewrite/lock advisories); real executions of high/critical statements append an explicit risk notice to the result |
+| `execute_<db_id>` | Run write/DDL statements with `dry_run: true` for offline risk analysis (destructive ops, missing WHERE, rewrite/lock advisories); real executions of high/critical statements append an explicit risk notice; `script` runs a semicolon-separated multi-statement batch atomically (all commit or all roll back, failing statement named) |
 
 ### TimescaleDB Tools
 

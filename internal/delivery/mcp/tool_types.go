@@ -229,6 +229,12 @@ type viewListingUseCase interface {
 	ListViews(ctx context.Context, dbID string) (string, error)
 }
 
+// scriptExecutionUseCase is implemented by use cases that can run a
+// multi-statement script atomically.
+type scriptExecutionUseCase interface {
+	ExecuteScript(ctx context.Context, dbID, script string) (string, error)
+}
+
 // duplicateDetectionUseCase is implemented by use cases that can report
 // duplicated values in one column.
 type duplicateDetectionUseCase interface {
@@ -512,6 +518,9 @@ func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Statement parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
 		),
+		tools.WithString("script",
+			tools.Description("Multi-statement script (semicolon-separated) executed atomically: all commit or all roll back with the failing statement named"),
+		),
 		tools.WithBoolean("dry_run",
 			tools.Description("Analyze the statement's risk (destructive ops, missing WHERE, table rewrites) WITHOUT executing it"),
 		),
@@ -535,6 +544,9 @@ func (t *ExecuteTool) CreateUnifiedTool(name string, dbList []string) interface{
 			tools.Description("Statement parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
 		),
+		tools.WithString("script",
+			tools.Description("Multi-statement script (semicolon-separated) executed atomically: all commit or all roll back with the failing statement named"),
+		),
 		tools.WithBoolean("dry_run",
 			tools.Description("Analyze the statement's risk (destructive ops, missing WHERE, table rewrites) WITHOUT executing it"),
 		),
@@ -548,9 +560,22 @@ func (t *ExecuteTool) HandleRequest(ctx context.Context, request server.ToolCall
 		dbID = extractDatabaseIDFromName(request.Name)
 	}
 
+	// Atomic multi-statement scripts.
+	if script, ok := request.Parameters["script"].(string); ok && strings.TrimSpace(script) != "" {
+		sc, can := useCase.(scriptExecutionUseCase)
+		if !can {
+			return nil, fmt.Errorf("script execution is not supported by this provider")
+		}
+		out, err := sc.ExecuteScript(ctx, dbID, script)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+
 	statement, ok := request.Parameters["statement"].(string)
 	if !ok {
-		return nil, fmt.Errorf("statement parameter must be a string")
+		return nil, fmt.Errorf("statement parameter must be a string (or use the script parameter for a multi-statement batch)")
 	}
 
 	var statementParams []interface{}

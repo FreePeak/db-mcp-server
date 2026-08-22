@@ -94,6 +94,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 78 | Random sampling (sample_rows, engine-aware) | ✅ Shipped (hackathon branch) | [cycle-78](cycle-78-random-sample.md) |
 | 79 | Duplicate detection (describe duplicates_column=) | ✅ Shipped (hackathon branch) | [cycle-79](cycle-79-duplicates.md) |
 | 80 | View listing with definitions (schema format=views) | ✅ Shipped (hackathon branch) | [cycle-80](cycle-80-list-views.md) |
+| 81 | Atomic multi-statement scripts (execute script=) | ✅ Shipped (hackathon branch) | [cycle-81](cycle-81-scripts.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

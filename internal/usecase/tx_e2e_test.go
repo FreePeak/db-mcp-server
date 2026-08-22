@@ -38,7 +38,11 @@ func (s *sqliteDB) Exec(ctx context.Context, statement string, args ...interface
 	return s.db.ExecContext(ctx, statement, args...)
 }
 func (s *sqliteDB) Begin(ctx context.Context, opts *domain.TxOptions) (domain.Tx, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: opts.ReadOnly})
+	ro := false
+	if opts != nil {
+		ro = opts.ReadOnly
+	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: ro})
 	if err != nil {
 		return nil, err
 	}
