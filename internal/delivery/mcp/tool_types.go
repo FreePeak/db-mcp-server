@@ -197,6 +197,7 @@ type queryExportUseCase interface {
 // active engine sessions and cancel running queries.
 type sessionObservabilityUseCase interface {
 	ListActiveSessions(ctx context.Context, dbID string) (string, error)
+	ListBlockingWaits(ctx context.Context, dbID string) (string, error)
 	CancelQuery(ctx context.Context, dbID string, sessionID int64) (string, error)
 }
 
@@ -703,7 +704,7 @@ func (t *PerformanceTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -728,7 +729,7 @@ func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -784,6 +785,14 @@ func (t *PerformanceTool) HandleRequest(ctx context.Context, request server.Tool
 	case "list_sessions":
 		if s, can := useCase.(sessionObservabilityUseCase); can {
 			out, err := s.ListActiveSessions(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "lock_waits":
+		if s, can := useCase.(sessionObservabilityUseCase); can {
+			out, err := s.ListBlockingWaits(ctx, dbID)
 			if err != nil {
 				return nil, err
 			}

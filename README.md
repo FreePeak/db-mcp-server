@@ -531,7 +531,7 @@ For each connected database, DB MCP Server automatically generates these special
 
 | Tool Name | Description |
 |-----------|-------------|
-| `query_<db_id>` | Execute SELECT queries and get results as a tabular dataset |
+| `query_<db_id>` | Execute SELECT queries and get results as a tabular dataset; `format: "csv"` / `"json"` return machine-readable output (RFC4180 CSV or an array of row objects), honoring max_rows and PII masking |
 | `execute_<db_id>` | Run data manipulation statements (INSERT, UPDATE, DELETE) |
 | `transaction_<db_id>` | Begin, commit, and rollback transactions |
 
@@ -540,13 +540,13 @@ For each connected database, DB MCP Server automatically generates these special
 | Tool Name | Description |
 |-----------|-------------|
 | `schema_<db_id>` | Get information about tables, columns, indexes, and foreign keys |
-| `generate_schema_<db_id>` | Generate SQL or code from database schema |
+| `generate_schema_<db_id>` | Render every table as application code from the live schema: `format: "go"` (exported structs with `db` tags, initialism casing) or `"typescript"` (interfaces) |
 
 ### Performance Tools
 
 | Tool Name | Description |
 |-----------|-------------|
-| `performance_<db_id>` | Analyze query performance and get optimization suggestions. Actions: `suggest_indexes` (alias-safe CREATE INDEX DDL from JOIN/WHERE/ORDER BY/GROUP BY columns vs live catalogs, composite-aware, PK-aware), `engine_slow_queries` (top statements from `pg_stat_statements` / MySQL digests), plus tracked metrics and static SQL issue suggestions |
+| `performance_<db_id>` | Analyze query performance and get optimization suggestions. Actions: `suggest_indexes` (alias-safe CREATE INDEX DDL from JOIN/WHERE/ORDER BY/GROUP BY columns vs live catalogs, composite-aware, PK-aware), `engine_slow_queries` (top statements from `pg_stat_statements` / MySQL digests), `list_sessions` (active sessions from pg_stat_activity / processlist), `lock_waits` (who blocks whom via pg_blocking_pids / sys.innodb_lock_waits), `cancel_query` with `session_id` (pg_cancel_backend / KILL QUERY), plus tracked metrics and static SQL issue suggestions |
 | `explain_<db_id>` | Show the execution plan for a SQL statement without running it; `analyze: true` executes with timing/buffer stats (PostgreSQL/MySQL). Writes stay blocked on read-only databases |
 | `describe_<db_id>` | Inspect one table's columns, indexes, row estimate, constraints (PK/FK/UNIQUE) with FK target resolution (`author_id -> authors(id)`) via engine catalog queries |
 | `schema_<db_id>` | List tables/columns; `format: "mermaid"` renders the foreign-key graph as a Mermaid ER diagram; `format: "sensitive"` reports PII-suspect columns (name heuristics + content sampling) with masking guidance |

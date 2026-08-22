@@ -49,3 +49,29 @@ func TestListActiveSessions_SQLiteUnsupported(t *testing.T) {
 		t.Fatalf("expected unsupported error, got: %v", err)
 	}
 }
+
+// TestBlockingWaitsQuery covers cycle 62 engine SQL for lock-wait chains.
+func TestBlockingWaitsQuery(t *testing.T) {
+	pg := blockingWaitsQuery("postgres")
+	if !strings.Contains(pg, "pg_blocking_pids") {
+		t.Fatalf("postgres lock-wait query wrong: %s", pg)
+	}
+	my := blockingWaitsQuery("mysql")
+	if !strings.Contains(my, "innodb_lock_waits") {
+		t.Fatalf("mysql lock-wait query wrong: %s", my)
+	}
+	for _, e := range []string{"sqlite", "oracle", ""} {
+		if blockingWaitsQuery(e) != "" {
+			t.Fatalf("engine %q must have no lock-wait query", e)
+		}
+	}
+}
+
+func TestListBlockingWaits_SQLiteUnsupported(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	_, err := uc.ListBlockingWaits(context.Background(), "db1")
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("expected unsupported error, got: %v", err)
+	}
+}
