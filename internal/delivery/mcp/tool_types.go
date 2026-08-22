@@ -160,6 +160,9 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithNumber("timeout_ms",
 			tools.Description("Cancel the query if it exceeds this many milliseconds"),
 		),
+		tools.WithNumber("sample_rows",
+			tools.Description("Return N randomly ordered rows instead of running the query as written (engine-aware ORDER BY)"),
+		),
 		tools.WithNumber("page",
 			tools.Description("1-based page number; requires page_size; returns data plus total matching rows"),
 		),
@@ -201,6 +204,9 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 		tools.WithNumber("timeout_ms",
 			tools.Description("Cancel the query if it exceeds this many milliseconds"),
 		),
+		tools.WithNumber("sample_rows",
+			tools.Description("Return N randomly ordered rows instead of running the query as written (engine-aware ORDER BY)"),
+		),
 		tools.WithNumber("page",
 			tools.Description("1-based page number; requires page_size; returns data plus total matching rows"),
 		),
@@ -215,6 +221,12 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 // providers compatible.
 type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
+}
+
+// sampleQueryUseCase is implemented by use cases that can draw N random
+// rows from a statement with engine-appropriate ordering.
+type sampleQueryUseCase interface {
+	ExecuteQuerySample(ctx context.Context, dbID, query string, params []interface{}, n int) (string, error)
 }
 
 // pagedQueryUseCase is implemented by use cases that can window a SELECT
@@ -311,6 +323,17 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 			verbosity = usecase.ResultVerbosity(v)
 		}
 	}
+	// Random sampling draws N arbitrary rows.
+	if n, ok := request.Parameters["sample_rows"].(float64); ok && int(n) > 0 {
+		if sq, can := useCase.(sampleQueryUseCase); can {
+			result, err := sq.ExecuteQuerySample(ctx, dbID, query, queryParams, int(n))
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(result), nil
+		}
+	}
+
 	// Pagination windows the result and reports the total in one call.
 	page, hasPage := request.Parameters["page"].(float64)
 	pageSize, hasSize := request.Parameters["page_size"].(float64)

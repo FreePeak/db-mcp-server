@@ -194,3 +194,38 @@ func TestExecuteQueryPage(t *testing.T) {
 		t.Fatalf("degenerate paging must not error: %v", err)
 	}
 }
+
+// TestExecuteQuerySample proves cycle 78: sample_rows returns exactly N
+// distinct rows using the engine's random ordering.
+func TestExecuteQuerySample(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	for i := 1; i <= 100; i++ {
+		if _, err := raw.Exec(`INSERT INTO t (id) VALUES (?)`, i); err != nil {
+			t.Fatalf("seed failed: %v", err)
+		}
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	out, err := uc.ExecuteQuerySample(context.Background(), "db1", "SELECT id FROM t", nil, 10)
+	if err != nil {
+		t.Fatalf("sample failed: %v", err)
+	}
+	if !strings.Contains(out, "Total rows: 10") {
+		t.Fatalf("expected exactly 10 sampled rows:\n%s", out)
+	}
+	if strings.Contains(out, "\n101\n") || strings.Contains(out, "\n0\n") {
+		t.Fatalf("out-of-range ids present:\n%s", out)
+	}
+
+	// Sample larger than the table returns everything available.
+	out, err = uc.ExecuteQuerySample(context.Background(), "db1", "SELECT id FROM t WHERE id <= 3", nil, 50)
+	if err != nil {
+		t.Fatalf("oversized sample failed: %v", err)
+	}
+	if !strings.Contains(out, "Total rows: 3") {
+		t.Fatalf("expected all 3 rows:\n%s", out)
+	}
+}
