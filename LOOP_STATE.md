@@ -5,11 +5,12 @@
 
 ## Current State
 
-- **NEXT_CYCLE:** 53
+- **NEXT_CYCLE:** 54
 - **Branch:** `hackathon` (worktree `.worktrees/hackathon`)
 - **Remote:** `origin/hackathon` — push after EVERY cycle
 - **PR:** #87 → `main` (CI green; merge = npm/docker release of v1.12.0)
 - **Registry:** `docs/cycles/INDEX.md` — single source of truth, update per cycle
+- **Full narrative:** `docs/SESSION-REPORT.md` — everything from this session
 - **Completed:** cycles 01–48 (01–16 pre-crash session, 17–48 this loop)
 
 ## Per-Cycle Protocol (mandatory)
