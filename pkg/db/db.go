@@ -245,6 +245,14 @@ func buildPostgresConnStr(config Config) string {
 		params = append(params, fmt.Sprintf("target_session_attrs=%s", config.TargetSessionAttrs))
 	}
 
+	// Engine-level read-only enforcement: make every pooled connection
+	// reject writes server-side, so guardrails hold even if an application-
+	// layer check is bypassed. Skipped when the operator supplies their own
+	// options string.
+	if config.ReadOnly && config.Options["options"] == "" {
+		params = append(params, `options='-c default_transaction_read_only=on'`)
+	}
+
 	// Add any additional options from the map
 	if config.Options != nil {
 		for key, value := range config.Options {
@@ -443,6 +451,27 @@ func buildSQLiteConnStr(config Config) string {
 	return connStr
 }
 
+// buildMySQLConnStr builds the go-sql-driver DSN, including engine-level
+// read-only enforcement via the transaction_read_only system variable.
+func buildMySQLConnStr(config Config) string {
+	mysqlParams := []string{"parseTime=true"}
+	if config.ConnectTimeout > 0 {
+		mysqlParams = append(mysqlParams, fmt.Sprintf("timeout=%ds", config.ConnectTimeout))
+		mysqlParams = append(mysqlParams, fmt.Sprintf("readTimeout=%ds", config.QueryTimeout))
+		mysqlParams = append(mysqlParams, fmt.Sprintf("writeTimeout=%ds", config.QueryTimeout))
+	}
+	// Engine-level read-only enforcement: go-sql-driver applies unknown
+	// DSN parameters as system variables on every new pooled connection,
+	// so writes are rejected server-side even if application-layer
+	// checks are bypassed.
+	if config.ReadOnly {
+		mysqlParams = append(mysqlParams, "transaction_read_only=1")
+	}
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?%s",
+		config.User, config.Password, config.Host, config.Port, config.Name,
+		strings.Join(mysqlParams, "&"))
+}
+
 // NewDatabase creates a new database connection based on the provided configuration
 func NewDatabase(config Config) (Database, error) {
 	// Set default values for the configuration
@@ -455,15 +484,7 @@ func NewDatabase(config Config) (Database, error) {
 	switch config.Type {
 	case "mysql":
 		driverName = "mysql"
-		mysqlParams := []string{"parseTime=true"}
-		if config.ConnectTimeout > 0 {
-			mysqlParams = append(mysqlParams, fmt.Sprintf("timeout=%ds", config.ConnectTimeout))
-			mysqlParams = append(mysqlParams, fmt.Sprintf("readTimeout=%ds", config.QueryTimeout))
-			mysqlParams = append(mysqlParams, fmt.Sprintf("writeTimeout=%ds", config.QueryTimeout))
-		}
-		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?%s",
-			config.User, config.Password, config.Host, config.Port, config.Name,
-			strings.Join(mysqlParams, "&"))
+		dsn = buildMySQLConnStr(config)
 	case "postgres":
 		driverName = "postgres"
 		dsn = buildPostgresConnStr(config)

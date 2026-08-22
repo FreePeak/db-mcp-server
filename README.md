@@ -111,11 +111,11 @@ Protect agent sessions against runaway queries and accidental writes:
 
 | Setting | Scope | Effect |
 |---------|-------|--------|
-| `"read_only": true` | per database | Blocks write statements (`INSERT`, `UPDATE`, `DELETE`, DDL, data-modifying CTEs, stacked writes) through **both** query and execute tools. Classification strips comments and string literals and defaults to deny for unrecognized statements. |
+| `"read_only": true` | per database | Blocks write statements (`INSERT`, `UPDATE`, `DELETE`, DDL, data-modifying CTEs, stacked writes) through **both** query and execute tools, **and** enforces rejection at the database engine itself on PostgreSQL/TimescaleDB (`default_transaction_read_only=on`) and MySQL (`transaction_read_only=1`); SQLite opens `mode=ro`. Classification strips comments and string literals and defaults to deny for unrecognized statements. |
 | `"max_rows": 1000` | per database | Truncates result sets at N rows and appends an explicit `[Truncated]` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. |
 | `"query_timeout": 30` | per database | Cancels queries that exceed the timeout in seconds. |
 
-> **Defense in depth**: these are application-level guardrails, not a sandbox. For production use, also connect with a least-privilege database user — engine-level privileges remain the strongest boundary.
+> **Defense in depth**: read-only is enforced in three layers — application classifier, engine session defaults, and (recommended) least-privilege database users. Oracle currently relies on the classifier plus user privileges.
 
 ## Supported Databases
 
