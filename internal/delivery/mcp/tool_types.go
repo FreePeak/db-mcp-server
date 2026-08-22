@@ -201,6 +201,12 @@ type sessionObservabilityUseCase interface {
 	CancelQuery(ctx context.Context, dbID string, sessionID int64) (string, error)
 }
 
+// schemaCompareUseCase is implemented by use cases that can structurally
+// diff two databases' schemas.
+type schemaCompareUseCase interface {
+	CompareSchemas(ctx context.Context, dbIDA, dbIDB string) (string, error)
+}
+
 // piIMaskingUseCase is implemented by use cases that support opt-in PII
 // masking; detection keeps existing mocks and alternate providers compatible.
 type piIMaskingUseCase interface {
@@ -1131,7 +1137,7 @@ func (t *SchemaTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), or "sensitive" (PII-suspect column report)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), or "compare" (structural diff against compare_with database; requires compare_with param)`),
 		),
 	)
 }
@@ -1146,7 +1152,7 @@ func (t *SchemaTool) CreateUnifiedTool(name string, dbList []string) interface{}
 			tools.Required(),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), or "sensitive" (PII-suspect column report)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), or "compare" (structural diff against compare_with database; requires compare_with param)`),
 		),
 	)
 }
@@ -1168,6 +1174,20 @@ func (t *SchemaTool) HandleRequest(ctx context.Context, request server.ToolCallR
 			return nil, err
 		}
 		return createTextResponse(graph), nil
+	case format == "compare":
+		compareWith, _ := request.Parameters["compare_with"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(compareWith) == "" {
+			return nil, fmt.Errorf("format=compare requires the compare_with parameter (database id to diff against)")
+		}
+		sc, can := useCase.(schemaCompareUseCase)
+		if !can {
+			return nil, fmt.Errorf("schema comparison is not supported by this provider")
+		}
+		diff, err := sc.CompareSchemas(ctx, dbID, compareWith)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(diff), nil
 	case format == "sensitive":
 		sc, capable := useCase.(sensitiveColumnCapable)
 		if !capable {
