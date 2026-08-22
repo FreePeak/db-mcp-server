@@ -93,6 +93,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 77 | Query pagination (page/page_size + total) | ✅ Shipped (hackathon branch) | [cycle-77](cycle-77-query-pagination.md) |
 | 78 | Random sampling (sample_rows, engine-aware) | ✅ Shipped (hackathon branch) | [cycle-78](cycle-78-random-sample.md) |
 | 79 | Duplicate detection (describe duplicates_column=) | ✅ Shipped (hackathon branch) | [cycle-79](cycle-79-duplicates.md) |
+| 80 | View listing with definitions (schema format=views) | ✅ Shipped (hackathon branch) | [cycle-80](cycle-80-list-views.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
