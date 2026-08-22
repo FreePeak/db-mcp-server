@@ -5,7 +5,7 @@
 
 ## Current State
 
-- **NEXT_CYCLE:** 60
+- **NEXT_CYCLE:** 61
 - **Branch:** `hackathon` (worktree `.worktrees/hackathon`)
 - **Remote:** `origin/hackathon` — push after EVERY cycle
 - **PR:** #87 → `main` (CI green; merge = npm/docker release of v1.12.0)
@@ -36,7 +36,7 @@
 
 ## Open Fed-Forward Threads (seed ideas)
 
-- Data export action (CSV/JSON dump of query results)
 - Session/lock observability + query cancel (pg_stat_activity equivalent)
 - Cross-DB schema compare (drift check is same-DB only)
+- Optional --export-dir for server-side file dumps with path sandboxing
 - Post-merge: verify npm 1.12.0 + docker tags published

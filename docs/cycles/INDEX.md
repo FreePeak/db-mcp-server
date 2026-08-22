@@ -73,6 +73,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 57 | Content-PII noise floor (>=5% match threshold) | ✅ Shipped (hackathon branch) | [cycle-57](cycle-57-content-pii-threshold.md) |
 | 58 | Per-category hit counts in ContentPIIFinding | ✅ Shipped (hackathon branch) | [cycle-58](cycle-58-pii-hit-counts.md) |
 | 59 | generate_schema tool (Go structs / TS types from live schema) | ✅ Shipped (hackathon branch) | [cycle-59](cycle-59-generate-schema.md) |
+| 60 | Query export formats (CSV RFC4180 / JSON) | ✅ Shipped (hackathon branch) | [cycle-60](cycle-60-query-export.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
