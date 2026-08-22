@@ -96,6 +96,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 80 | View listing with definitions (schema format=views) | ✅ Shipped (hackathon branch) | [cycle-80](cycle-80-list-views.md) |
 | 81 | Atomic multi-statement scripts (execute script=) | ✅ Shipped (hackathon branch) | [cycle-81](cycle-81-scripts.md) |
 | 82 | Trigger listing (schema format=triggers) | ✅ Shipped (hackathon branch) | [cycle-82](cycle-82-triggers.md) |
+| 83 | Stored routine listing (schema format=routines) | ✅ Shipped (hackathon branch) | [cycle-83](cycle-83-routines.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
