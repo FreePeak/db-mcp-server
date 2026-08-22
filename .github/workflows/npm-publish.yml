@@ -111,6 +111,17 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Check npm credentials
+        # Fail fast with an actionable message instead of ENEEDAUTH
+        # (the package has never published — see issue #83 discussion).
+        run: |
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "::error::NPM_TOKEN repository secret is not set. Create a granular access token at https://www.npmjs.com/settings/~/tokens (Read & Write), add it under Settings → Secrets and variables → Actions, then re-run this workflow."
+            exit 1
+          fi
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish to NPM
         run: |
           VERSION=${{ needs.get-version.outputs.version }}
