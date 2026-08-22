@@ -179,3 +179,25 @@ func TestExecuteStatementDryRun_RewriteSizeNote(t *testing.T) {
 		}
 	}
 }
+
+// TestPostExecutionRiskNotice_RewriteSize proves cycle 56: the
+// post-execution risk notice carries the engine's live row estimate for
+// tables a type change rewrote, not just the static wording.
+func TestPostExecutionRiskNotice_RewriteSize(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	for i := 0; i < 7; i++ {
+		if _, err := raw.Exec(`INSERT INTO items (name) VALUES (?)`, "x"); err != nil {
+			t.Fatalf("seed failed: %v", err)
+		}
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	notice := uc.postExecutionRiskNotice(context.Background(), "db1",
+		"ALTER TABLE items ALTER COLUMN name TYPE text")
+	if !strings.Contains(notice, "~7 rows") || !strings.Contains(notice, "items") {
+		t.Fatalf("expected rewrite-size note in post-execution notice, got:\n%s", notice)
+	}
+}

@@ -69,6 +69,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 53 | Session report (`docs/SESSION-REPORT.md`) | ✅ Shipped (hackathon branch) | [cycle-53](cycle-53-session-report.md) |
 | 54 | Oracle Auto-LIMIT via ROWNUM wrap (closes exclusion gap from 46) | ✅ Shipped (hackathon branch) | [cycle-54](cycle-54-oracle-autolimit.md) |
 | 55 | Engine-aware rewrite size estimates in dry-run risk reports | ✅ Shipped (hackathon branch) | [cycle-55](cycle-55-rewrite-size-estimates.md) |
+| 56 | Rewrite-size notes in post-execution risk advisories | ✅ Shipped (hackathon branch) | [cycle-56](cycle-56-postexec-rewrite-notes.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

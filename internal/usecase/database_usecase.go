@@ -474,14 +474,27 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 	// Non-blocking post-execution advisory: high/critical statements get an
 	// explicit notice so the agent (and any human reviewing the transcript)
 	// sees what just happened. Execution itself is never blocked here.
-	risk := AnalyzeStatementRisk(statement)
-	if riskOrder[strings.ToLower(risk.Risk)] >= riskOrder[uc.currentRiskWarnAt()] {
-		out += "\n⚠ Risk notice: this statement was " + strings.ToUpper(risk.Risk[:1]) + risk.Risk[1:] + " risk"
-		for _, n := range risk.Notes {
-			out += "\n- " + n
-		}
+	if notice := uc.postExecutionRiskNotice(ctx, dbID, statement); notice != "" {
+		out += notice
 	}
 	return out, nil
+}
+
+// postExecutionRiskNotice renders the advisory appended after a successful
+// execution: the static risk classification upgraded with live rewrite-size
+// estimates for column-type changes. Returns "" when the statement's risk
+// is below the configured warn threshold or analysis is unavailable.
+func (uc *DatabaseUseCase) postExecutionRiskNotice(ctx context.Context, dbID, statement string) string {
+	risk := AnalyzeStatementRisk(statement)
+	if riskOrder[strings.ToLower(risk.Risk)] < riskOrder[uc.currentRiskWarnAt()] {
+		return ""
+	}
+	uc.enrichWithRewriteSizes(ctx, dbID, stripSQLLiterals(statement), &risk)
+	out := "\n⚠ Risk notice: this statement was " + strings.ToUpper(risk.Risk[:1]) + risk.Risk[1:] + " risk"
+	for _, n := range risk.Notes {
+		out += "\n- " + n
+	}
+	return out
 }
 
 // ExecuteTransaction executes operations in a transaction. Actions:
