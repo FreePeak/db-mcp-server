@@ -307,6 +307,28 @@ export DB_CONFIG='{"connections":[...]}'
 - `-log-level`: Log level (`debug`, `info`, `warn`, `error`)
 - `-log-dir`: Directory for log files (default: `./logs` in current directory)
 - `-db-config`: Inline JSON database configuration
+- `-unified-tools`: Register unified tools with a `database` parameter instead of per-database tools
+- `-lazy-loading`: Establish connections on first use (recommended for 10+ databases)
+- `-masking-audit-log`: JSONL file path for durable PII-masking audit events (append mode; survives restarts)
+
+## Testing Without Docker (Free Cloud Databases)
+
+The regression suite runs against free-tier managed cloud databases — no local containers needed:
+
+```bash
+# 1. Get a free database (no credit card): neon.tech, supabase.com, aiven.io, tidbcloud.com
+# 2. Register it (live-ping validation through the server's own connection layer):
+go run ./cmd/registerdb my_neon "postgresql://user:pass@ep-x.region.neon.tech/db?sslmode=require"
+
+# Or skip registration entirely — env vars are auto-detected:
+export NEON_DATABASE_URL="postgresql://..."   # also: SUPABASE_DATABASE_URL, AIVEN_DATABASE_URL,
+                                              # TIDBCLOUD_DATABASE_URL, CLOUD_MYSQL_URL, DATABASE_URL
+
+# 3. Run the cloud regression battery:
+go test ./pkg/db/ -run TestCloudRegression -v
+```
+
+Providers are detected from hostnames automatically; sleeping free tiers (scale-to-zero) are woken by connect retry. With zero credentials configured, cloud tests skip gracefully.
 
 ## SQLite Configuration Options
 
@@ -506,10 +528,11 @@ For each connected database, DB MCP Server automatically generates these special
 
 | Tool Name | Description |
 |-----------|-------------|
-| `performance_<db_id>` | Analyze query performance and get optimization suggestions |
+| `performance_<db_id>` | Analyze query performance and get optimization suggestions. Actions: `suggest_indexes` (alias-safe CREATE INDEX DDL from JOIN/WHERE/ORDER BY/GROUP BY columns vs live catalogs, composite-aware, PK-aware), `engine_slow_queries` (top statements from `pg_stat_statements` / MySQL digests), plus tracked metrics and static SQL issue suggestions |
 | `explain_<db_id>` | Show the execution plan for a SQL statement without running it; `analyze: true` executes with timing/buffer stats (PostgreSQL/MySQL). Writes stay blocked on read-only databases |
-| `describe_<db_id>` | Inspect one table's columns, indexes, and row estimate via engine catalog queries |
-| `health_<db_id>` | Report connectivity, ping latency, connection-pool state, and engine stats (PostgreSQL buffer-cache hit ratio, MySQL InnoDB buffer efficiency) |
+| `describe_<db_id>` | Inspect one table's columns, indexes, row estimate, constraints (PK/FK/UNIQUE) with FK target resolution (`author_id -> authors(id)`) via engine catalog queries |
+| `schema_<db_id>` | List tables/columns; `format: "mermaid"` renders the foreign-key graph as a Mermaid ER diagram |
+| `health_<db_id>` | Report connectivity, ping latency, connection-pool state, engine stats (PostgreSQL buffer-cache hit ratio, MySQL InnoDB buffer efficiency), and recent PII-masking redaction counts when masking is active |
 
 ### TimescaleDB Tools
 

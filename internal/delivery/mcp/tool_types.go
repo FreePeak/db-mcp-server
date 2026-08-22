@@ -139,6 +139,9 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Query parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
 		),
+		tools.WithBoolean("mask_pii",
+			tools.Description("Mask PII in results (emails, phones, cards, SSNs, IPs)"),
+		),
 	)
 }
 

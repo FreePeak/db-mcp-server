@@ -39,6 +39,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 23 | Release consolidation: CHANGELOG entries + PR to main | ✅ Shipped (hackathon branch) | [cycle-23](cycle-23-release-consolidation.md) |
 | 24 | Masking audit log (ring buffer, health-surfaced) | ✅ Shipped (hackathon branch) | [cycle-24](cycle-24-masking-audit.md) |
 | 25 | Durable audit sink: `-masking-audit-log` JSONL append trail | ✅ Shipped (hackathon branch) | [cycle-25](cycle-25-audit-sink.md) |
+| 26 | Docs surface + schema-contract guard (caught per-db mask_pii drift) | ✅ Shipped (hackathon branch) | [cycle-26](cycle-26-docs-contract.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
