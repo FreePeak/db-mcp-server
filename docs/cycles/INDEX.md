@@ -63,6 +63,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 47 | Auto-LIMIT documentation (guardrails table + explainer) | ✅ Shipped (hackathon branch) | [cycle-47](cycle-47-auto-limit-docs.md) |
 | 48 | Query history ring + `list_query_history` action | ✅ Shipped (hackathon branch) | [cycle-48](cycle-48-query-history.md) |
 | 49 | Loop-continuity infrastructure (`LOOP_STATE.md`) | ✅ Shipped (hackathon branch) | — |
+| 50 | Durable query-history sink (JSONL, fail-fast config) | ✅ Shipped (hackathon branch) | [cycle-50](cycle-50-history-sink.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

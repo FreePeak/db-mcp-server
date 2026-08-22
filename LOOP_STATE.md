@@ -5,7 +5,7 @@
 
 ## Current State
 
-- **NEXT_CYCLE:** 50
+- **NEXT_CYCLE:** 51
 - **Branch:** `hackathon` (worktree `.worktrees/hackathon`)
 - **Remote:** `origin/hackathon` — push after EVERY cycle
 - **PR:** #87 → `main` (CI green; merge = npm/docker release of v1.12.0)

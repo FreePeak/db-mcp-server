@@ -1,6 +1,9 @@
 package usecase
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 )
@@ -24,18 +27,46 @@ type HistoryEntry struct {
 
 type queryHistoryStore struct {
 	mu    sync.Mutex
-	next  int64
 	perDB map[string][]HistoryEntry
+	file  *os.File // optional append-only JSONL sink
 }
 
 func newQueryHistoryStore() *queryHistoryStore {
 	return &queryHistoryStore{perDB: map[string][]HistoryEntry{}}
 }
 
+// enableFile opens path in append mode for a durable trail.
+func (s *queryHistoryStore) enableFile(path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.file != nil {
+		if cerr := s.file.Close(); cerr != nil {
+			return fmt.Errorf("close previous query history sink: %w", cerr)
+		}
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return fmt.Errorf("open query history sink: %w", err)
+	}
+	s.file = f
+	return nil
+}
+
+// closeFile flushes and releases the sink; safe when never enabled.
+func (s *queryHistoryStore) closeFile() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.file == nil {
+		return nil
+	}
+	err := s.file.Close()
+	s.file = nil
+	return err
+}
+
 func (s *queryHistoryStore) record(dbID, kind, statement string, durationMs float64, success bool, errText string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.next++
 	entry := HistoryEntry{
 		DatabaseID: dbID,
 		Kind:       kind,
@@ -47,6 +78,14 @@ func (s *queryHistoryStore) record(dbID, kind, statement string, durationMs floa
 	if errText != "" {
 		entry.Error = truncateQuery(errText)
 	}
+
+	// Durable trail best-effort: sink failures must not break execution.
+	if s.file != nil {
+		if buf, err := json.Marshal(entry); err == nil {
+			_, _ = s.file.Write(append(buf, '\n')) //nolint:errcheck // best-effort trail
+		}
+	}
+
 	log := s.perDB[dbID]
 	log = append(log, entry)
 	if len(log) > queryHistoryCapacity {
@@ -66,6 +105,17 @@ func (s *queryHistoryStore) list(dbID string) []HistoryEntry {
 // GetQueryHistory returns recent executions for the database, oldest first.
 func (uc *DatabaseUseCase) GetQueryHistory(dbID string) []HistoryEntry {
 	return uc.queryHist.list(dbID)
+}
+
+// EnableQueryHistoryFile persists every subsequent execution to path as
+// JSON Lines (append mode).
+func (uc *DatabaseUseCase) EnableQueryHistoryFile(path string) error {
+	return uc.queryHist.enableFile(path)
+}
+
+// CloseQueryHistoryFile flushes and closes the durable sink, if configured.
+func (uc *DatabaseUseCase) CloseQueryHistoryFile() error {
+	return uc.queryHist.closeFile()
 }
 
 // recordQueryHistory wraps an execution with timing and outcome capture.
