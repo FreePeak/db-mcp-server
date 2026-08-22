@@ -90,6 +90,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 74 | Continuity doc sync (SESSION-REPORT, LOOP_STATE) | ✅ Shipped (hackathon branch) | [cycle-74](cycle-74-doc-sync.md) |
 | 75 | Cross-table value search (filter_tables value=) | ✅ Shipped (hackathon branch) | [cycle-75](cycle-75-value-search.md) |
 | 76 | FK traversal for one row (describe related_key=) | ✅ Shipped (hackathon branch) | [cycle-76](cycle-76-related-rows.md) |
+| 77 | Query pagination (page/page_size + total) | ✅ Shipped (hackathon branch) | [cycle-77](cycle-77-query-pagination.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

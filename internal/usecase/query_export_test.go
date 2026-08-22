@@ -161,3 +161,36 @@ func TestExecuteQueryWithTimeout(t *testing.T) {
 		t.Fatalf("unexpected result:\n%s", out)
 	}
 }
+
+// TestExecuteQueryPage proves cycle 77: page/page_size window the result
+// and report the total matching row count in one call.
+func TestExecuteQueryPage(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE items (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	for i := 1; i <= 25; i++ {
+		if _, err := raw.Exec(`INSERT INTO items (id) VALUES (?)`, i); err != nil {
+			t.Fatalf("seed failed: %v", err)
+		}
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	out, total, err := uc.ExecuteQueryPage(context.Background(), "db1",
+		"SELECT id FROM items WHERE id <= 22", nil, 2, 10)
+	if err != nil {
+		t.Fatalf("page failed: %v", err)
+	}
+	if total != 22 {
+		t.Fatalf("total = %d, want 22", total)
+	}
+	for _, want := range []string{"11", "20"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	if _, _, err := uc.ExecuteQueryPage(context.Background(), "db1",
+		"SELECT id FROM items", nil, 0, -5); err != nil {
+		t.Fatalf("degenerate paging must not error: %v", err)
+	}
+}

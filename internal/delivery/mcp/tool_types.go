@@ -160,6 +160,12 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithNumber("timeout_ms",
 			tools.Description("Cancel the query if it exceeds this many milliseconds"),
 		),
+		tools.WithNumber("page",
+			tools.Description("1-based page number; requires page_size; returns data plus total matching rows"),
+		),
+		tools.WithNumber("page_size",
+			tools.Description("Rows per page when paging (default 50)"),
+		),
 	)
 }
 
@@ -195,6 +201,12 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 		tools.WithNumber("timeout_ms",
 			tools.Description("Cancel the query if it exceeds this many milliseconds"),
 		),
+		tools.WithNumber("page",
+			tools.Description("1-based page number; requires page_size; returns data plus total matching rows"),
+		),
+		tools.WithNumber("page_size",
+			tools.Description("Rows per page when paging (default 50)"),
+		),
 	)
 }
 
@@ -203,6 +215,12 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 // providers compatible.
 type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
+}
+
+// pagedQueryUseCase is implemented by use cases that can window a SELECT
+// into a page with total count.
+type pagedQueryUseCase interface {
+	ExecuteQueryPage(ctx context.Context, dbID, query string, params []interface{}, page, pageSize int) (string, int64, error)
 }
 
 // relatedRowsUseCase is implemented by use cases that can traverse
@@ -293,6 +311,20 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 			verbosity = usecase.ResultVerbosity(v)
 		}
 	}
+	// Pagination windows the result and reports the total in one call.
+	page, hasPage := request.Parameters["page"].(float64)
+	pageSize, hasSize := request.Parameters["page_size"].(float64)
+	if hasPage && int(page) > 0 || hasSize && int(pageSize) > 0 {
+		if pq, can := useCase.(pagedQueryUseCase); can {
+			result, _, err := pq.ExecuteQueryPage(ctx, dbID, query, queryParams,
+				int(page), int(pageSize))
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(result), nil
+		}
+	}
+
 	// count_only prices the statement instead of fetching rows.
 	if countOnly, ok := request.Parameters["count_only"].(bool); ok && countOnly {
 		if c, can := useCase.(rowCountPreviewUseCase); can {
