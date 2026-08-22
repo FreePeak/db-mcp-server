@@ -223,6 +223,12 @@ type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
 }
 
+// duplicateDetectionUseCase is implemented by use cases that can report
+// duplicated values in one column.
+type duplicateDetectionUseCase interface {
+	FindDuplicates(ctx context.Context, dbID, table, column string) (string, error)
+}
+
 // sampleQueryUseCase is implemented by use cases that can draw N random
 // rows from a statement with engine-appropriate ordering.
 type sampleQueryUseCase interface {
@@ -1081,6 +1087,9 @@ func (t *DescribeTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithString("related_key",
 			tools.Description("Primary-key value: follow this row's foreign keys to parents and list referencing children"),
 		),
+		tools.WithString("duplicates_column",
+			tools.Description("Report duplicated values in this column with counts and an example PK per group"),
+		),
 	)
 }
 
@@ -1103,6 +1112,9 @@ func (t *DescribeTool) CreateUnifiedTool(name string, dbList []string) interface
 		tools.WithString("related_key",
 			tools.Description("Primary-key value: follow this row's foreign keys to parents and list referencing children"),
 		),
+		tools.WithString("duplicates_column",
+			tools.Description("Report duplicated values in this column with counts and an example PK per group"),
+		),
 	)
 }
 
@@ -1115,6 +1127,17 @@ func (t *DescribeTool) HandleRequest(ctx context.Context, request server.ToolCal
 	table, ok := request.Parameters["table"].(string)
 	if !ok {
 		return nil, fmt.Errorf("table parameter must be a string")
+	}
+
+	// Duplicate detection on one column.
+	if colName, ok := request.Parameters["duplicates_column"].(string); ok && strings.TrimSpace(colName) != "" {
+		if dd, can := useCase.(duplicateDetectionUseCase); can {
+			out, err := dd.FindDuplicates(ctx, dbID, table, colName)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
 	}
 
 	// FK traversal: resolve one row by PK and render its relations.

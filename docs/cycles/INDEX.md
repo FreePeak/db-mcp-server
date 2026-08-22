@@ -92,6 +92,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 76 | FK traversal for one row (describe related_key=) | ✅ Shipped (hackathon branch) | [cycle-76](cycle-76-related-rows.md) |
 | 77 | Query pagination (page/page_size + total) | ✅ Shipped (hackathon branch) | [cycle-77](cycle-77-query-pagination.md) |
 | 78 | Random sampling (sample_rows, engine-aware) | ✅ Shipped (hackathon branch) | [cycle-78](cycle-78-random-sample.md) |
+| 79 | Duplicate detection (describe duplicates_column=) | ✅ Shipped (hackathon branch) | [cycle-79](cycle-79-duplicates.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
