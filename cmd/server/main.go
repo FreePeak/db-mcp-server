@@ -74,6 +74,7 @@ func main() {
 	lazyLoading := flag.Bool("lazy-loading", false, "Enable lazy loading: connections established on first use (recommended for 10+ databases)")
 	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
 	unifiedTools := flag.Bool("unified-tools", false, "Register unified tools with database parameter instead of per-database tools")
+	maskingAuditLog := flag.String("masking-audit-log", "", "JSONL file path for durable PII-masking audit events (append mode)")
 	healthPort := flag.Int("health-port", 9093, "Port for the /health HTTP endpoint (0 to disable; only used in SSE mode)")
 	apiKey := flag.String("api-key", os.Getenv("DB_MCP_API_KEY"), "API key required to authenticate HTTP/SSE clients (Authorization: Bearer <key>); empty disables auth. Applied to the streamable HTTP transport; compose with mcp.APIKeyAuth in your own reverse proxy for the SSE transport.")
 	flag.Parse()
@@ -164,6 +165,18 @@ func main() {
 	// Set up Clean Architecture layers
 	dbRepo := repository.NewDatabaseRepository()
 	dbUseCase := usecase.NewDatabaseUseCase(dbRepo)
+	if *maskingAuditLog != "" {
+		if err := dbUseCase.EnableMaskingAuditFile(*maskingAuditLog); err != nil {
+			logger.Error("failed to open masking audit log: %v", err)
+		} else {
+			defer func() {
+				if cerr := dbUseCase.CloseMaskingAuditFile(); cerr != nil {
+					logger.Error("close masking audit log: %v", cerr)
+				}
+			}()
+			logger.Info("PII masking audit trail: %s", *maskingAuditLog)
+		}
+	}
 	toolRegistry := mcp.NewToolRegistry(mcpServer, *unifiedTools)
 
 	// Set the database use case in the tool registry

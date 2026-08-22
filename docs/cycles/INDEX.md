@@ -38,6 +38,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 22 | Hardening: Luhn card precision + cloud cold-start retry | ✅ Shipped (hackathon branch) | [cycle-22](cycle-22-hardening.md) |
 | 23 | Release consolidation: CHANGELOG entries + PR to main | ✅ Shipped (hackathon branch) | [cycle-23](cycle-23-release-consolidation.md) |
 | 24 | Masking audit log (ring buffer, health-surfaced) | ✅ Shipped (hackathon branch) | [cycle-24](cycle-24-masking-audit.md) |
+| 25 | Durable audit sink: `-masking-audit-log` JSONL append trail | ✅ Shipped (hackathon branch) | [cycle-25](cycle-25-audit-sink.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

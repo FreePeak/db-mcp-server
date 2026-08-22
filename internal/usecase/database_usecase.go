@@ -153,6 +153,17 @@ func (uc *DatabaseUseCase) GetMaskingAudit(dbID string) []MaskingAuditEvent {
 	return uc.maskingAudit.snapshot(dbID)
 }
 
+// EnableMaskingAuditFile persists every subsequent redaction event to path
+// as JSON Lines (append mode) so audit trails survive process restarts.
+func (uc *DatabaseUseCase) EnableMaskingAuditFile(path string) error {
+	return uc.maskingAudit.enableFile(path)
+}
+
+// CloseMaskingAuditFile flushes and closes the durable sink, if configured.
+func (uc *DatabaseUseCase) CloseMaskingAuditFile() error {
+	return uc.maskingAudit.closeFile()
+}
+
 func (uc *DatabaseUseCase) storeTx(id string, tx domain.Tx) {
 	uc.txMu.Lock()
 	defer uc.txMu.Unlock()
