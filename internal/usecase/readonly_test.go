@@ -15,6 +15,8 @@ type fakeDB struct {
 	queryCalls  int
 	maxRows     int
 	queryResult domain.Rows
+	beginCalls  int
+	beginTx     domain.Tx
 }
 
 func (f *fakeDB) Query(ctx context.Context, query string, args ...interface{}) (domain.Rows, error) {
@@ -34,6 +36,10 @@ type fakeResult struct{}
 func (fakeResult) RowsAffected() (int64, error) { return 0, nil }
 func (fakeResult) LastInsertId() (int64, error) { return 0, nil }
 func (f *fakeDB) Begin(ctx context.Context, opts *domain.TxOptions) (domain.Tx, error) {
+	f.beginCalls++
+	if f.beginTx != nil {
+		return f.beginTx, nil
+	}
 	return nil, nil
 }
 func (f *fakeDB) IsReadOnly() bool { return f.readOnly }

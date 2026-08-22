@@ -570,19 +570,28 @@ query_oracle_dev("SELECT * FROM employees WHERE hire_date > SYSDATE - 30")
 
 ### Managing Transactions
 
-```sql
--- Start a transaction
-transaction_mysql1("BEGIN")
+The `transaction_<db_id>` tool supports `begin`, `execute`, `commit`, and `rollback` actions. Each `begin` returns a `transactionId`; pass it back to stage statements and to commit or roll back:
 
--- Execute statements within the transaction
-execute_mysql1("INSERT INTO orders (customer_id, product_id) VALUES (1, 2)")
-execute_mysql1("UPDATE inventory SET stock = stock - 1 WHERE product_id = 2")
+```json
+// 1. Start a transaction
+{ "action": "begin" }
+// → { "transactionId": "tx_mysql1_1730000000000000000" }
 
--- Commit or rollback
-transaction_mysql1("COMMIT")
--- OR
-transaction_mysql1("ROLLBACK")
+// 2. Execute statements within the transaction
+{
+  "action": "execute",
+  "transactionId": "tx_mysql1_1730000000000000000",
+  "statement": "INSERT INTO orders (customer_id, product_id) VALUES (1, 2)"
+}
+
+// 3a. Commit — persists all staged statements
+{ "action": "commit", "transactionId": "tx_mysql1_1730000000000000000" }
+
+// 3b. OR rollback — discards all staged statements
+{ "action": "rollback", "transactionId": "tx_mysql1_1730000000000000000" }
 ```
+
+Unknown or already-retired transaction IDs return a clear error instead of a silent success, so agents can detect and recover from lost-transaction situations.
 
 ### Exploring Database Schema
 
