@@ -205,6 +205,12 @@ type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
 }
 
+// valueSearchUseCase is implemented by use cases that can locate a literal
+// across every textual column of a database.
+type valueSearchUseCase interface {
+	SearchValues(ctx context.Context, dbID, needle string) (string, error)
+}
+
 // columnProfilingUseCase is implemented by use cases that can compute a
 // single-column statistical profile.
 type columnProfilingUseCase interface {
@@ -1512,7 +1518,7 @@ func NewFilterTablesTool() *FilterTablesTool {
 	return &FilterTablesTool{
 		BaseToolType: BaseToolType{
 			name:        "filter_tables",
-			description: "Find tables by substring match",
+			description: "Find tables by substring match, or find where a value lives",
 		},
 	}
 }
@@ -1523,8 +1529,11 @@ func (t *FilterTablesTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("pattern",
-			tools.Description("Case-insensitive substring to match table names against"),
+			tools.Description("Case-insensitive substring to match table names against (ignored when value is set)"),
 			tools.Required(),
+		),
+		tools.WithString("value",
+			tools.Description("Search every textual column of every table for this literal instead of filtering table names"),
 		),
 	)
 }
@@ -1539,8 +1548,11 @@ func (t *FilterTablesTool) CreateUnifiedTool(name string, dbList []string) inter
 			tools.Required(),
 		),
 		tools.WithString("pattern",
-			tools.Description("Case-insensitive substring to match table names against"),
+			tools.Description("Case-insensitive substring to match table names against (ignored when value is set)"),
 			tools.Required(),
+		),
+		tools.WithString("value",
+			tools.Description("Search every textual column of every table for this literal instead of filtering table names"),
 		),
 	)
 }
@@ -1548,9 +1560,20 @@ func (t *FilterTablesTool) CreateUnifiedTool(name string, dbList []string) inter
 // HandleRequest handles the filter_tables request: it pulls the database
 // schema, filters the tables whose names contain the pattern (case
 // insensitive), and returns a small text response with the matched names.
-func (t *FilterTablesTool) HandleRequest(_ context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+func (t *FilterTablesTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	if dbID == "" {
 		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	// Value search mode: locate a literal across all textual columns.
+	if value, _ := request.Parameters["value"].(string); strings.TrimSpace(value) != "" { //nolint:errcheck // absent means table-name mode
+		if vs, can := useCase.(valueSearchUseCase); can {
+			out, err := vs.SearchValues(ctx, dbID, value)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
 	}
 
 	pattern, _ := request.Parameters["pattern"].(string) //nolint:errcheck // type assertion; missing pattern is handled below
