@@ -52,6 +52,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 36 | Agent-facing drift actions (`capture`/`check`/`list`) | ✅ Shipped (hackathon branch) | [cycle-36](cycle-36-drift-actions.md) |
 | 37 | Safe-migration workflow recipe + CI verification | ✅ Shipped (hackathon branch) | [cycle-37](cycle-37-migration-recipe.md) |
 | 38 | Release prep: package.json 1.12.0 + CHANGELOG cut | ✅ Shipped (hackathon branch) | [cycle-38](cycle-38-release-prep.md) |
+| 39 | Sensitive column discovery (`format=sensitive`) | ✅ Shipped (hackathon branch) | [cycle-39](cycle-39-sensitive-columns.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

@@ -275,3 +275,28 @@ func TestTransactionTool_SchemaDriftActions(t *testing.T) {
 		}
 	})
 }
+
+// TestSchemaTool_FormatSensitiveRoutes proves format=sensitive renders the
+// PII column report via the capability-detected path.
+func TestSchemaTool_FormatSensitiveRoutes(t *testing.T) {
+	tool := NewSchemaTool()
+	uc := &stubSensitiveUseCase{}
+
+	resp, err := tool.HandleRequest(context.Background(), server.ToolCallRequest{
+		Name:       "schema_db1",
+		Parameters: map[string]interface{}{"format": "sensitive"},
+	}, "", uc)
+	if err != nil {
+		t.Fatalf("handle failed: %v", err)
+	}
+	out := strings.ToLower(sprintfResponse(resp))
+	if !strings.Contains(out, "mask_pii") {
+		t.Fatalf("expected sensitive-column report:\n%s", out)
+	}
+}
+
+type stubSensitiveUseCase struct{ stubMaskingUseCase }
+
+func (s *stubSensitiveUseCase) FindSensitiveColumns(_ context.Context, dbID string) ([]usecase.SensitiveFinding, error) {
+	return []usecase.SensitiveFinding{{Table: "users", Column: "email", Category: "email"}}, nil
+}

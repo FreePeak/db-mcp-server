@@ -275,6 +275,12 @@ type snapshotCapable interface {
 	RollbackSnapshot(ctx context.Context, dbID, snapshotID string) (string, error)
 }
 
+// sensitiveColumnCapable is implemented by use cases offering PII column
+// discovery.
+type sensitiveColumnCapable interface {
+	FindSensitiveColumns(ctx context.Context, dbID string) ([]usecase.SensitiveFinding, error)
+}
+
 // schemaDriftCapable is implemented by use cases offering schema baselines
 // and drift detection.
 type schemaDriftCapable interface {
@@ -1010,7 +1016,7 @@ func (t *SchemaTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing) or "mermaid" (entity-relationship diagram of foreign-key relationships)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), or "sensitive" (PII-suspect column report)`),
 		),
 	)
 }
@@ -1025,7 +1031,7 @@ func (t *SchemaTool) CreateUnifiedTool(name string, dbList []string) interface{}
 			tools.Required(),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing) or "mermaid" (entity-relationship diagram of foreign-key relationships)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), or "sensitive" (PII-suspect column report)`),
 		),
 	)
 }
@@ -1037,14 +1043,26 @@ func (t *SchemaTool) HandleRequest(ctx context.Context, request server.ToolCallR
 		dbID = extractDatabaseIDFromName(request.Name)
 	}
 
-	// format=mermaid renders the entity-relationship graph instead of a
-	// plain table listing.
-	if format, ok := request.Parameters["format"].(string); ok && format == "mermaid" {
+	// format selects alternate renderings of the schema (mermaid ERD,
+	// sensitive-column report) instead of a plain table listing.
+	format, _ := request.Parameters["format"].(string) //nolint:errcheck // absent means default listing
+	switch {
+	case format == "mermaid":
 		graph, err := useCase.RelationshipGraph(ctx, dbID)
 		if err != nil {
 			return nil, err
 		}
 		return createTextResponse(graph), nil
+	case format == "sensitive":
+		sc, capable := useCase.(sensitiveColumnCapable)
+		if !capable {
+			return nil, fmt.Errorf("sensitive column discovery is not supported by this provider")
+		}
+		findings, err := sc.FindSensitiveColumns(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(usecase.FormatSensitiveColumnsReport(dbID, findings)), nil
 	}
 
 	info, err := useCase.GetDatabaseInfo(dbID)
