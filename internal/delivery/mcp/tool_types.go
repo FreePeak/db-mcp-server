@@ -287,6 +287,19 @@ type contentPICapable interface {
 	ScanContentPII(ctx context.Context, dbID string, sampleRows int) ([]usecase.ContentPIIFinding, error)
 }
 
+// queryHistoryCapable is implemented by use cases exposing executed-statement
+// history for introspection.
+type queryHistoryCapable interface {
+	GetQueryHistory(dbID string) []usecase.HistoryEntry
+}
+
+func pluralY(n int) string {
+	if n == 1 {
+		return "y"
+	}
+	return "ies"
+}
+
 // schemaDriftCapable is implemented by use cases offering schema baselines
 // and drift detection.
 type schemaDriftCapable interface {
@@ -418,7 +431,7 @@ func (t *TransactionTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot, capture_schema_snapshot, check_schema_drift, list_schema_snapshots)"),
+			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot, capture_schema_snapshot, check_schema_drift, list_schema_snapshots, list_query_history)"),
 			tools.Required(),
 		),
 		tools.WithString("transactionId",
@@ -447,7 +460,7 @@ func (t *TransactionTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot, capture_schema_snapshot, check_schema_drift, list_schema_snapshots)"),
+			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot, capture_schema_snapshot, check_schema_drift, list_schema_snapshots, list_query_history)"),
 			tools.Required(),
 		),
 		tools.WithString("transactionId",
@@ -590,6 +603,28 @@ func (t *TransactionTool) HandleRequest(ctx context.Context, request server.Tool
 			}
 			return createTextResponse(b.String()), nil
 		}
+	}
+
+	// Query history action (capability-detected).
+	if action == "list_query_history" {
+		hc, capable := useCase.(queryHistoryCapable)
+		if !capable {
+			return nil, fmt.Errorf("list_query_history is not supported by this provider")
+		}
+		entries := hc.GetQueryHistory(dbID)
+		var b strings.Builder
+		fmt.Fprintf(&b, "Query history for %s: %d entr%s\n", dbID, len(entries), pluralY(len(entries)))
+		for _, h := range entries {
+			status := "ok"
+			if !h.Success {
+				status = "failed"
+			}
+			fmt.Fprintf(&b, "- [%s] %s  %.2fms  %s\n", status, strings.ToUpper(h.Kind[:1])+h.Kind[1:], h.DurationMs, h.Statement)
+			if h.Error != "" {
+				b.WriteString("    error: " + h.Error + "\n")
+			}
+		}
+		return createTextResponse(b.String()), nil
 	}
 
 	message, metadata, err := useCase.ExecuteTransaction(ctx, dbID, action, txID, statement, params, readOnly)

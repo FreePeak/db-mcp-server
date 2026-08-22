@@ -322,3 +322,31 @@ func TestSchemaTool_SensitiveIncludesContentSection(t *testing.T) {
 		t.Fatalf("expected merged report with name + content sections:\n%s", lower)
 	}
 }
+
+type stubHistoryUseCase struct {
+	stubMaskingUseCase
+}
+
+func (s *stubHistoryUseCase) GetQueryHistory(dbID string) []usecase.HistoryEntry {
+	return []usecase.HistoryEntry{
+		{DatabaseID: dbID, Kind: "read", Statement: "SELECT 1", DurationMs: 0.5, Success: true},
+		{DatabaseID: dbID, Kind: "write", Statement: "INSERT INTO t VALUES (1)", DurationMs: 1.2, Success: false, Error: "constraint"},
+	}
+}
+
+// TestTransactionTool_ListQueryHistory proves the history action renders entries.
+func TestTransactionTool_ListQueryHistory(t *testing.T) {
+	tool := NewTransactionTool()
+	uc := &stubHistoryUseCase{}
+	resp, err := tool.HandleRequest(context.Background(), server.ToolCallRequest{
+		Name:       "transaction_db1",
+		Parameters: map[string]interface{}{"action": "list_query_history"},
+	}, "", uc)
+	if err != nil {
+		t.Fatalf("handle failed: %v", err)
+	}
+	out := sprintfResponse(resp)
+	if !strings.Contains(out, "SELECT 1") || !strings.Contains(out, "failed") {
+		t.Fatalf("expected history rendering with outcome:\n%s", out)
+	}
+}

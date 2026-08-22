@@ -144,6 +144,9 @@ type DatabaseUseCase struct {
 	// schemaSnaps holds schema baselines for drift detection.
 	schemaSnaps *schemaSnapshotStore
 
+	// queryHist records executed statements for introspection.
+	queryHist *queryHistoryStore
+
 	// riskWarnMu guards riskWarnAt.
 	riskWarnMu sync.Mutex
 	// riskWarnAt is the minimum post-execution advisory level (default high).
@@ -158,6 +161,7 @@ func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 		maskingAudit: newMaskingAudit(),
 		snapshots:    newSnapshotStore(),
 		schemaSnaps:  newSchemaSnapshotStore(),
+		queryHist:    newQueryHistoryStore(),
 		riskWarnAt:   "high",
 	}
 }
@@ -323,7 +327,9 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 	}
 
 	// Execute query
+	start := time.Now()
 	rows, err := db.Query(ctx, uc.autoLimitedQuery(dbID, query, db), params...)
+	uc.recordQueryHistory(dbID, query, start, err)
 	if err != nil {
 		return "", fmt.Errorf("query execution failed: %w", err)
 	}
@@ -437,7 +443,9 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 	}
 
 	// Execute statement
+	startExec := time.Now()
 	result, err := db.Exec(ctx, statement, params...)
+	uc.recordQueryHistory(dbID, statement, startExec, err)
 	if err != nil {
 		return "", fmt.Errorf("statement execution failed: %w", err)
 	}
