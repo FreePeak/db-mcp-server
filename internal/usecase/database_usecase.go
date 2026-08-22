@@ -280,11 +280,14 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 		}
 	}()
 
-	return formatQueryResults(rows, db.MaxRows())
+	// Server-level masking config applies even on the legacy path so
+	// clients cannot bypass governance by omitting the parameter.
+	return renderQueryResults(rows, db.MaxRows(), db.MaskPII())
 }
 
 // ExecuteQueryMasked executes a query with optional PII masking applied to
-// result cells. mask=false preserves the legacy raw behavior.
+// result cells. Server-level MaskPII configuration always forces masking on;
+// the per-request flag can only add masking, never remove it.
 func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool) (string, error) {
 	db, err := uc.repo.GetDatabase(dbID)
 	if err != nil {
@@ -305,7 +308,7 @@ func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query s
 		}
 	}()
 
-	return renderQueryResults(rows, db.MaxRows(), mask)
+	return renderQueryResults(rows, db.MaxRows(), mask || db.MaskPII())
 }
 
 // formatQueryResults renders query results as text, stopping after maxRows

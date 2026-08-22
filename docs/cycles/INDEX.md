@@ -34,6 +34,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 18 | Cloud-DB test harness: DSN parsing + auto-register CLI (Docker-free) | ✅ Shipped (hackathon branch) | [cycle-18](cycle-18-cloud-test-harness.md) |
 | 19 | PII masking at tool boundary (`mask_pii`, opt-in, two-layer) | ✅ Shipped (hackathon branch) | [cycle-19](cycle-19-pii-masking.md) |
 | 20 | Advisor v2: composite index suggestions + PK suppression | ✅ Shipped (hackathon branch) | [cycle-20](cycle-20-advisor-v2.md) |
+| 21 | Operator-enforced masking (`mask_pii` config, bypass-proof) | ✅ Shipped (hackathon branch) | [cycle-21](cycle-21-enforced-masking.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

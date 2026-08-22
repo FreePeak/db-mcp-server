@@ -86,6 +86,9 @@ type Config struct {
 	// Result guardrails (all engines)
 	MaxRows int // Maximum rows returned per query; 0 means unlimited
 
+	// MaskPII enforces server-side PII masking on query results.
+	MaskPII bool
+
 	// Oracle specific options
 	ServiceName     string // Oracle service name (preferred over SID)
 	SID             string // Oracle SID (legacy)
@@ -185,6 +188,9 @@ type Database interface {
 	QueryTimeout() int
 	IsReadOnly() bool
 	MaxRows() int
+
+	// MaskPII reports whether server-side PII masking is enforced.
+	MaskPII() bool
 
 	// DB object access (for specific DB operations)
 	DB() *sql.DB
@@ -734,4 +740,11 @@ func (d *database) IsReadOnly() bool {
 // MaxRows returns the configured query row limit. Zero means unlimited.
 func (d *database) MaxRows() int {
 	return d.config.MaxRows
+}
+
+// MaskPII reports whether server-side PII masking is enforced for this
+// database. When true, query results are masked regardless of per-request
+// parameters.
+func (d *database) MaskPII() bool {
+	return d.config.MaskPII
 }

@@ -94,8 +94,10 @@ func TestQueryTool_NoMaskParamUsesLegacyPath(t *testing.T) {
 	}, "", uc); err != nil {
 		t.Fatalf("handle failed: %v", err)
 	}
-	if uc.maskWasCalled {
-		t.Fatal("legacy path should be used when mask_pii is absent")
+	// The masked path always runs when supported so the use case layer can
+	// enforce server-level masking config; flag is false here.
+	if !uc.maskWasCalled || uc.lastMaskFlag {
+		t.Fatalf("expected masked-capable path with flag=false, called=%v flag=%v", uc.maskWasCalled, uc.lastMaskFlag)
 	}
 }
 

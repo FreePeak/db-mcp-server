@@ -194,14 +194,14 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 	if v, ok := request.Parameters["mask_pii"].(bool); ok {
 		maskPII = v
 	}
-	if maskPII {
-		if m, canMask := useCase.(piIMaskingUseCase); canMask {
-			result, err := m.ExecuteQueryMasked(ctx, dbID, query, queryParams, true)
-			if err != nil {
-				return nil, err
-			}
-			return createTextResponse(result), nil
+	// Route through the masked path whenever the provider supports it; the
+	// use case layer enforces server-level MaskPII config there.
+	if m, canMask := useCase.(piIMaskingUseCase); canMask {
+		result, err := m.ExecuteQueryMasked(ctx, dbID, query, queryParams, maskPII)
+		if err != nil {
+			return nil, err
 		}
+		return createTextResponse(result), nil
 	}
 
 	result, err := useCase.ExecuteQuery(ctx, dbID, query, queryParams)

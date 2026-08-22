@@ -15,7 +15,8 @@ import (
 // sqliteDB adapts a real *sql.DB to domain.Database for end-to-end
 // transaction tests against an in-memory SQLite database.
 type sqliteDB struct {
-	db *sql.DB
+	db      *sql.DB
+	maskPII bool
 }
 
 // openSQLiteForTest opens a fresh in-memory SQLite database for tests.
@@ -44,6 +45,7 @@ func (s *sqliteDB) Begin(ctx context.Context, opts *domain.TxOptions) (domain.Tx
 }
 func (s *sqliteDB) IsReadOnly() bool { return false }
 func (s *sqliteDB) MaxRows() int     { return 0 }
+func (s *sqliteDB) MaskPII() bool    { return s.maskPII }
 
 type sqliteTx struct{ tx *sql.Tx }
 

@@ -14,6 +14,9 @@ type Database interface {
 	// MaxRows returns the configured result-row limit for queries against
 	// this database. Zero means unlimited.
 	MaxRows() int
+	// MaskPII reports whether server-side PII masking is enforced for this
+	// database regardless of per-request parameters.
+	MaskPII() bool
 }
 
 // Rows represents database query results

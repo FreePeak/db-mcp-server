@@ -46,6 +46,10 @@ type DatabaseConnectionConfig struct {
 
 	// Result guardrails (all engines)
 	MaxRows int `json:"max_rows,omitempty"` // Maximum rows returned per query; 0 means unlimited
+
+	// MaskPii enforces PII masking on query results at the server level;
+	// agents cannot opt out for this database.
+	MaskPii bool `json:"mask_pii,omitempty"`
 }
 
 // MultiDBConfig represents the configuration for multiple database connections
@@ -221,6 +225,7 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 
 	// Result guardrails (all engines)
 	dbConfig.MaxRows = cfg.MaxRows
+	dbConfig.MaskPII = cfg.MaskPii
 
 	// Connection pool settings
 	if cfg.MaxOpenConns > 0 {

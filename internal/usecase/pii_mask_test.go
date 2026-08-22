@@ -172,3 +172,36 @@ func TestExecuteQueryMasked_EndToEnd(t *testing.T) {
 		t.Fatalf("mask=false must return raw data:\n%s", rawOut)
 	}
 }
+
+// TestExecuteQueryMasked_ServerConfigForcesMasking proves operator-level
+// MaskPII config wins over the agent's per-request opt-out.
+func TestExecuteQueryMasked_ServerConfigForcesMasking(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE people (id INTEGER PRIMARY KEY, email TEXT)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO people (email) VALUES ('bob@corp.io')`); err != nil {
+		t.Fatalf("insert failed: %v", err)
+	}
+
+	wrapper := &sqliteDB{db: raw, maskPII: true}
+	uc := NewDatabaseUseCase(&fakeRepo{db: wrapper, dbType: "sqlite"})
+
+	// Agent explicitly asks for raw data; server config must still mask.
+	out, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM people", nil, false)
+	if err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
+	if strings.Contains(out, "bob@corp.io") || !strings.Contains(out, "[EMAIL]") {
+		t.Fatalf("server-enforced masking bypassed:\n%s", out)
+	}
+
+	// Legacy path must honor server config too.
+	legacy, err := uc.ExecuteQuery(context.Background(), "db1", "SELECT email FROM people", nil)
+	if err != nil {
+		t.Fatalf("legacy query failed: %v", err)
+	}
+	if strings.Contains(legacy, "bob@corp.io") {
+		t.Fatalf("legacy path bypasses server-enforced masking:\n%s", legacy)
+	}
+}
