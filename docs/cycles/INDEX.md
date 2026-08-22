@@ -100,6 +100,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 84 | CSV bulk import (execute csv_data=) | ✅ Shipped (hackathon branch) | [cycle-84](cycle-84-csv-import.md) |
 | 85 | Custom type listing (schema format=types) | ✅ Shipped (hackathon branch) | [cycle-85](cycle-85-custom-types.md) |
 | 86 | Verbatim DDL dump (schema format=ddl, sqlite) | ✅ Shipped (hackathon branch) | [cycle-86](cycle-86-ddl-dump.md) |
+| 87 | Continuity doc sync (second pass) | ✅ Shipped (hackathon branch) | [cycle-87](cycle-87-doc-sync-2.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

@@ -79,6 +79,14 @@ cycle-17 work) with no recovery notes. Fixes applied at loop start:
 | Column statistical profile (describe profile_column) | 69 | `column_profile.go` |
 | Cross-DB row-count compare + sampled row diff | 71, 72 | `data_compare.go` |
 | Per-query timeout (timeout_ms) | 73 | `query_timeout.go` |
+| Value search across tables (filter_tables value=) | 75 | `value_search.go` |
+| FK traversal for one row (describe related_key=) | 76 | `related_rows.go` |
+| Query pagination (page/page_size + total) | 77 | `query_page.go` |
+| Random sampling (sample_rows, engine-aware) | 78 | `query_sample.go` |
+| Duplicate detection (describe duplicates_column=) | 79 | `duplicates.go` |
+| View / trigger / routine / type listing + DDL dump | 80, 82, 83, 85, 86 | `views.go`, `triggers.go`, `routines.go`, `types.go`, `ddl.go` |
+| Atomic multi-statement scripts (execute script=) | 81 | `script.go` |
+| CSV bulk import (execute csv_data=) | 84 | `csv_import.go` |
 
 ### Cycles 67-74: Documentation Continuity
 PR #87 description refresh, per-cycle docs, INDEX updates, and this
