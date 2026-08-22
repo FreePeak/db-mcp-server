@@ -28,6 +28,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 12 | Token-efficiency benchmark: unified ~1.1–1.3k tok flat vs per-db 6.3x at 10 DBs | ✅ Shipped | [cycle-12](cycle-12-token-benchmark.md) |
 | 13 | Health check tool: pool pressure + engine stats (DBHub parity) | ✅ Shipped | [cycle-13](cycle-13-health-tool.md) |
 | 14 | Engine-level slow queries (pg_stat_statements / MySQL digests) | ✅ Shipped | [cycle-14](cycle-14-engine-slow-queries.md) |
+| 15 | FK referenced-table resolution in describe | ✅ Shipped | [cycle-15](cycle-15-fk-references.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -45,5 +46,5 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 3. Merge PR #85 → tag v1.10.0 when CI green
 4. Hypothetical-index tuning depth (Postgres MCP Pro differentiator)
 5. Column masking / governance features (Bytebase differentiator)
-6. FK referenced-table detail; multi-table relationship map
+6. FK referenced-table detail — done (cycle 15); multi-table relationship graph remains
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing

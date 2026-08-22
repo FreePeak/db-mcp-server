@@ -193,19 +193,25 @@ func indexQueries(dbType, table string) []string {
 }
 
 // constraintQueries returns engine-appropriate constraint catalog queries,
-// normalized to constraint_name / constraint_type / column_name where the
-// engine allows. SQLite synthesizes PKs from pragma_table_info and reads
-// FKs from pragma_foreign_key_list.
+// normalized to constraint_name / constraint_type / column_name plus
+// referenced_table / referenced_column where the engine exposes them.
+// SQLite synthesizes PKs from pragma_table_info and reads FKs from
+// pragma_foreign_key_list.
 func constraintQueries(dbType, table string) []string {
 	switch dbType {
 	case "postgres", "timescale", "timescaledb":
-		return []string{fmt.Sprintf(`SELECT tc.constraint_name, tc.constraint_type, kcu.column_name
+		return []string{fmt.Sprintf(`SELECT tc.constraint_name, tc.constraint_type, kcu.column_name,
+       ccu.table_name AS referenced_table, ccu.column_name AS referenced_column
 FROM information_schema.table_constraints tc
 JOIN information_schema.key_column_usage kcu
   ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+LEFT JOIN information_schema.constraint_column_usage ccu
+  ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
 WHERE tc.table_name = '%s' ORDER BY tc.constraint_type, kcu.ordinal_position`, table)}
 	case "mysql":
-		return []string{fmt.Sprintf(`SELECT tc.CONSTRAINT_NAME AS constraint_name, tc.CONSTRAINT_TYPE AS constraint_type, kcu.COLUMN_NAME AS column_name
+		return []string{fmt.Sprintf(`SELECT tc.CONSTRAINT_NAME AS constraint_name, tc.CONSTRAINT_TYPE AS constraint_type,
+       kcu.COLUMN_NAME AS column_name, kcu.REFERENCED_TABLE_NAME AS referenced_table,
+       kcu.REFERENCED_COLUMN_NAME AS referenced_column
 FROM information_schema.TABLE_CONSTRAINTS tc
 JOIN information_schema.KEY_COLUMN_USAGE kcu
   ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
@@ -214,17 +220,20 @@ ORDER BY tc.CONSTRAINT_TYPE, kcu.ORDINAL_POSITION`, table)}
 	case "sqlite", "sqlite3":
 		return []string{
 			fmt.Sprintf("SELECT 'PRIMARY KEY' AS constraint_type, name AS constraint_name, name AS column_name FROM pragma_table_info('%s') WHERE pk > 0", table),
-			fmt.Sprintf("SELECT 'FOREIGN KEY' AS constraint_type, \"table\" AS constraint_name, \"from\" AS column_name FROM pragma_foreign_key_list('%s')", table),
+			fmt.Sprintf("SELECT 'FOREIGN KEY' AS constraint_type, \"table\" AS referenced_table, \"to\" AS referenced_column, \"from\" AS column_name FROM pragma_foreign_key_list('%s')", table),
 		}
 	case "oracle":
 		return []string{fmt.Sprintf(`SELECT cc.constraint_name, c.constraint_type AS constraint_type, cc.column_name
 FROM user_cons_columns cc JOIN user_constraints c ON cc.constraint_name = c.constraint_name
 WHERE c.table_name = UPPER('%s') ORDER BY c.constraint_type`, table)}
 	default:
-		return []string{fmt.Sprintf(`SELECT tc.constraint_name, tc.constraint_type, kcu.column_name
+		return []string{fmt.Sprintf(`SELECT tc.constraint_name, tc.constraint_type, kcu.column_name,
+       ccu.table_name AS referenced_table, ccu.column_name AS referenced_column
 FROM information_schema.table_constraints tc
 JOIN information_schema.key_column_usage kcu
   ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+LEFT JOIN information_schema.constraint_column_usage ccu
+  ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
 WHERE tc.table_name = '%s' ORDER BY tc.constraint_type, kcu.ordinal_position`, table)}
 	}
 }

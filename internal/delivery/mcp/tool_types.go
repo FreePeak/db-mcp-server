@@ -707,8 +707,12 @@ func formatDescribeResult(info map[string]interface{}) string {
 		b.WriteString("  (none found)\n")
 	}
 	for _, c := range constraints {
-		fmt.Fprintf(&b, "  %s %s (%s)\n",
+		line := fmt.Sprintf("  %s %s (%s)",
 			mapString(c, "constraint_type"), mapString(c, "constraint_name"), mapString(c, "column_name"))
+		if refTable := mapString(c, "referenced_table"); refTable != "" {
+			line += fmt.Sprintf(" -> %s(%s)", refTable, mapString(c, "referenced_column"))
+		}
+		b.WriteString(line + "\n")
 	}
 
 	if rc, ok := info["rowCount"].(string); ok && rc != "" {

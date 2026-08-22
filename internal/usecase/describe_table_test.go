@@ -70,6 +70,42 @@ func TestDescribeTable_EndToEnd(t *testing.T) {
 	}
 }
 
+// TestDescribeTable_ForeignKeyReferenceEndToEnd verifies FK constraints
+// resolve to their referenced table and column on a real database.
+func TestDescribeTable_ForeignKeyReferenceEndToEnd(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT)`); err != nil {
+		t.Fatalf("create authors failed: %v", err)
+	}
+	if _, err := raw.Exec(`CREATE TABLE books (id INTEGER PRIMARY KEY, author_id INTEGER REFERENCES authors(id), title TEXT)`); err != nil {
+		t.Fatalf("create books failed: %v", err)
+	}
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	info, err := uc.DescribeTable(context.Background(), "sqlite1", "books")
+	if err != nil {
+		t.Fatalf("describe failed: %v", err)
+	}
+
+	found := false
+	constraints := info["constraints"].([]map[string]interface{})
+	str := func(m map[string]interface{}, k string) string {
+		s, _ := m[k].(string)
+		return s
+	}
+	for _, c := range constraints {
+		if str(c, "constraint_type") == "FOREIGN KEY" &&
+			str(c, "referenced_table") == "authors" &&
+			str(c, "referenced_column") == "id" &&
+			str(c, "column_name") == "author_id" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected author_id -> authors(id) foreign key, got %v", constraints)
+	}
+}
+
 // TestDescribeTable_RejectsInjectionInput locks the identifier guard.
 func TestDescribeTable_RejectsInjectionInput(t *testing.T) {
 	uc := NewDatabaseUseCase(&fakeRepo{db: &fakeDB{}})
