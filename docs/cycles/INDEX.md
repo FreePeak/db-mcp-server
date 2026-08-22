@@ -50,6 +50,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 34 | Snapshot audit context (originating statement) + docs surface | ✅ Shipped (hackathon branch) | [cycle-34](cycle-34-snapshot-context.md) |
 | 35 | Schema snapshots & drift detection (baseline + diff) | ✅ Shipped (hackathon branch) | [cycle-35](cycle-35-schema-drift.md) |
 | 36 | Agent-facing drift actions (`capture`/`check`/`list`) | ✅ Shipped (hackathon branch) | [cycle-36](cycle-36-drift-actions.md) |
+| 37 | Safe-migration workflow recipe + CI verification | ✅ Shipped (hackathon branch) | [cycle-37](cycle-37-migration-recipe.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
