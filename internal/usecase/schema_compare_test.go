@@ -189,3 +189,48 @@ func TestCompareSchemas_Constraints(t *testing.T) {
 		t.Fatalf("identical PKs reported as difference:\n%s", out)
 	}
 }
+
+// TestCompareTableCounts proves cycle 71: per-table row counts on both
+// sides with the delta, tables present on one side flagged.
+func TestCompareTableCounts(t *testing.T) {
+	rawA := openSQLiteForTest(t)
+	rawB := openSQLiteForTest(t)
+	for _, q := range []string{
+		`CREATE TABLE users (id INTEGER PRIMARY KEY)`,
+		`CREATE TABLE logs (id INTEGER PRIMARY KEY)`,
+	} {
+		if _, err := rawA.Exec(q); err != nil {
+			t.Fatalf("create failed: %v", err)
+		}
+		if _, err := rawB.Exec(q); err != nil {
+			t.Fatalf("create failed: %v", err)
+		}
+	}
+	seed := func(raw *sql.DB, n int) {
+		t.Helper()
+		for i := 0; i < n; i++ {
+			if _, err := raw.Exec(`INSERT INTO users (id) VALUES (?)`, i); err != nil {
+				t.Fatalf("seed failed: %v", err)
+			}
+		}
+	}
+	seed(rawA, 10)
+	seed(rawB, 7)
+
+	repo := &multiRepo{
+		dbs:   map[string]domain.Database{"a": &sqliteDB{db: rawA}, "b": &sqliteDB{db: rawB}},
+		types: map[string]string{"a": "sqlite", "b": "sqlite"},
+	}
+	uc := NewDatabaseUseCase(repo)
+
+	out, err := uc.CompareTableCounts(context.Background(), "a", "b")
+	if err != nil {
+		t.Fatalf("compare failed: %v", err)
+	}
+	if !strings.Contains(out, "users") || !strings.Contains(out, "+3") {
+		t.Fatalf("expected users delta +3 in:\n%s", out)
+	}
+	if !strings.Contains(out, "logs") || !strings.Contains(out, "0") {
+		t.Fatalf("expected logs 0/0 in:\n%s", out)
+	}
+}

@@ -225,6 +225,12 @@ type schemaCompareUseCase interface {
 	CompareSchemas(ctx context.Context, dbIDA, dbIDB string) (string, error)
 }
 
+// dataCompareUseCase is implemented by use cases that can compare table
+// row counts between two databases.
+type dataCompareUseCase interface {
+	CompareTableCounts(ctx context.Context, dbIDA, dbIDB string) (string, error)
+}
+
 // piIMaskingUseCase is implemented by use cases that support opt-in PII
 // masking; detection keeps existing mocks and alternate providers compatible.
 type piIMaskingUseCase interface {
@@ -1182,7 +1188,7 @@ func (t *SchemaTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), or "compare" (structural diff against compare_with database; requires compare_with param)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with param)`),
 		),
 	)
 }
@@ -1197,7 +1203,7 @@ func (t *SchemaTool) CreateUnifiedTool(name string, dbList []string) interface{}
 			tools.Required(),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), or "compare" (structural diff against compare_with database; requires compare_with param)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with param)`),
 		),
 	)
 }
@@ -1219,6 +1225,20 @@ func (t *SchemaTool) HandleRequest(ctx context.Context, request server.ToolCallR
 			return nil, err
 		}
 		return createTextResponse(graph), nil
+	case format == "compare_data_counts":
+		compareWith, _ := request.Parameters["compare_with"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(compareWith) == "" {
+			return nil, fmt.Errorf("format=compare_data_counts requires the compare_with parameter (database id to diff against)")
+		}
+		dc, can := useCase.(dataCompareUseCase)
+		if !can {
+			return nil, fmt.Errorf("row-count comparison is not supported by this provider")
+		}
+		out, err := dc.CompareTableCounts(ctx, dbID, compareWith)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
 	case format == "compare":
 		compareWith, _ := request.Parameters["compare_with"].(string) //nolint:errcheck // absent means error below
 		if strings.TrimSpace(compareWith) == "" {
