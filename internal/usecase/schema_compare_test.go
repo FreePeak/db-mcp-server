@@ -281,3 +281,53 @@ func TestCompareTableSamples(t *testing.T) {
 		t.Fatalf("expected clean match:\n%s", out)
 	}
 }
+
+// TestExecuteQueryAcross proves cycle 88: one SELECT fans out over
+// several databases with clearly-sectioned per-db output.
+func TestExecuteQueryAcross(t *testing.T) {
+	rawA := openSQLiteForTest(t)
+	rawB := openSQLiteForTest(t)
+	if _, err := rawA.Exec(`CREATE TABLE cfg (k TEXT, v TEXT)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	if _, err := rawB.Exec(`CREATE TABLE cfg (k TEXT, v TEXT)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	if _, err := rawA.Exec(`INSERT INTO cfg VALUES ('env', 'prod')`); err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+	if _, err := rawB.Exec(`INSERT INTO cfg VALUES ('env', 'staging')`); err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+
+	repo := &multiRepo{
+		dbs:   map[string]domain.Database{"prod": &sqliteDB{db: rawA}, "stag": &sqliteDB{db: rawB}},
+		types: map[string]string{"prod": "sqlite", "stag": "sqlite"},
+	}
+	uc := NewDatabaseUseCase(repo)
+
+	out, err := uc.ExecuteQueryAcross(context.Background(), "SELECT v FROM cfg WHERE k = 'env'", []string{"prod", "stag"})
+	if err != nil {
+		t.Fatalf("fan-out failed: %v", err)
+	}
+	if !strings.Contains(out, "[prod]") || !strings.Contains(out, "prod") {
+		t.Fatalf("missing prod section:\n%s", out)
+	}
+	if !strings.Contains(out, "staging") {
+		t.Fatalf("missing staging result:\n%s", out)
+	}
+
+	// Write statements rejected up front.
+	if _, err := uc.ExecuteQueryAcross(context.Background(), "DELETE FROM cfg", []string{"prod"}); err == nil {
+		t.Fatal("non-SELECT must be rejected")
+	}
+
+	// Unknown database fails that section but others still run.
+	out, err = uc.ExecuteQueryAcross(context.Background(), "SELECT v FROM cfg WHERE k = 'env'", []string{"ghost", "prod"})
+	if err != nil {
+		t.Fatalf("one bad database must not fail the batch: %v", err)
+	}
+	if strings.Contains(out, "[ghost] ok") || !strings.Contains(out, "ghost") {
+		t.Fatalf("ghost section should report failure:\n%s", out)
+	}
+}

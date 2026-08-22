@@ -160,6 +160,9 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithNumber("timeout_ms",
 			tools.Description("Cancel the query if it exceeds this many milliseconds"),
 		),
+		tools.WithString("databases",
+			tools.Description("Comma-separated database ids: run this SELECT on each and render per-database sections (staging vs prod spot-check)"),
+		),
 		tools.WithNumber("sample_rows",
 			tools.Description("Return N randomly ordered rows instead of running the query as written (engine-aware ORDER BY)"),
 		),
@@ -203,6 +206,9 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 		),
 		tools.WithNumber("timeout_ms",
 			tools.Description("Cancel the query if it exceeds this many milliseconds"),
+		),
+		tools.WithString("databases",
+			tools.Description("Comma-separated database ids: run this SELECT on each and render per-database sections (staging vs prod spot-check)"),
 		),
 		tools.WithNumber("sample_rows",
 			tools.Description("Return N randomly ordered rows instead of running the query as written (engine-aware ORDER BY)"),
@@ -269,6 +275,12 @@ type scriptExecutionUseCase interface {
 // duplicated values in one column.
 type duplicateDetectionUseCase interface {
 	FindDuplicates(ctx context.Context, dbID, table, column string) (string, error)
+}
+
+// acrossQueryUseCase is implemented by use cases that can fan one SELECT
+// out over several databases.
+type acrossQueryUseCase interface {
+	ExecuteQueryAcross(ctx context.Context, query string, dbIDs []string) (string, error)
 }
 
 // sampleQueryUseCase is implemented by use cases that can draw N random
@@ -371,6 +383,25 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 			verbosity = usecase.ResultVerbosity(v)
 		}
 	}
+	// Fan-out runs the SELECT on every listed database.
+	if dbsRaw, _ := request.Parameters["databases"].(string); strings.TrimSpace(dbsRaw) != "" { //nolint:errcheck // absent means single-db mode
+		var dbIDs []string
+		for _, d := range strings.Split(dbsRaw, ",") {
+			if t := strings.TrimSpace(d); t != "" {
+				dbIDs = append(dbIDs, t)
+			}
+		}
+		if len(dbIDs) > 1 {
+			if aq, can := useCase.(acrossQueryUseCase); can {
+				result, err := aq.ExecuteQueryAcross(ctx, query, dbIDs)
+				if err != nil {
+					return nil, err
+				}
+				return createTextResponse(result), nil
+			}
+		}
+	}
+
 	// Random sampling draws N arbitrary rows.
 	if n, ok := request.Parameters["sample_rows"].(float64); ok && int(n) > 0 {
 		if sq, can := useCase.(sampleQueryUseCase); can {

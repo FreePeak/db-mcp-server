@@ -101,6 +101,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 85 | Custom type listing (schema format=types) | ✅ Shipped (hackathon branch) | [cycle-85](cycle-85-custom-types.md) |
 | 86 | Verbatim DDL dump (schema format=ddl, sqlite) | ✅ Shipped (hackathon branch) | [cycle-86](cycle-86-ddl-dump.md) |
 | 87 | Continuity doc sync (second pass) | ✅ Shipped (hackathon branch) | [cycle-87](cycle-87-doc-sync-2.md) |
+| 88 | Cross-database fan-out (query databases=) | ✅ Shipped (hackathon branch) | [cycle-88](cycle-88-query-across.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
