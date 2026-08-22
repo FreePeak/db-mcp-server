@@ -112,18 +112,20 @@ Protect agent sessions against runaway queries and accidental writes:
 | Setting | Scope | Effect |
 |---------|-------|--------|
 | `"read_only": true` | per database | Blocks write statements (`INSERT`, `UPDATE`, `DELETE`, DDL, data-modifying CTEs, stacked writes) through **both** query and execute tools, **and** enforces rejection at the database engine itself on PostgreSQL/TimescaleDB (`default_transaction_read_only=on`) and MySQL (`transaction_read_only=1`); SQLite opens `mode=ro`. Classification strips comments and string literals and defaults to deny for unrecognized statements. |
-| `"max_rows": 1000` | per database | Truncates result sets at N rows with an explicit `[Truncated]` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. When set, unbounded SELECTs also get `LIMIT n` injected server-side (engines stop early instead of materializing everything; Oracle excluded; existing LIMITs respected) — see Auto-LIMIT below. |
+| `"max_rows": 1000` | per database | Truncates result sets at N rows with an explicit `[Truncated]` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. When set, unbounded SELECTs also get a server-side row bound injected (engines stop early instead of materializing everything; existing limits respected) — see Auto-LIMIT below. |
 | `"mask_pii": true` | per database | **Server-enforced PII masking**: query results have emails, phone numbers, credit cards, SSNs, IP addresses and long numeric identifiers redacted (`[EMAIL]`, `[PHONE]`, …) regardless of per-request parameters. Agents can also opt in per query with `"mask_pii": true`. |
 
 #### Auto-LIMIT
 
-With `max_rows` configured, read queries without their own top-level `LIMIT`
-get one injected before execution:
+With `max_rows` configured, read queries without their own top-level row
+bound get one injected before execution:
 
 - `SELECT * FROM users` → `SELECT * FROM users LIMIT 1000`
-- Queries with an existing top-level `LIMIT` pass through untouched
+- Oracle gets a ROWNUM wrap instead (works on all versions, WITH-clause safe):
+  `SELECT name FROM accounts` → `SELECT * FROM (SELECT name FROM accounts) WHERE ROWNUM <= 1000`
+- Queries with an existing top-level `LIMIT` (or top-level `ROWNUM` / `FETCH FIRST` on Oracle) pass through untouched
 - A subquery's `LIMIT` does **not** suppress injection (it never bounds the outer result)
-- Non-SELECT statements are never modified; Oracle connections are excluded
+- Non-SELECT statements are never modified
 
 This bounds engine work, not just the context window.
 | `"query_timeout": 30` | per database | Cancels queries that exceed the timeout in seconds. |

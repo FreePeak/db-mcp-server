@@ -67,6 +67,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 51 | History sink server wiring (-query-history-log + env) | ✅ Shipped (hackathon branch) | [cycle-51](cycle-51-history-wiring.md) |
 | 52 | PR #87 title/body refresh for full scope | ✅ Shipped (hackathon branch) | [cycle-52](cycle-52-pr-refresh.md) |
 | 53 | Session report (`docs/SESSION-REPORT.md`) | ✅ Shipped (hackathon branch) | [cycle-53](cycle-53-session-report.md) |
+| 54 | Oracle Auto-LIMIT via ROWNUM wrap (closes exclusion gap from 46) | ✅ Shipped (hackathon branch) | [cycle-54](cycle-54-oracle-autolimit.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

@@ -402,18 +402,22 @@ func formatQueryResults(rows domain.Rows, maxRows int) (string, error) {
 	return out, err
 }
 
-// autoLimitedQuery injects a top-level LIMIT when max_rows is configured,
+// autoLimitedQuery injects a top-level bound when max_rows is configured,
 // letting the engine stop early instead of materializing unbounded results.
-// Oracle is excluded (ROWNUM/FETCH FIRST syntax differs); introspection
-// failures leave the statement untouched.
+// LIMIT-dialect engines get an appended LIMIT; Oracle gets a ROWNUM wrap
+// (all versions, WITH-clause safe). Introspection failures leave the
+// statement untouched.
 func (uc *DatabaseUseCase) autoLimitedQuery(dbID, query string, db domain.Database) string {
 	maxRows := db.MaxRows()
 	if maxRows <= 0 {
 		return query
 	}
 	dbType, err := uc.repo.GetDatabaseType(dbID)
-	if err != nil || strings.EqualFold(dbType, "oracle") {
+	if err != nil {
 		return query
+	}
+	if strings.EqualFold(dbType, "oracle") {
+		return applyOracleRowLimit(query, maxRows)
 	}
 	return applyAutoLimit(query, maxRows)
 }
