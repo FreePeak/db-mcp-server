@@ -36,6 +36,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 20 | Advisor v2: composite index suggestions + PK suppression | ✅ Shipped (hackathon branch) | [cycle-20](cycle-20-advisor-v2.md) |
 | 21 | Operator-enforced masking (`mask_pii` config, bypass-proof) | ✅ Shipped (hackathon branch) | [cycle-21](cycle-21-enforced-masking.md) |
 | 22 | Hardening: Luhn card precision + cloud cold-start retry | ✅ Shipped (hackathon branch) | [cycle-22](cycle-22-hardening.md) |
+| 23 | Release consolidation: CHANGELOG entries + PR to main | ✅ Shipped (hackathon branch) | [cycle-23](cycle-23-release-consolidation.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
