@@ -138,6 +138,9 @@ type DatabaseUseCase struct {
 	// maskingAudit records PII redaction events for operator visibility.
 	maskingAudit *maskingAudit
 
+	// snapshots holds pre-mutation row captures for rollback.
+	snapshots *snapshotStore
+
 	// riskWarnMu guards riskWarnAt.
 	riskWarnMu sync.Mutex
 	// riskWarnAt is the minimum post-execution advisory level (default high).
@@ -150,6 +153,7 @@ func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 		repo:         repo,
 		transactions: make(map[string]domain.Tx),
 		maskingAudit: newMaskingAudit(),
+		snapshots:    newSnapshotStore(),
 		riskWarnAt:   "high",
 	}
 }
@@ -402,6 +406,16 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 		return "", fmt.Errorf("database %q is configured as read-only; write statements are not allowed", dbID)
 	}
 
+	// Pre-mutation safety net: capture affected rows before a DELETE/UPDATE
+	// runs so the mutation can be reversed. Best-effort — introspection
+	// failures must never block execution.
+	snapshotID := ""
+	if mutKindRe.MatchString(strings.TrimSpace(stripSQLLiterals(statement))) {
+		if sid, snapErr := uc.captureMutationSnapshot(ctx, db, dbID, statement); snapErr == nil {
+			snapshotID = sid
+		}
+	}
+
 	// Execute statement
 	result, err := db.Exec(ctx, statement, params...)
 	if err != nil {
@@ -421,6 +435,9 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 	}
 
 	out := fmt.Sprintf("Statement executed successfully.\nRows affected: %d\nLast insert ID: %d", rowsAffected, lastInsertID)
+	if snapshotID != "" {
+		out += fmt.Sprintf("\nSnapshot: %s (revert with RollbackSnapshot)", snapshotID)
+	}
 
 	// Non-blocking post-execution advisory: high/critical statements get an
 	// explicit notice so the agent (and any human reviewing the transcript)

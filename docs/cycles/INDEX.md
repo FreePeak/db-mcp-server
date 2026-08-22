@@ -45,6 +45,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 29 | Offline DDL risk analysis (`dry_run`, multi-engine pre-flight) | ✅ Shipped (hackathon branch) | [cycle-29](cycle-29-ddl-safety.md) |
 | 30 | Post-execution risk advisories (non-blocking warnings) | ✅ Shipped (hackathon branch) | [cycle-30](cycle-30-risk-advisories.md) |
 | 31 | Configurable risk warning threshold (`SetRiskWarnAt`) | ✅ Shipped (hackathon branch) | [cycle-31](cycle-31-risk-threshold.md) |
+| 32 | Pre-mutation snapshots + reverse-SQL rollback | ✅ Shipped (hackathon branch) | [cycle-32](cycle-32-snapshots.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
