@@ -322,9 +322,10 @@ export DB_CONFIG='{"connections":[...]}'
 - `-unified-tools`: Register unified tools with a `database` parameter instead of per-database tools
 - `-lazy-loading`: Establish connections on first use (recommended for 10+ databases)
 - `-masking-audit-log`: JSONL file path for durable PII-masking audit events (append mode; survives restarts)
+- `-query-history-log`: JSONL file path for durable query-history events (append mode; every executed statement with duration/outcome)
 - `-risk-warn-at`: Minimum post-execution advisory level — `low`, `medium`, `high` (default), `critical`
 
-**Environment defaults:** `-masking-audit-log` and `-risk-warn-at` can also be set declaratively via `DB_MCP_MASKING_AUDIT_LOG` and `DB_MCP_RISK_WARN_AT`; explicit flags win over env values.
+**Environment defaults:** `-masking-audit-log`, `-query-history-log`, and `-risk-warn-at` can also be set declaratively via `DB_MCP_MASKING_AUDIT_LOG`, `DB_MCP_QUERY_HISTORY_LOG`, and `DB_MCP_RISK_WARN_AT`; explicit flags win over env values.
 
 ## Testing Without Docker (Free Cloud Databases)
 

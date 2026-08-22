@@ -80,6 +80,8 @@ func main() {
 	if v := os.Getenv("DB_MCP_RISK_WARN_AT"); v != "" {
 		riskWarnDefault = v
 	}
+	historyLogDefault := os.Getenv("DB_MCP_QUERY_HISTORY_LOG")
+	queryHistoryLog := flag.String("query-history-log", historyLogDefault, "JSONL file path for durable query-history events (append mode; env: DB_MCP_QUERY_HISTORY_LOG)")
 	maskingAuditLog := flag.String("masking-audit-log", maskingAuditDefault, "JSONL file path for durable PII-masking audit events (append mode; env: DB_MCP_MASKING_AUDIT_LOG)")
 	riskWarnAt := flag.String("risk-warn-at", riskWarnDefault, "Minimum post-execution advisory level (low, medium, high, critical; env: DB_MCP_RISK_WARN_AT)")
 	healthPort := flag.Int("health-port", 9093, "Port for the /health HTTP endpoint (0 to disable; only used in SSE mode)")
@@ -173,6 +175,18 @@ func main() {
 	dbRepo := repository.NewDatabaseRepository()
 	dbUseCase := usecase.NewDatabaseUseCase(dbRepo)
 	dbUseCase.SetRiskWarnAt(*riskWarnAt)
+	if *queryHistoryLog != "" {
+		if err := dbUseCase.EnableQueryHistoryFile(*queryHistoryLog); err != nil {
+			logger.Error("failed to open query history log: %v", err)
+		} else {
+			defer func() {
+				if cerr := dbUseCase.CloseQueryHistoryFile(); cerr != nil {
+					logger.Error("close query history log: %v", cerr)
+				}
+			}()
+			logger.Info("Query history trail: %s", *queryHistoryLog)
+		}
+	}
 	if *maskingAuditLog != "" {
 		if err := dbUseCase.EnableMaskingAuditFile(*maskingAuditLog); err != nil {
 			logger.Error("failed to open masking audit log: %v", err)
