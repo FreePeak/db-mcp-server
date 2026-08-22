@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"testing"
 
@@ -86,5 +87,49 @@ func TestCompareSchemas_Match(t *testing.T) {
 	}
 	if !strings.Contains(out, "match") {
 		t.Fatalf("expected clean-match report, got:\n%s", out)
+	}
+}
+
+// TestCompareSchemas_Indexes proves cycle 64: indexes are compared by name
+// with a whitespace-normalized definition fingerprint.
+func TestCompareSchemas_Indexes(t *testing.T) {
+	rawA := openSQLiteForTest(t)
+	rawB := openSQLiteForTest(t)
+	setup := func(raw *sql.DB, def string) {
+		t.Helper()
+		if _, err := raw.Exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)`); err != nil {
+			t.Fatalf("create failed: %v", err)
+		}
+		if _, err := raw.Exec(def); err != nil {
+			t.Fatalf("index failed: %v", err)
+		}
+	}
+	setup(rawA, `CREATE UNIQUE INDEX idx_email ON users (email)`)
+	setup(rawB, `CREATE INDEX idx_email ON users (email)`)
+
+	repo := &multiRepo{
+		dbs:   map[string]domain.Database{"a": &sqliteDB{db: rawA}, "b": &sqliteDB{db: rawB}},
+		types: map[string]string{"a": "sqlite", "b": "sqlite"},
+	}
+	uc := NewDatabaseUseCase(repo)
+
+	out, err := uc.CompareSchemas(context.Background(), "a", "b")
+	if err != nil {
+		t.Fatalf("compare failed: %v", err)
+	}
+	if !strings.Contains(out, "idx_email") || !strings.Contains(out, "unique") {
+		t.Fatalf("expected index divergence note naming idx_email/unique, got:\n%s", out)
+	}
+
+	// Identical indexes must not appear in the report.
+	rawC := openSQLiteForTest(t)
+	setup(rawC, `CREATE UNIQUE INDEX idx_email ON users (email)`)
+	repo.dbs["b"] = &sqliteDB{db: rawC}
+	out, err = uc.CompareSchemas(context.Background(), "a", "b")
+	if err != nil {
+		t.Fatalf("compare failed: %v", err)
+	}
+	if strings.Contains(out, "idx_email") {
+		t.Fatalf("identical index reported as difference:\n%s", out)
 	}
 }

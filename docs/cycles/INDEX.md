@@ -77,6 +77,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 61 | Session observability (list_sessions / cancel_query) | ✅ Shipped (hackathon branch) | [cycle-61](cycle-61-session-observability.md) |
 | 62 | Lock-wait view (lock_waits) + README catch-up | ✅ Shipped (hackathon branch) | [cycle-62](cycle-62-lock-waits.md) |
 | 63 | Cross-database schema compare (schema format=compare) | ✅ Shipped (hackathon branch) | [cycle-63](cycle-63-schema-compare.md) |
+| 64 | Index fingerprints in schema compare | ✅ Shipped (hackathon branch) | [cycle-64](cycle-64-schema-compare-indexes.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
