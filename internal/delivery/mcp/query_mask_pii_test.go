@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/FreePeak/cortex/pkg/server"
+	"github.com/FreePeak/db-mcp-server/internal/usecase"
 )
 
 // stubMaskingUseCase satisfies UseCaseProvider plus ExecuteQueryMasked,
@@ -20,7 +21,7 @@ func (s *stubMaskingUseCase) ExecuteQuery(ctx context.Context, dbID, query strin
 	return "Results:\n\nemail\n----\njane@acme.com\n\nTotal rows: 1", nil
 }
 
-func (s *stubMaskingUseCase) ExecuteQueryMasked(_ context.Context, _ string, _ string, _ []interface{}, mask bool) (string, error) {
+func (s *stubMaskingUseCase) ExecuteQueryMasked(_ context.Context, _ string, _ string, _ []interface{}, mask bool, _ usecase.ResultVerbosity) (string, error) {
 	s.maskWasCalled = true
 	s.lastMaskFlag = mask
 	return "Results:\n\nemail\n----\n[EMAIL]\n\nTotal rows: 1", nil

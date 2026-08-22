@@ -97,15 +97,57 @@ func luhnValid(s string) bool {
 // formatQueryResultsMasked renders query results with PII masking applied to
 // every data cell (headers stay visible).
 func formatQueryResultsMasked(rows domain.Rows, maxRows int) (string, error) {
-	out, _, err := renderQueryResults(rows, maxRows, true)
+	out, _, err := renderQueryResults(rows, maxRows, true, VerbosityFull)
 	return out, err
+}
+
+// ResultVerbosity controls how much of each result payload reaches the
+// agent's context window. Wide TEXT/JSON columns routinely dominate token
+// budgets; truncation preserves row structure while collapsing heavy cells.
+type ResultVerbosity string
+
+const (
+	// VerbosityFull returns every byte (legacy behavior).
+	VerbosityFull ResultVerbosity = "full"
+	// VerbosityNormal caps each cell at maxCellChars with an explicit
+	// …(+N chars) marker; all rows are preserved.
+	VerbosityNormal ResultVerbosity = "normal"
+	// VerbosityMinimal returns the total row count plus a first-row preview
+	// only — for write confirmations, COUNT queries, and polling.
+	VerbosityMinimal ResultVerbosity = "minimal"
+)
+
+// maxCellChars bounds a single cell's rendered size in normal mode.
+const maxCellChars = 500
+
+// truncateCell caps s at maxCellChars, appending an explicit marker so the
+// agent knows content was elided rather than absent.
+func truncateCell(s string) string {
+	if len(s) <= maxCellChars {
+		return s
+	}
+	return s[:maxCellChars] + "…(+" + itoa(len(s)-maxCellChars) + " chars)"
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
 }
 
 // renderQueryResults is the single result-rendering path; masking toggles
 // the cell transformer without duplicating scan/format logic.
 // renderQueryResults returns the rendered text plus the number of cells
 // that were redacted (0 when masking is off or nothing matched).
-func renderQueryResults(rows domain.Rows, maxRows int, mask bool) (string, int, error) {
+func renderQueryResults(rows domain.Rows, maxRows int, mask bool, verbosity ResultVerbosity) (string, int, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to get column names: %w", err)
@@ -113,16 +155,60 @@ func renderQueryResults(rows domain.Rows, maxRows int, mask bool) (string, int, 
 
 	cellsMasked := 0
 
-	var resultText strings.Builder
-	resultText.WriteString("Results:\n\n")
-	resultText.WriteString(strings.Join(columns, "\t") + "\n")
-	resultText.WriteString(strings.Repeat("-", 80) + "\n")
-
 	values := make([]interface{}, len(columns))
 	valuePtrs := make([]interface{}, len(columns))
 	for i := range columns {
 		valuePtrs[i] = &values[i]
 	}
+
+	renderCell := func(i int) string {
+		val := values[i]
+		if val == nil {
+			return "NULL"
+		}
+		var s string
+		switch v := val.(type) {
+		case []byte:
+			s = string(v)
+		default:
+			s = fmt.Sprintf("%v", v)
+		}
+		if mask {
+			if masked := maskPIIInText(s, columns[i]); masked != s {
+				s = masked
+				cellsMasked++
+			}
+		}
+		if verbosity == VerbosityNormal {
+			s = truncateCell(s)
+		}
+		return s
+	}
+
+	collectRow := func() []string {
+		row := make([]string, len(columns))
+		for i := range columns {
+			row[i] = renderCell(i)
+		}
+		return row
+	}
+
+	if verbosity == VerbosityMinimal {
+		// The preview must stay compact even when rows are wide.
+		compactRow := func() []string {
+			row := collectRow()
+			for i := range row {
+				row[i] = truncateCell(row[i])
+			}
+			return row
+		}
+		return renderMinimal(rows, columns, valuePtrs, compactRow, maxRows), 0, nil
+	}
+
+	var resultText strings.Builder
+	resultText.WriteString("Results:\n\n")
+	resultText.WriteString(strings.Join(columns, "\t") + "\n")
+	resultText.WriteString(strings.Repeat("-", 80) + "\n")
 
 	rowCount := 0
 	truncated := false
@@ -135,30 +221,7 @@ func renderQueryResults(rows domain.Rows, maxRows int, mask bool) (string, int, 
 		if scanErr := rows.Scan(valuePtrs...); scanErr != nil {
 			return "", 0, fmt.Errorf("failed to scan row: %w", scanErr)
 		}
-
-		var rowText []string
-		for i := range columns {
-			val := values[i]
-			if val == nil {
-				rowText = append(rowText, "NULL")
-				continue
-			}
-			var s string
-			switch v := val.(type) {
-			case []byte:
-				s = string(v)
-			default:
-				s = fmt.Sprintf("%v", v)
-			}
-			if mask {
-				if masked := maskPIIInText(s, columns[i]); masked != s {
-					s = masked
-					cellsMasked++
-				}
-			}
-			rowText = append(rowText, s)
-		}
-		resultText.WriteString(strings.Join(rowText, "\t") + "\n")
+		resultText.WriteString(strings.Join(collectRow(), "\t") + "\n")
 	}
 	if err = rows.Err(); err != nil {
 		return "", 0, fmt.Errorf("error reading rows: %w", err)
@@ -171,4 +234,34 @@ func renderQueryResults(rows domain.Rows, maxRows int, mask bool) (string, int, 
 		resultText.WriteString(fmt.Sprintf("\nTotal rows: %d", rowCount))
 	}
 	return resultText.String(), cellsMasked, nil
+}
+
+// renderMinimal collapses the payload to the total row count plus a
+// first-row preview — enough for write confirmations and polling loops.
+func renderMinimal(rows domain.Rows, columns []string, valuePtrs []interface{}, collectRow func() []string, maxRows int) string {
+	var b strings.Builder
+	b.WriteString("Results (minimal):\n\n")
+	b.WriteString("Columns: " + strings.Join(columns, ", ") + "\n")
+
+	total := 0
+	var firstRow []string
+	for rows.Next() {
+		total++
+		if scanErr := rows.Scan(valuePtrs...); scanErr != nil {
+			b.WriteString("Error scanning rows: " + scanErr.Error() + "\n")
+			return b.String()
+		}
+		if firstRow == nil {
+			firstRow = collectRow()
+		}
+	}
+	if maxRows > 0 && total > maxRows {
+		b.WriteString(fmt.Sprintf("Total rows: %d (max_rows=%d exceeded — refine the query)\n", total, maxRows))
+	} else {
+		b.WriteString(fmt.Sprintf("Total rows: %d\n", total))
+	}
+	if firstRow != nil {
+		b.WriteString("first row: " + strings.Join(firstRow, "\t") + "\n")
+	}
+	return b.String()
 }

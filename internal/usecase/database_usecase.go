@@ -302,7 +302,7 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 
 	// Server-level masking config applies even on the legacy path so
 	// clients cannot bypass governance by omitting the parameter.
-	out, masked, rerr := renderQueryResults(rows, db.MaxRows(), db.MaskPII())
+	out, masked, rerr := renderQueryResults(rows, db.MaxRows(), db.MaskPII(), VerbosityFull)
 	if rerr != nil {
 		return "", rerr
 	}
@@ -310,10 +310,16 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 	return out, nil
 }
 
-// ExecuteQueryMasked executes a query with optional PII masking applied to
-// result cells. Server-level MaskPII configuration always forces masking on;
-// the per-request flag can only add masking, never remove it.
-func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool) (string, error) {
+// ExecuteQueryVerbosity executes a query with explicit result verbosity and
+// no PII masking — the minimal-effort path for write confirmations/polling.
+func (uc *DatabaseUseCase) ExecuteQueryVerbosity(ctx context.Context, dbID, query string, params []interface{}, verbosity ResultVerbosity) (string, error) {
+	return uc.ExecuteQueryMasked(ctx, dbID, query, params, false, verbosity)
+}
+
+// ExecuteQueryMasked executes a query with optional PII masking and result
+// verbosity control. Server-level MaskPII configuration always forces
+// masking on; the per-request flag can only add masking, never remove it.
+func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool, verbosity ResultVerbosity) (string, error) {
 	db, err := uc.repo.GetDatabase(dbID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get database: %w", err)
@@ -333,7 +339,7 @@ func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query s
 		}
 	}()
 
-	out, masked, err2 := renderQueryResults(rows, db.MaxRows(), mask || db.MaskPII())
+	out, masked, err2 := renderQueryResults(rows, db.MaxRows(), mask || db.MaskPII(), verbosity)
 	if err2 == nil {
 		uc.maskingAudit.record(dbID, query, masked)
 	}
@@ -344,7 +350,7 @@ func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query s
 // rows when maxRows > 0 so large result sets cannot flood the client's
 // context window. The caller owns closing rows.
 func formatQueryResults(rows domain.Rows, maxRows int) (string, error) {
-	out, _, err := renderQueryResults(rows, maxRows, false)
+	out, _, err := renderQueryResults(rows, maxRows, false, VerbosityFull)
 	return out, err
 }
 

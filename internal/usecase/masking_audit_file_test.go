@@ -28,7 +28,7 @@ func TestMaskingAudit_FileSinkPersistsEvents(t *testing.T) {
 		t.Fatalf("enable sink failed: %v", err)
 	}
 
-	if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM t", nil, true); err != nil {
+	if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM t", nil, true, VerbosityFull); err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
 	if err := uc.CloseMaskingAuditFile(); err != nil {
@@ -79,7 +79,7 @@ func TestMaskingAudit_FileSinkAppendMode(t *testing.T) {
 	if err := uc.EnableMaskingAuditFile(path); err != nil {
 		t.Fatalf("enable sink failed: %v", err)
 	}
-	if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM t", nil, true); err != nil {
+	if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM t", nil, true, VerbosityFull); err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
 	if err := uc.CloseMaskingAuditFile(); err != nil {
@@ -105,7 +105,7 @@ func TestMaskingAudit_NoSinkInMemoryOnly(t *testing.T) {
 	}
 	wrapper := &sqliteDB{db: raw}
 	uc := NewDatabaseUseCase(&fakeRepo{db: wrapper, dbType: "sqlite"})
-	if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM t", nil, true); err != nil {
+	if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM t", nil, true, VerbosityFull); err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
 	if uc.maskingAudit.sinkPath() != "" {

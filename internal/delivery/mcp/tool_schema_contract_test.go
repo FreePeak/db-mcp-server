@@ -17,8 +17,8 @@ func TestToolSchemas_DocumentedActionsLocked(t *testing.T) {
 	}{
 		{"performance_perdb", NewPerformanceTool().CreateTool("perf_db1", "db1"), []string{"suggest_indexes"}},
 		{"performance_unified", NewPerformanceTool().CreateUnifiedTool("performance", []string{"db1"}), []string{"suggest_indexes"}},
-		{"query_perdb", NewQueryTool().CreateTool("query_db1", "db1"), []string{"mask_pii"}},
-		{"query_unified", NewQueryTool().CreateUnifiedTool("query", []string{"db1"}), []string{"mask_pii"}},
+		{"query_perdb", NewQueryTool().CreateTool("query_db1", "db1"), []string{"mask_pii", "verbosity"}},
+		{"query_unified", NewQueryTool().CreateUnifiedTool("query", []string{"db1"}), []string{"mask_pii", "verbosity"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/FreePeak/cortex/pkg/server"
 	"github.com/FreePeak/cortex/pkg/tools"
+	"github.com/FreePeak/db-mcp-server/internal/usecase"
 )
 
 // createTextResponse creates a simple response with a text content
@@ -142,6 +143,9 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithBoolean("mask_pii",
 			tools.Description("Mask PII in results (emails, phones, cards, SSNs, IPs)"),
 		),
+		tools.WithString("verbosity",
+			tools.Description("Result size: full (default), normal (cells truncated at 500 chars with …(+N) markers), minimal (row count + first row preview — ideal for write confirmations/polling)"),
+		),
 	)
 }
 
@@ -165,13 +169,16 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 		tools.WithBoolean("mask_pii",
 			tools.Description("Mask PII in results (emails, phones, cards, SSNs, IPs)"),
 		),
+		tools.WithString("verbosity",
+			tools.Description("Result size: full (default), normal (cells truncated at 500 chars with …(+N) markers), minimal (row count + first row preview — ideal for write confirmations/polling)"),
+		),
 	)
 }
 
 // piIMaskingUseCase is implemented by use cases that support opt-in PII
 // masking; detection keeps existing mocks and alternate providers compatible.
 type piIMaskingUseCase interface {
-	ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool) (string, error)
+	ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool, verbosity usecase.ResultVerbosity) (string, error)
 }
 
 // HandleRequest handles query tool requests
@@ -197,10 +204,18 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 	if v, ok := request.Parameters["mask_pii"].(bool); ok {
 		maskPII = v
 	}
+
+	verbosity := usecase.VerbosityFull
+	if v, ok := request.Parameters["verbosity"].(string); ok {
+		switch usecase.ResultVerbosity(v) {
+		case usecase.VerbosityMinimal, usecase.VerbosityNormal:
+			verbosity = usecase.ResultVerbosity(v)
+		}
+	}
 	// Route through the masked path whenever the provider supports it; the
 	// use case layer enforces server-level MaskPII config there.
 	if m, canMask := useCase.(piIMaskingUseCase); canMask {
-		result, err := m.ExecuteQueryMasked(ctx, dbID, query, queryParams, maskPII)
+		result, err := m.ExecuteQueryMasked(ctx, dbID, query, queryParams, maskPII, verbosity)
 		if err != nil {
 			return nil, err
 		}

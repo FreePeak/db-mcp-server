@@ -22,7 +22,7 @@ func TestMaskingAudit_RecordsRedactions(t *testing.T) {
 	uc := NewDatabaseUseCase(&fakeRepo{db: wrapper, dbType: "sqlite"})
 
 	before := time.Now().Add(-time.Second)
-	if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM acct", nil, true); err != nil {
+	if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM acct", nil, true, VerbosityFull); err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
 
@@ -49,7 +49,7 @@ func TestMaskingAudit_UnmaskedQueryLeavesNoEvent(t *testing.T) {
 	wrapper := &sqliteDB{db: raw}
 	uc := NewDatabaseUseCase(&fakeRepo{db: wrapper, dbType: "sqlite"})
 
-	if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT 1", nil, false); err != nil {
+	if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT 1", nil, false, VerbosityFull); err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
 	if events := uc.GetMaskingAudit("db1"); len(events) != 0 {
@@ -70,7 +70,7 @@ func TestMaskingAudit_RingBufferCap(t *testing.T) {
 	wrapper := &sqliteDB{db: raw}
 	uc := NewDatabaseUseCase(&fakeRepo{db: wrapper, dbType: "sqlite"})
 	for i := 0; i < maskingAuditCapacity+10; i++ {
-		if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM t", nil, true); err != nil {
+		if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM t", nil, true, VerbosityFull); err != nil {
 			t.Fatalf("query %d failed: %v", i, err)
 		}
 	}
@@ -88,7 +88,7 @@ func TestMaskingAudit_IsolatedPerDatabase(t *testing.T) {
 	}
 	wrapper := &sqliteDB{db: raw}
 	uc := NewDatabaseUseCase(&fakeRepo{db: wrapper, dbType: "sqlite"})
-	if _, err := uc.ExecuteQueryMasked(context.Background(), "alpha", "SELECT email FROM t", nil, true); err != nil {
+	if _, err := uc.ExecuteQueryMasked(context.Background(), "alpha", "SELECT email FROM t", nil, true, VerbosityFull); err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
 	if events := uc.GetMaskingAudit("beta"); len(events) != 0 {
@@ -109,7 +109,7 @@ func TestMaskingAudit_SurfaceInHealth(t *testing.T) {
 	wrapper := &sqliteDB{db: raw}
 	uc := NewDatabaseUseCase(&fakeRepo{db: wrapper, dbType: "sqlite"})
 
-	if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM t", nil, true); err != nil {
+	if _, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM t", nil, true, VerbosityFull); err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
 

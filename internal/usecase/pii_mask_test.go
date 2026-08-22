@@ -153,7 +153,7 @@ func TestExecuteQueryMasked_EndToEnd(t *testing.T) {
 	wrapper := &sqliteDB{db: raw}
 	uc := NewDatabaseUseCase(&fakeRepo{db: wrapper, dbType: "sqlite"})
 
-	masked, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email, note FROM customers", nil, true)
+	masked, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email, note FROM customers", nil, true, VerbosityFull)
 	if err != nil {
 		t.Fatalf("masked query failed: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestExecuteQueryMasked_EndToEnd(t *testing.T) {
 		t.Fatalf("expected markers:\n%s", masked)
 	}
 
-	rawOut, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM customers", nil, false)
+	rawOut, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM customers", nil, false, VerbosityFull)
 	if err != nil {
 		t.Fatalf("unmasked query failed: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestExecuteQueryMasked_ServerConfigForcesMasking(t *testing.T) {
 	uc := NewDatabaseUseCase(&fakeRepo{db: wrapper, dbType: "sqlite"})
 
 	// Agent explicitly asks for raw data; server config must still mask.
-	out, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM people", nil, false)
+	out, err := uc.ExecuteQueryMasked(context.Background(), "db1", "SELECT email FROM people", nil, false, VerbosityFull)
 	if err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
