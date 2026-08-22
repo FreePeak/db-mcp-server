@@ -143,3 +143,6 @@ func TestFilterTablesTool_MissingPattern(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "pattern")
 }
+func (f *fakeFilterUseCase) GenerateSchemaCode(_ context.Context, _, _ string) (string, error) {
+	return "", nil
+}

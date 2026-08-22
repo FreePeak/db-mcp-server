@@ -85,6 +85,10 @@ type UseCaseProvider interface {
 	HealthCheck(ctx context.Context, dbID string) (map[string]interface{}, error)
 	// RelationshipGraph renders the database's FK relationships as Mermaid.
 	RelationshipGraph(ctx context.Context, dbID string) (string, error)
+
+	// GenerateSchemaCode renders the schema as application code
+	// (target: "go" structs or "typescript" interfaces).
+	GenerateSchemaCode(ctx context.Context, dbID, target string) (string, error)
 }
 
 // BaseToolType provides common functionality for tool types
@@ -1208,6 +1212,7 @@ func NewToolTypeFactory() *ToolTypeFactory {
 	factory.Register(NewDescribeTool())
 	factory.Register(NewHealthTool())
 	factory.Register(NewSchemaTool())
+	factory.Register(NewGenerateSchemaTool())
 	factory.Register(NewListDatabasesTool())
 	factory.Register(NewListDirectoryTool())
 	factory.Register(NewFilterTablesTool())

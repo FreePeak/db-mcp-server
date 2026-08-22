@@ -350,3 +350,6 @@ func TestTransactionTool_ListQueryHistory(t *testing.T) {
 		t.Fatalf("expected history rendering with outcome:\n%s", out)
 	}
 }
+func (m *stubMaskingUseCase) GenerateSchemaCode(_ context.Context, _, _ string) (string, error) {
+	return "", nil
+}
