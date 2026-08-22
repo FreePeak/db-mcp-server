@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/FreePeak/db-mcp-server/internal/logger"
 )
 
 // plainIdentifierRe accepts schema-qualified identifiers only, so catalog
@@ -41,6 +43,14 @@ func (uc *DatabaseUseCase) DescribeTable(ctx context.Context, dbID, table string
 		return nil, fmt.Errorf("failed to describe indexes: %w", err)
 	}
 
+	constraints, err := uc.queryTableMetadata(ctx, dbID, constraintQueries(strings.ToLower(dbType), table))
+	if err != nil {
+		// Constraint introspection varies more across engines/versions;
+		// treat it as best-effort so describes never hard-fail on it.
+		logger.Warn("constraint introspection unavailable for %s/%s: %v", dbID, table, err)
+		constraints = []map[string]interface{}{}
+	}
+
 	// Row estimate is best-effort; absence does not fail the describe.
 	rowEstimate := ""
 	if v, estErr := uc.queryScalar(ctx, dbID, rowEstimateQuery(strings.ToLower(dbType), table)); estErr == nil {
@@ -48,23 +58,25 @@ func (uc *DatabaseUseCase) DescribeTable(ctx context.Context, dbID, table string
 	}
 
 	return map[string]interface{}{
-		"database": dbID,
-		"dbType":   dbType,
-		"table":    table,
-		"columns":  columns,
-		"indexes":  indexes,
-		"rowCount": rowEstimate,
+		"database":    dbID,
+		"dbType":      dbType,
+		"table":       table,
+		"columns":     columns,
+		"indexes":     indexes,
+		"constraints": constraints,
+		"rowCount":    rowEstimate,
 	}, nil
 }
 
-// queryTableMetadata runs the first successful catalog query from candidates
-// and normalizes rows into maps.
+// queryTableMetadata runs every catalog query and concatenates the
+// successful results; it fails only when no query succeeds.
 func (uc *DatabaseUseCase) queryTableMetadata(ctx context.Context, dbID string, candidates []string) ([]map[string]interface{}, error) {
 	db, err := uc.repo.GetDatabase(dbID)
 	if err != nil {
 		return nil, err
 	}
 
+	out := []map[string]interface{}{}
 	var lastErr error
 	for _, q := range candidates {
 		rows, err := db.Query(ctx, q)
@@ -73,7 +85,7 @@ func (uc *DatabaseUseCase) queryTableMetadata(ctx context.Context, dbID string, 
 			continue
 		}
 
-		out, convErr := rowsToMaps(rows)
+		maps, convErr := rowsToMaps(rows)
 		closeErr := rows.Close()
 		if convErr != nil {
 			return nil, convErr
@@ -81,12 +93,12 @@ func (uc *DatabaseUseCase) queryTableMetadata(ctx context.Context, dbID string, 
 		if closeErr != nil {
 			return nil, closeErr
 		}
-		return out, nil
+		out = append(out, maps...)
 	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("no catalog query configured")
+	if len(out) == 0 && lastErr != nil {
+		return nil, lastErr
 	}
-	return nil, lastErr
+	return out, nil
 }
 
 func (uc *DatabaseUseCase) queryScalar(ctx context.Context, dbID, query string) (string, error) {
@@ -177,6 +189,43 @@ func indexQueries(dbType, table string) []string {
 		return []string{fmt.Sprintf(`SELECT index_name, '' AS definition FROM user_indexes WHERE table_name = UPPER('%s')`, table)}
 	default:
 		return []string{fmt.Sprintf(`SELECT indexname AS index_name, indexdef AS definition FROM pg_indexes WHERE tablename = '%s'`, table)}
+	}
+}
+
+// constraintQueries returns engine-appropriate constraint catalog queries,
+// normalized to constraint_name / constraint_type / column_name where the
+// engine allows. SQLite synthesizes PKs from pragma_table_info and reads
+// FKs from pragma_foreign_key_list.
+func constraintQueries(dbType, table string) []string {
+	switch dbType {
+	case "postgres", "timescale", "timescaledb":
+		return []string{fmt.Sprintf(`SELECT tc.constraint_name, tc.constraint_type, kcu.column_name
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu
+  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+WHERE tc.table_name = '%s' ORDER BY tc.constraint_type, kcu.ordinal_position`, table)}
+	case "mysql":
+		return []string{fmt.Sprintf(`SELECT tc.CONSTRAINT_NAME AS constraint_name, tc.CONSTRAINT_TYPE AS constraint_type, kcu.COLUMN_NAME AS column_name
+FROM information_schema.TABLE_CONSTRAINTS tc
+JOIN information_schema.KEY_COLUMN_USAGE kcu
+  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+WHERE tc.TABLE_NAME = '%s' AND tc.TABLE_SCHEMA = DATABASE()
+ORDER BY tc.CONSTRAINT_TYPE, kcu.ORDINAL_POSITION`, table)}
+	case "sqlite", "sqlite3":
+		return []string{
+			fmt.Sprintf("SELECT 'PRIMARY KEY' AS constraint_type, name AS constraint_name, name AS column_name FROM pragma_table_info('%s') WHERE pk > 0", table),
+			fmt.Sprintf("SELECT 'FOREIGN KEY' AS constraint_type, \"table\" AS constraint_name, \"from\" AS column_name FROM pragma_foreign_key_list('%s')", table),
+		}
+	case "oracle":
+		return []string{fmt.Sprintf(`SELECT cc.constraint_name, c.constraint_type AS constraint_type, cc.column_name
+FROM user_cons_columns cc JOIN user_constraints c ON cc.constraint_name = c.constraint_name
+WHERE c.table_name = UPPER('%s') ORDER BY c.constraint_type`, table)}
+	default:
+		return []string{fmt.Sprintf(`SELECT tc.constraint_name, tc.constraint_type, kcu.column_name
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu
+  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+WHERE tc.table_name = '%s' ORDER BY tc.constraint_type, kcu.ordinal_position`, table)}
 	}
 }
 

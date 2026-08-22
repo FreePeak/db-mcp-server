@@ -57,6 +57,17 @@ func TestDescribeTable_EndToEnd(t *testing.T) {
 	if rc, ok := info["rowCount"].(string); !ok || rc != "2" {
 		t.Fatalf("expected rowCount 2, got %v", info["rowCount"])
 	}
+
+	constraints := info["constraints"].([]map[string]interface{})
+	types := map[string]bool{}
+	for _, c := range constraints {
+		if ct, ok := c["constraint_type"].(string); ok {
+			types[ct] = true
+		}
+	}
+	if !types["PRIMARY KEY"] {
+		t.Fatalf("expected PRIMARY KEY constraint for id column, got %v", constraints)
+	}
 }
 
 // TestDescribeTable_RejectsInjectionInput locks the identifier guard.

@@ -699,6 +699,16 @@ func formatDescribeResult(info map[string]interface{}) string {
 		}
 	}
 
+	b.WriteString("\nConstraints:\n")
+	constraints, _ := describeRows(info["constraints"])
+	if len(constraints) == 0 {
+		b.WriteString("  (none found)\n")
+	}
+	for _, c := range constraints {
+		fmt.Fprintf(&b, "  %s %s (%s)\n",
+			mapString(c, "constraint_type"), mapString(c, "constraint_name"), mapString(c, "column_name"))
+	}
+
 	if rc, ok := info["rowCount"].(string); ok && rc != "" {
 		fmt.Fprintf(&b, "\nRows (estimate): %s\n", rc)
 	}

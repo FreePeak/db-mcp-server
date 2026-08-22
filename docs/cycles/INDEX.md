@@ -22,6 +22,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 06 | CHANGELOG backfill v1.7.0–v1.9.0 | ✅ Shipped (PR #85) | [cycle-06](cycle-06-changelog-backfill.md) |
 | 07 | Table/column schema depth (describe tool) | ✅ Shipped (PR #85) | [cycle-07](cycle-07-describe-table.md) |
 | 08 | Real performance tool (placeholder removed) | ✅ Shipped (PR #85) | [cycle-08](cycle-08-real-performance-tool.md) |
+| 09 | Constraints (PK/FK) surfacing in describe | ✅ Shipped (PR #85) | [cycle-09](cycle-09-describe-constraints.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -39,3 +40,4 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 3. Merge PR #85 → tag v1.10.0 when CI green
 4. Hypothetical-index tuning depth (Postgres MCP Pro differentiator)
 5. Column masking / governance features (Bytebase differentiator)
+6. FK referenced-table detail; multi-table relationship map
