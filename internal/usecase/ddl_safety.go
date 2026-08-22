@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -99,6 +100,56 @@ func dropTarget(upper string) string {
 	return "an object"
 }
 
+var alterTableRe = regexp.MustCompile(`(?i)\bALTER\s+TABLE\s+([A-Za-z_][A-Za-z0-9_$.]*)`)
+
+// alterTypeTargets returns the (deduplicated, schema-stripped, lowercased)
+// tables whose column-type change would force a full table rewrite. ALTERs
+// without a type-change keyword yield nothing. The input must already be
+// literal-stripped.
+func alterTypeTargets(stripped string) []string {
+	var targets []string
+	seen := map[string]bool{}
+	for _, stmt := range splitStatements(stripped) {
+		upper := strings.ToUpper(stmt)
+		isTypeChange := strings.Contains(upper, " TYPE ") || // PostgreSQL: ALTER COLUMN c TYPE t
+			strings.Contains(upper, " MODIFY ") || // MySQL: ALTER COLUMN c MODIFY ...
+			strings.Contains(upper, " CHANGE ") // MySQL: ALTER COLUMN c CHANGE ...
+		if !isTypeChange {
+			continue
+		}
+		m := alterTableRe.FindStringSubmatch(stmt)
+		if m == nil {
+			continue
+		}
+		table := stripSchema(strings.ToLower(m[1]))
+		if table == "" || seen[table] {
+			continue
+		}
+		seen[table] = true
+		targets = append(targets, table)
+	}
+	return targets
+}
+
+// enrichWithRewriteSizes appends the engine's live row estimate for every
+// table a type change would rewrite, turning the generic "large tables"
+// advisory into a concrete one ("~42 rows"). Best-effort: introspection or
+// estimate failures leave the report untouched.
+func (uc *DatabaseUseCase) enrichWithRewriteSizes(ctx context.Context, dbID, strippedStatement string, report *RiskReport) {
+	dbType, err := uc.repo.GetDatabaseType(dbID)
+	if err != nil {
+		return
+	}
+	for _, table := range alterTypeTargets(strippedStatement) {
+		n, estErr := uc.queryScalar(ctx, dbID, rowEstimateQuery(strings.ToLower(dbType), table))
+		if estErr != nil {
+			continue
+		}
+		report.Notes = append(report.Notes,
+			fmt.Sprintf("Table %q holds ~%s rows (engine estimate); the column type change rewrites all of them and can take locks", table, n))
+	}
+}
+
 // analyzeAlter flags column drops as destructive and column-type changes as
 // potential table rewrites (engine-dependent but worth an advisory).
 func analyzeAlter(upper string) (string, string, []string) {
@@ -173,9 +224,11 @@ func singleMissingWhere(stmt string) (bool, bool) {
 
 // ExecuteStatementDryRun returns the risk report for a statement without
 // executing anything. Works even when the database is unreachable because
-// no connection is required.
-func (uc *DatabaseUseCase) ExecuteStatementDryRun(_ context.Context, dbID, statement string) (*RiskReport, error) {
+// no connection is required; when it IS reachable, column-type-change
+// advisories are upgraded with the engine's live row estimate.
+func (uc *DatabaseUseCase) ExecuteStatementDryRun(ctx context.Context, dbID, statement string) (*RiskReport, error) {
 	report := AnalyzeStatementRisk(statement)
+	uc.enrichWithRewriteSizes(ctx, dbID, stripSQLLiterals(statement), &report)
 	report.WouldExecute = true
 	report.Executed = false
 	report.Notes = append(report.Notes, "Dry run: nothing was executed against "+dbID)

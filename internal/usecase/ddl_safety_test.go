@@ -104,3 +104,78 @@ func TestExecuteDryRun(t *testing.T) {
 		t.Fatal("WouldExecute should reflect that a real call would run it")
 	}
 }
+
+// TestAlterTypeTargets covers cycle 55: extracting the tables a column-type
+// change would force into a full rewrite. Non-rewrite ALTERs must yield
+// nothing.
+func TestAlterTypeTargets(t *testing.T) {
+	tests := []struct {
+		name  string
+		stmts string
+		want  []string
+	}{
+		{"postgres_type", "ALTER TABLE users ALTER COLUMN age TYPE bigint", []string{"users"}},
+		{"mysql_modify", "ALTER TABLE users MODIFY COLUMN name VARCHAR(200)", []string{"users"}},
+		{"mysql_change", "ALTER TABLE users CHANGE COLUMN old_name new_name INT", []string{"users"}},
+		{"add_column_no_rewrite", "ALTER TABLE users ADD COLUMN x INT", nil},
+		{"drop_column_no_target", "ALTER TABLE users DROP COLUMN x", nil},
+		{"schema_qualified", "ALTER TABLE public.users ALTER COLUMN age TYPE bigint", []string{"users"}},
+		{"batch_mixed", "ALTER TABLE a ADD COLUMN x INT; ALTER TABLE b MODIFY c INT", []string{"b"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := alterTypeTargets(stripSQLLiterals(tt.stmts))
+			if len(got) != len(tt.want) {
+				t.Fatalf("alterTypeTargets(%q) = %v, want %v", tt.stmts, got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("alterTypeTargets(%q) = %v, want %v", tt.stmts, got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+// TestExecuteStatementDryRun_RewriteSizeNote proves the dry-run report is
+// enriched with the engine's live row estimate for tables a type change
+// would rewrite. Introspection failures must never fail the dry run.
+func TestExecuteStatementDryRun_RewriteSizeNote(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	for i := 0; i < 42; i++ {
+		if _, err := raw.Exec(`INSERT INTO items (name) VALUES (?)`, "x"); err != nil {
+			t.Fatalf("seed failed: %v", err)
+		}
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	report, err := uc.ExecuteStatementDryRun(context.Background(), "db1",
+		"ALTER TABLE items ALTER COLUMN name TYPE text")
+	if err != nil {
+		t.Fatalf("dry run failed: %v", err)
+	}
+	found := false
+	for _, n := range report.Notes {
+		if strings.Contains(n, "items") && strings.Contains(n, "42") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected rewrite-size note naming items with ~42 rows, got notes: %v", report.Notes)
+	}
+
+	// A non-rewrite ALTER gets no size note and no introspection round-trip.
+	report, err = uc.ExecuteStatementDryRun(context.Background(), "db1",
+		"ALTER TABLE items ADD COLUMN flag INT")
+	if err != nil {
+		t.Fatalf("dry run failed: %v", err)
+	}
+	for _, n := range report.Notes {
+		if strings.Contains(n, "rows (engine estimate)") {
+			t.Fatalf("ADD COLUMN must not get a rewrite-size note: %v", report.Notes)
+		}
+	}
+}
