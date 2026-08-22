@@ -136,3 +136,28 @@ func TestCountQueryRows(t *testing.T) {
 		t.Fatal("non-SELECT must be rejected")
 	}
 }
+
+// TestExecuteQueryWithTimeout proves cycle 73: timeout_ms bounds runaway
+// queries (infinite recursive CTE) while normal queries pass through.
+func TestExecuteQueryWithTimeout(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE t (id INTEGER)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	if _, err := uc.ExecuteQueryWithTimeout(context.Background(), "db1",
+		`WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c) SELECT x FROM c`, nil, 50); err == nil {
+		t.Fatal("infinite query must hit the timeout")
+	} else if !strings.Contains(err.Error(), "context") && !strings.Contains(err.Error(), "deadline") {
+		t.Fatalf("expected deadline error, got: %v", err)
+	}
+
+	out, err := uc.ExecuteQueryWithTimeout(context.Background(), "db1", "SELECT COUNT(*) FROM t", nil, 5000)
+	if err != nil {
+		t.Fatalf("normal query failed under timeout: %v", err)
+	}
+	if !strings.Contains(out, "0") {
+		t.Fatalf("unexpected result:\n%s", out)
+	}
+}

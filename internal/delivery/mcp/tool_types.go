@@ -157,6 +157,9 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithBoolean("count_only",
 			tools.Description("Return the row COUNT(*) for the statement instead of rows"),
 		),
+		tools.WithNumber("timeout_ms",
+			tools.Description("Cancel the query if it exceeds this many milliseconds"),
+		),
 	)
 }
 
@@ -189,6 +192,9 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 		tools.WithBoolean("count_only",
 			tools.Description("Return the row COUNT(*) for the statement instead of rows"),
 		),
+		tools.WithNumber("timeout_ms",
+			tools.Description("Cancel the query if it exceeds this many milliseconds"),
+		),
 	)
 }
 
@@ -203,6 +209,12 @@ type queryExportUseCase interface {
 // single-column statistical profile.
 type columnProfilingUseCase interface {
 	ProfileColumn(ctx context.Context, dbID, table, column string) (string, error)
+}
+
+// timeoutQueryUseCase is implemented by use cases that support a per-query
+// deadline.
+type timeoutQueryUseCase interface {
+	ExecuteQueryWithTimeout(ctx context.Context, dbID, query string, params []interface{}, timeoutMs int) (string, error)
 }
 
 // rowCountPreviewUseCase is implemented by use cases that can price a
@@ -284,6 +296,28 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 	if format, _ := request.Parameters["format"].(string); format == "csv" || format == "json" || format == "inserts" { //nolint:errcheck // absent means text
 		if x, canExport := useCase.(queryExportUseCase); canExport {
 			result, err := x.ExecuteQueryFormat(ctx, dbID, query, queryParams, format)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(result), nil
+		}
+	}
+
+	// Per-query deadline, when requested and supported.
+	if tm, ok := request.Parameters["timeout_ms"].(float64); ok && int(tm) > 0 {
+		if tq, can := useCase.(timeoutQueryUseCase); can {
+			if m, canMask := useCase.(piIMaskingUseCase); canMask {
+				result, err := func() (string, error) {
+					tctx, cancel := context.WithTimeout(ctx, time.Duration(int(tm))*time.Millisecond)
+					defer cancel()
+					return m.ExecuteQueryMasked(tctx, dbID, query, queryParams, maskPII, verbosity)
+				}()
+				if err != nil {
+					return nil, err
+				}
+				return createTextResponse(result), nil
+			}
+			result, err := tq.ExecuteQueryWithTimeout(ctx, dbID, query, queryParams, int(tm))
 			if err != nil {
 				return nil, err
 			}
