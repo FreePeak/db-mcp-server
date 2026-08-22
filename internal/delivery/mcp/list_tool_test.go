@@ -68,6 +68,11 @@ func (m *MockUseCaseProvider) HealthCheck(_ context.Context, _ string) (map[stri
 	return nil, nil
 }
 
+// RelationshipGraph mocks the relationship graph method
+func (m *MockUseCaseProvider) RelationshipGraph(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 func TestListDirectoryTool(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "list_tool_test")

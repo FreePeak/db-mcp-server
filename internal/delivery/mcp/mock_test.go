@@ -78,3 +78,8 @@ func (m *MockDatabaseUseCase) AnalyzePerformance(_ context.Context, _, _, _ stri
 func (m *MockDatabaseUseCase) HealthCheck(_ context.Context, _ string) (map[string]interface{}, error) {
 	return nil, nil
 }
+
+// RelationshipGraph mocks the relationship graph method
+func (m *MockDatabaseUseCase) RelationshipGraph(_ context.Context, _ string) (string, error) {
+	return "", nil
+}

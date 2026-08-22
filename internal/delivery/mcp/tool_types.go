@@ -81,6 +81,8 @@ type UseCaseProvider interface {
 	AnalyzePerformance(ctx context.Context, dbID, action, query string, limit, thresholdMs int) (string, error)
 	// HealthCheck reports connectivity, pool pressure, and engine stats.
 	HealthCheck(ctx context.Context, dbID string) (map[string]interface{}, error)
+	// RelationshipGraph renders the database's FK relationships as Mermaid.
+	RelationshipGraph(ctx context.Context, dbID string) (string, error)
 }
 
 // BaseToolType provides common functionality for tool types
@@ -829,9 +831,8 @@ func (t *SchemaTool) CreateTool(name string, dbID string) interface{} {
 	return tools.NewTool(
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
-		// Use any string parameter for compatibility
-		tools.WithString("random_string",
-			tools.Description("Dummy parameter (optional)"),
+		tools.WithString("format",
+			tools.Description(`Output format: "list" (default, table listing) or "mermaid" (entity-relationship diagram of foreign-key relationships)`),
 		),
 	)
 }
@@ -845,17 +846,27 @@ func (t *SchemaTool) CreateUnifiedTool(name string, dbList []string) interface{}
 			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
 			tools.Required(),
 		),
-		tools.WithString("random_string",
-			tools.Description("Dummy parameter (optional)"),
+		tools.WithString("format",
+			tools.Description(`Output format: "list" (default, table listing) or "mermaid" (entity-relationship diagram of foreign-key relationships)`),
 		),
 	)
 }
 
 // HandleRequest handles schema tool requests
-func (t *SchemaTool) HandleRequest(_ context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+func (t *SchemaTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// If dbID is not provided, extract it from the tool name
 	if dbID == "" {
 		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	// format=mermaid renders the entity-relationship graph instead of a
+	// plain table listing.
+	if format, ok := request.Parameters["format"].(string); ok && format == "mermaid" {
+		graph, err := useCase.RelationshipGraph(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(graph), nil
 	}
 
 	info, err := useCase.GetDatabaseInfo(dbID)

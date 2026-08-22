@@ -70,6 +70,29 @@ func TestDescribeTable_EndToEnd(t *testing.T) {
 	}
 }
 
+// TestRelationshipGraph_EndToEnd renders a two-table FK schema as Mermaid.
+func TestRelationshipGraph_EndToEnd(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT)`); err != nil {
+		t.Fatalf("create authors failed: %v", err)
+	}
+	if _, err := raw.Exec(`CREATE TABLE books (id INTEGER PRIMARY KEY, author_id INTEGER REFERENCES authors(id), title TEXT)`); err != nil {
+		t.Fatalf("create books failed: %v", err)
+	}
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	graph, err := uc.RelationshipGraph(context.Background(), "sqlite1")
+	if err != nil {
+		t.Fatalf("relationship graph failed: %v", err)
+	}
+	if !strings.Contains(graph, "erDiagram") {
+		t.Fatalf("expected erDiagram header, got:\n%s", graph)
+	}
+	if !strings.Contains(graph, "authors ||--o{ books") || !strings.Contains(graph, `"author_id"`) {
+		t.Fatalf("expected authors->books edge, got:\n%s", graph)
+	}
+}
+
 // TestDescribeTable_ForeignKeyReferenceEndToEnd verifies FK constraints
 // resolve to their referenced table and column on a real database.
 func TestDescribeTable_ForeignKeyReferenceEndToEnd(t *testing.T) {

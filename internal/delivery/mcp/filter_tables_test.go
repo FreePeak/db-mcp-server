@@ -59,6 +59,11 @@ func (f *fakeFilterUseCase) HealthCheck(_ context.Context, _ string) (map[string
 	return nil, nil
 }
 
+// RelationshipGraph mocks the relationship graph method
+func (f *fakeFilterUseCase) RelationshipGraph(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 func sampleWPInfo() map[string]interface{} {
 	return map[string]interface{}{
 		"database": "wp_main",

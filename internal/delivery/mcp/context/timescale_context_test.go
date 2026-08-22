@@ -77,6 +77,11 @@ func (m *MockDatabaseUseCase) HealthCheck(_ context.Context, _ string) (map[stri
 	return nil, nil
 }
 
+// RelationshipGraph mocks the relationship graph method
+func (m *MockDatabaseUseCase) RelationshipGraph(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 func TestTimescaleDBContextProvider(t *testing.T) {
 	// Create a mock use case provider
 	mockUseCase := new(MockDatabaseUseCase)

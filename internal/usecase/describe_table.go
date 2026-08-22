@@ -15,9 +15,80 @@ var plainIdentifierRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_$]*(\.[A-Za-z_]
 
 func isPlainIdentifier(s string) bool { return plainIdentifierRe.MatchString(s) }
 
+// RelationshipGraph renders all foreign-key relationships in a database as
+// a Mermaid erDiagram, so agents can see entity relationships at a glance
+// instead of describing every table individually.
+func (uc *DatabaseUseCase) RelationshipGraph(ctx context.Context, dbID string) (string, error) {
+	info, err := uc.GetDatabaseInfo(dbID)
+	if err != nil {
+		return "", fmt.Errorf("failed to list tables: %w", err)
+	}
+
+	tablesRaw, ok := info["tables"].([]map[string]interface{})
+	if !ok || len(tablesRaw) == 0 {
+		return "", fmt.Errorf("no tables found in database %q", dbID)
+	}
+
+	var b strings.Builder
+	b.WriteString("erDiagram\n")
+
+	edges := []string{}
+	seen := map[string]bool{}
+	for _, tr := range tablesRaw {
+		tableName := fmt.Sprintf("%v", tr["table_name"])
+		if !isPlainIdentifier(tableName) {
+			continue
+		}
+		desc, err := uc.DescribeTable(ctx, dbID, tableName)
+		if err != nil {
+			logger.Warn("skipping %s in relationship graph: %v", tableName, err)
+			continue
+		}
+		constraints, _ := describeConstraintRows(desc["constraints"])
+		for _, c := range constraints {
+			ct := metaString(c, "constraint_type")
+			if ct != "FOREIGN KEY" {
+				continue
+			}
+			refTable := metaString(c, "referenced_table")
+			col := metaString(c, "column_name")
+			if refTable == "" || col == "" {
+				continue
+			}
+			key := tableName + "." + col + "->" + refTable
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			edges = append(edges, fmt.Sprintf("    %s ||--o{ %s : \"%s\"", refTable, tableName, col))
+		}
+	}
+
+	if len(edges) == 0 {
+		b.WriteString("    %% No foreign key relationships detected\n")
+	}
+	for _, e := range edges {
+		b.WriteString(e + "\n")
+	}
+	return b.String(), nil
+}
+
+// metaString safely extracts a string field from a metadata row map.
+func metaString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func describeConstraintRows(v interface{}) ([]map[string]interface{}, bool) {
+	rows, ok := v.([]map[string]interface{})
+	return rows, ok
+}
+
 // DescribeTable returns column metadata, index definitions, and a row
-// estimate for one table, using engine-appropriate catalog queries.
-// Agents previously could only list table names; per-column inspection is
+// estimate for one table using engine-appropriate catalog queries. Agents
+// previously could only list table names; per-column inspection is
 // required for accurate SQL generation against large schemas.
 func (uc *DatabaseUseCase) DescribeTable(ctx context.Context, dbID, table string) (map[string]interface{}, error) {
 	table = strings.TrimSpace(table)

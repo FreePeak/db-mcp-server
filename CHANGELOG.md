@@ -45,6 +45,7 @@
 ### Changed
 - `performance_<db_id>` tool now returns real data instead of placeholder text: tracked query metrics (count/avg/max/min per normalized statement), recorded slow queries with errors, static SQL issue suggestions (select-star, cartesian joins, missing WHERE, etc.), and history reset — wired to the query-tracking analyzer that already instruments every `query_*` execution
 - `performance_<db_id>` gains `engine_slow_queries` action: top statements by execution time from the database's own catalogs — `pg_stat_statements` (PostgreSQL/TimescaleDB) and `performance_schema` digests (MySQL) — with actionable degradation notes when extensions or grants are missing
+- `schema_<db_id>` accepts `format=mermaid`: renders the database's foreign-key relationships as a Mermaid `erDiagram`, giving agents an at-a-glance entity-relationship map without describing every table
 
 ### Fixed
 - **Read-only bypass (security)**: write statements (`INSERT`/`UPDATE`/`DELETE`/DDL/data-modifying CTEs/stacked statements) executed through the `query_*` tool no longer bypass the per-database `read_only: true` guard; statement classification strips comments and string literals and defaults to deny for unrecognized leading keywords

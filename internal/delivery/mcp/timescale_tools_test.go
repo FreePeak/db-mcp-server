@@ -79,6 +79,11 @@ func (m *MockDatabaseUseCase) HealthCheck(_ context.Context, _ string) (map[stri
 	return nil, nil
 }
 
+// RelationshipGraph mocks the relationship graph method
+func (m *MockDatabaseUseCase) RelationshipGraph(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 func TestTimescaleDBTool(t *testing.T) {
 	tool := mcp.NewTimescaleDBTool()
 	assert.Equal(t, "timescaledb", tool.GetName())
