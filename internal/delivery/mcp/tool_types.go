@@ -79,6 +79,8 @@ type UseCaseProvider interface {
 	// AnalyzePerformance reports tracked query metrics, slow queries, and
 	// static SQL issue suggestions.
 	AnalyzePerformance(ctx context.Context, dbID, action, query string, limit, thresholdMs int) (string, error)
+	// HealthCheck reports connectivity, pool pressure, and engine stats.
+	HealthCheck(ctx context.Context, dbID string) (map[string]interface{}, error)
 }
 
 // BaseToolType provides common functionality for tool types
@@ -722,6 +724,87 @@ func describeRows(v interface{}) ([]map[string]interface{}, bool) {
 
 //------------------------------------------------------------------------------
 
+//------------------------------------------------------------------------------
+// HealthTool implementation
+//------------------------------------------------------------------------------
+
+// HealthTool reports connectivity, connection-pool pressure, and
+// best-effort engine statistics for a database.
+type HealthTool struct {
+	BaseToolType
+}
+
+// NewHealthTool creates a new health tool type
+func NewHealthTool() *HealthTool {
+	return &HealthTool{
+		BaseToolType: BaseToolType{
+			name:        "health",
+			description: "Report connectivity, connection-pool state, and engine health statistics",
+		},
+	}
+}
+
+// CreateTool creates a health tool for a specific database
+func (t *HealthTool) CreateTool(name string, dbID string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetDescription(dbID)),
+	)
+}
+
+// CreateUnifiedTool creates a health tool with a database parameter
+func (t *HealthTool) CreateUnifiedTool(name string, dbList []string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetUnifiedDescription(dbList)),
+		tools.WithString("database",
+			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			tools.Required(),
+		),
+	)
+}
+
+// HandleRequest handles health tool requests
+func (t *HealthTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	if dbID == "" {
+		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	info, err := useCase.HealthCheck(ctx, dbID)
+	if err != nil {
+		return nil, err
+	}
+	return createTextResponse(formatHealthResult(info)), nil
+}
+
+// formatHealthResult renders the health payload as compact readable text.
+func formatHealthResult(info map[string]interface{}) string {
+	var b strings.Builder
+	status := "healthy"
+	if s, ok := info["healthy"].(bool); ok && !s {
+		status = "UNHEALTHY"
+	}
+	fmt.Fprintf(&b, "Database %v: %s\n", info["database"], status)
+	if errMsg, ok := info["error"].(string); ok {
+		fmt.Fprintf(&b, "Error: %s\n", errMsg)
+		return b.String()
+	}
+	if ping, ok := info["ping_ms"].(float64); ok {
+		fmt.Fprintf(&b, "Ping: %.2f ms\n", ping)
+	}
+	for _, key := range []string{"pool_open_connections", "pool_in_use", "pool_idle", "pool_wait_count", "pool_wait_duration_ms"} {
+		if v, ok := info[key]; ok {
+			fmt.Fprintf(&b, "%v: %v\n", key, v)
+		}
+	}
+	for _, key := range []string{"buffer_cache_hit_ratio_pct", "buffer_cache_miss_ratio_pct", "engine_stats_error"} {
+		if v, ok := info[key].(string); ok && v != "" {
+			fmt.Fprintf(&b, "%v: %s\n", key, v)
+		}
+	}
+	return b.String()
+}
+
 // SchemaTool handles database schema exploration
 type SchemaTool struct {
 	BaseToolType
@@ -856,6 +939,7 @@ func NewToolTypeFactory() *ToolTypeFactory {
 	factory.Register(NewPerformanceTool())
 	factory.Register(NewExplainTool())
 	factory.Register(NewDescribeTool())
+	factory.Register(NewHealthTool())
 	factory.Register(NewSchemaTool())
 	factory.Register(NewListDatabasesTool())
 	factory.Register(NewListDirectoryTool())

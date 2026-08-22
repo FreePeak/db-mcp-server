@@ -73,3 +73,8 @@ func (m *MockDatabaseUseCase) AnalyzePerformance(_ context.Context, _, _, _ stri
 	args := m.Called()
 	return args.String(0), args.Error(1)
 }
+
+// HealthCheck mocks the health method
+func (m *MockDatabaseUseCase) HealthCheck(_ context.Context, _ string) (map[string]interface{}, error) {
+	return nil, nil
+}

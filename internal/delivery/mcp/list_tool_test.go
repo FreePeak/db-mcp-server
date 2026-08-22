@@ -63,6 +63,11 @@ func (m *MockUseCaseProvider) AnalyzePerformance(_ context.Context, _, _, _ stri
 	return "", nil
 }
 
+// HealthCheck mocks the health method
+func (m *MockUseCaseProvider) HealthCheck(_ context.Context, _ string) (map[string]interface{}, error) {
+	return nil, nil
+}
+
 func TestListDirectoryTool(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "list_tool_test")

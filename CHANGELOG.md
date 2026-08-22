@@ -40,6 +40,7 @@
 - New `explain_<db_id>` tool (unified mode: `explain`): shows the engine's execution plan for a statement without executing it — `EXPLAIN` (PostgreSQL/TimescaleDB), `EXPLAIN ANALYZE` opt-in (MySQL), `EXPLAIN QUERY PLAN` (SQLite), two-step `EXPLAIN PLAN FOR` + `DBMS_XPLAN.DISPLAY` (Oracle)
 - New `describe_<db_id>` tool (unified mode: `describe`): per-table metadata inspection — columns, indexes, and row estimates via engine-appropriate catalog queries, with identifier validation against catalog-query injection
 - `describe_<db_id>` also surfaces constraints (PRIMARY KEY / FOREIGN KEY / UNIQUE) from engine constraint catalogs, best-effort so introspection gaps never fail the describe
+- New `health_<db_id>` tool (unified mode: `health`): connectivity probe with ping latency, Go `database/sql` pool pressure (open/in-use/idle/wait count and duration), and best-effort engine indicators — PostgreSQL buffer-cache hit ratio, MySQL InnoDB buffer efficiency
 
 ### Changed
 - `performance_<db_id>` tool now returns real data instead of placeholder text: tracked query metrics (count/avg/max/min per normalized statement), recorded slow queries with errors, static SQL issue suggestions (select-star, cartesian joins, missing WHERE, etc.), and history reset — wired to the query-tracking analyzer that already instruments every `query_*` execution

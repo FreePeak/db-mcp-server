@@ -57,6 +57,8 @@ type DatabaseAdapter struct {
 		Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 		BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 		IsReadOnly() bool
+		Ping(ctx context.Context) error
+		DB() *sql.DB
 	}
 }
 
@@ -105,6 +107,23 @@ func (a *DatabaseAdapter) MaxRows() int {
 		return r.MaxRows()
 	}
 	return 0
+}
+
+// Ping probes liveness of the underlying connection pool.
+func (a *DatabaseAdapter) Ping(ctx context.Context) error {
+	return a.db.Ping(ctx)
+}
+
+// HealthStats snapshots Go database/sql pool pressure for this database.
+func (a *DatabaseAdapter) HealthStats() map[string]interface{} {
+	s := a.db.DB().Stats()
+	return map[string]interface{}{
+		"pool_open_connections": s.OpenConnections,
+		"pool_in_use":           s.InUse,
+		"pool_idle":             s.Idle,
+		"pool_wait_count":       s.WaitCount,
+		"pool_wait_duration_ms": float64(s.WaitDuration.Microseconds()) / 1000.0,
+	}
 }
 
 // RowsAdapter adapts sql.Rows to domain.Rows

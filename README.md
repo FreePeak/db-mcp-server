@@ -508,6 +508,7 @@ For each connected database, DB MCP Server automatically generates these special
 | `performance_<db_id>` | Analyze query performance and get optimization suggestions |
 | `explain_<db_id>` | Show the execution plan for a SQL statement without running it; `analyze: true` executes with timing/buffer stats (PostgreSQL/MySQL). Writes stay blocked on read-only databases |
 | `describe_<db_id>` | Inspect one table's columns, indexes, and row estimate via engine catalog queries |
+| `health_<db_id>` | Report connectivity, ping latency, connection-pool state, and engine stats (PostgreSQL buffer-cache hit ratio, MySQL InnoDB buffer efficiency) |
 
 ### TimescaleDB Tools
 

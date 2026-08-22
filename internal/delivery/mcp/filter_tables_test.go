@@ -54,6 +54,11 @@ func (f *fakeFilterUseCase) AnalyzePerformance(_ context.Context, _, _, _ string
 	return "", nil
 }
 
+// HealthCheck mocks the health method
+func (f *fakeFilterUseCase) HealthCheck(_ context.Context, _ string) (map[string]interface{}, error) {
+	return nil, nil
+}
+
 func sampleWPInfo() map[string]interface{} {
 	return map[string]interface{}{
 		"database": "wp_main",

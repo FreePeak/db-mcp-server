@@ -74,6 +74,11 @@ func (m *MockDatabaseUseCase) AnalyzePerformance(_ context.Context, _, _, _ stri
 	return "", nil
 }
 
+// HealthCheck mocks the health method
+func (m *MockDatabaseUseCase) HealthCheck(_ context.Context, _ string) (map[string]interface{}, error) {
+	return nil, nil
+}
+
 func TestTimescaleDBTool(t *testing.T) {
 	tool := mcp.NewTimescaleDBTool()
 	assert.Equal(t, "timescaledb", tool.GetName())

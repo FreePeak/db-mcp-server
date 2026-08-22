@@ -72,6 +72,11 @@ func (m *MockDatabaseUseCase) AnalyzePerformance(_ context.Context, _, _, _ stri
 	return "", nil
 }
 
+// HealthCheck mocks the health method
+func (m *MockDatabaseUseCase) HealthCheck(_ context.Context, _ string) (map[string]interface{}, error) {
+	return nil, nil
+}
+
 func TestTimescaleDBContextProvider(t *testing.T) {
 	// Create a mock use case provider
 	mockUseCase := new(MockDatabaseUseCase)
