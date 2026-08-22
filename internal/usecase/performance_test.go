@@ -93,3 +93,17 @@ func TestAnalyzePerformance_InvalidAction(t *testing.T) {
 		t.Fatal("expected error for invalid action")
 	}
 }
+
+// TestAnalyzePerformance_EngineSlowQueriesUnsupportedEngine verifies the
+// sqlite path degrades to a clear capability note.
+func TestAnalyzePerformance_EngineSlowQueriesUnsupportedEngine(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	out, err := uc.AnalyzePerformance(context.Background(), "sq1", "engine_slow_queries", "", 5, 0)
+	if err != nil {
+		t.Fatalf("unsupported engine must degrade gracefully, got: %v", err)
+	}
+	if !strings.Contains(out, "not supported on") {
+		t.Fatalf("expected capability note, got:\n%s", out)
+	}
+}

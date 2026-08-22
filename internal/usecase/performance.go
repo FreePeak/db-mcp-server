@@ -31,6 +31,11 @@ func (uc *DatabaseUseCase) AnalyzePerformance(ctx context.Context, dbID, action,
 			limit = 10
 		}
 		return formatSlowQueries(analyzer.SlowQueries(), limit), nil
+	case "engine_slow_queries":
+		if limit <= 0 {
+			limit = 10
+		}
+		return uc.engineSlowQueries(ctx, dbID, limit)
 	case "suggest":
 		if strings.TrimSpace(query) == "" {
 			return "", fmt.Errorf("query parameter is required for suggest action")
@@ -41,8 +46,55 @@ func (uc *DatabaseUseCase) AnalyzePerformance(ctx context.Context, dbID, action,
 		analyzer.Reset()
 		return fmt.Sprintf("Performance history reset on database %q.", dbID), nil
 	default:
-		return "", fmt.Errorf("invalid performance action %q (use stats, slow_queries, suggest, or reset)", action)
+		return "", fmt.Errorf("invalid performance action %q (use stats, slow_queries, engine_slow_queries, suggest, or reset)", action)
 	}
+}
+
+// engineSlowQueries surfaces the database's own statement statistics —
+// ground truth that outlives this process, unlike the in-memory tracker.
+// PostgreSQL reads pg_stat_statements (graceful note when the extension is
+// absent); MySQL reads performance_schema digest tables. Output reuses the
+// standard query-result formatting.
+func (uc *DatabaseUseCase) engineSlowQueries(ctx context.Context, dbID string, limit int) (string, error) {
+	dbType, err := uc.repo.GetDatabaseType(dbID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get database type: %w", err)
+	}
+
+	var header, sqlText string
+	switch strings.ToLower(dbType) {
+	case "postgres", "timescale", "timescaledb":
+		header = "Top statements by mean execution time (pg_stat_statements):\n\n"
+		check, err := uc.ExecuteQuery(ctx, dbID, `SELECT count(*) AS n FROM pg_extension WHERE extname = 'pg_stat_statements'`, nil)
+		if err == nil && !strings.Contains(check, " 1") {
+			return "pg_stat_statements extension is not available on this database. Enable it with:\n  CREATE EXTENSION pg_stat_statements;\n(shared_preload_libraries must include pg_stat_statements for tracking.)", nil
+		}
+		sqlText = fmt.Sprintf(`SELECT round(mean_exec_time::numeric, 2) AS mean_ms, calls, left(query, 80) AS query
+FROM pg_stat_statements
+ORDER BY mean_exec_time DESC LIMIT %d`, limit)
+	case "mysql":
+		header = "Top statement digests by total time (performance_schema):\n\n"
+		sqlText = fmt.Sprintf(`SELECT LEFT(DIGEST_TEXT, 80) AS digest, COUNT_STAR AS calls,
+ROUND(AVG_TIMER_WAIT/1e9, 2) AS mean_ms, ROUND(SUM_TIMER_WAIT/1e9, 2) AS total_ms
+FROM performance_schema.events_statements_summary_by_digest
+WHERE SCHEMA_NAME = DATABASE()
+ORDER BY SUM_TIMER_WAIT DESC LIMIT %d`, limit)
+	default:
+		return fmt.Sprintf("engine-level statement statistics are not supported on %q; they are available on PostgreSQL (pg_stat_statements) and MySQL (performance_schema)", dbType), nil
+	}
+
+	out, err := uc.ExecuteQuery(ctx, dbID, sqlText, nil)
+	if err != nil {
+		note := fmt.Sprintf("engine-level statistics unavailable: %v", err)
+		switch strings.ToLower(dbType) {
+		case "mysql":
+			note += "\nReading statement digests requires SELECT on performance_schema.events_statements_summary_by_digest."
+		case "postgres", "timescale", "timescaledb":
+			note += "\npg_stat_statements must also be loaded via shared_preload_libraries for tracking."
+		}
+		return note, nil
+	}
+	return header + out, nil
 }
 
 func formatQueryMetrics(analyzer *dbtools.PerformanceAnalyzer) string {
