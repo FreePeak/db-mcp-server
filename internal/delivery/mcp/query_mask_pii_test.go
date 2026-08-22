@@ -300,3 +300,25 @@ type stubSensitiveUseCase struct{ stubMaskingUseCase }
 func (s *stubSensitiveUseCase) FindSensitiveColumns(_ context.Context, dbID string) ([]usecase.SensitiveFinding, error) {
 	return []usecase.SensitiveFinding{{Table: "users", Column: "email", Category: "email"}}, nil
 }
+
+func (s *stubSensitiveUseCase) ScanContentPII(_ context.Context, dbID string, n int) ([]usecase.ContentPIIFinding, error) {
+	return []usecase.ContentPIIFinding{{Table: "events", Column: "notes", Categories: []string{"email"}, SamplesScanned: 10}}, nil
+}
+
+// TestSchemaTool_SensitiveIncludesContentSection proves the report merges
+// name-based and content-based findings.
+func TestSchemaTool_SensitiveIncludesContentSection(t *testing.T) {
+	tool := NewSchemaTool()
+	uc := &stubSensitiveUseCase{}
+	resp, err := tool.HandleRequest(context.Background(), server.ToolCallRequest{
+		Name:       "schema_db1",
+		Parameters: map[string]interface{}{"format": "sensitive"},
+	}, "", uc)
+	if err != nil {
+		t.Fatalf("handle failed: %v", err)
+	}
+	lower := strings.ToLower(sprintfResponse(resp))
+	if !strings.Contains(lower, "users") || !strings.Contains(lower, "content-detected") || !strings.Contains(lower, "events.notes") {
+		t.Fatalf("expected merged report with name + content sections:\n%s", lower)
+	}
+}

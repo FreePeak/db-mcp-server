@@ -281,6 +281,12 @@ type sensitiveColumnCapable interface {
 	FindSensitiveColumns(ctx context.Context, dbID string) ([]usecase.SensitiveFinding, error)
 }
 
+// contentPICapable is implemented by use cases offering sampled content-based
+// PII detection; optional companion to sensitiveColumnCapable.
+type contentPICapable interface {
+	ScanContentPII(ctx context.Context, dbID string, sampleRows int) ([]usecase.ContentPIIFinding, error)
+}
+
 // schemaDriftCapable is implemented by use cases offering schema baselines
 // and drift detection.
 type schemaDriftCapable interface {
@@ -1062,7 +1068,22 @@ func (t *SchemaTool) HandleRequest(ctx context.Context, request server.ToolCallR
 		if err != nil {
 			return nil, err
 		}
-		return createTextResponse(usecase.FormatSensitiveColumnsReport(dbID, findings)), nil
+		report := usecase.FormatSensitiveColumnsReport(dbID, findings)
+		// Merge content-based findings when the provider supports sampling.
+		if cc, contentCapable := useCase.(contentPICapable); contentCapable {
+			contentFindings, cerr := cc.ScanContentPII(ctx, dbID, 50)
+			if cerr == nil && len(contentFindings) > 0 {
+				var b strings.Builder
+				b.WriteString(report)
+				b.WriteString("\nContent-detected columns (PII patterns found in sampled values):\n")
+				for _, f := range contentFindings {
+					fmt.Fprintf(&b, "  %s.%s [%s] (%d rows sampled)\n",
+						f.Table, f.Column, strings.Join(f.Categories, ", "), f.SamplesScanned)
+				}
+				report = b.String()
+			}
+		}
+		return createTextResponse(report), nil
 	}
 
 	info, err := useCase.GetDatabaseInfo(dbID)

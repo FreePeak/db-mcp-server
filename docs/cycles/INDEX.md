@@ -54,6 +54,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 38 | Release prep: package.json 1.12.0 + CHANGELOG cut | ✅ Shipped (hackathon branch) | [cycle-38](cycle-38-release-prep.md) |
 | 39 | Sensitive column discovery (`format=sensitive`) | ✅ Shipped (hackathon branch) | [cycle-39](cycle-39-sensitive-columns.md) |
 | 40 | Content-based PII detection (sampled, pattern-confirmed) | ✅ Shipped (hackathon branch) | [cycle-40](cycle-40-content-pii.md) |
+| 41 | Merged sensitive report (name + content sections in one payload) | ✅ Shipped (hackathon branch) | [cycle-41](cycle-41-merged-report.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
