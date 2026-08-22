@@ -4,7 +4,6 @@ package usecase
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -284,67 +283,36 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 	return formatQueryResults(rows, db.MaxRows())
 }
 
+// ExecuteQueryMasked executes a query with optional PII masking applied to
+// result cells. mask=false preserves the legacy raw behavior.
+func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool) (string, error) {
+	db, err := uc.repo.GetDatabase(dbID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get database: %w", err)
+	}
+
+	if db.IsReadOnly() && IsWriteStatement(query) {
+		return "", fmt.Errorf("database %q is configured as read-only; write statements are not allowed via queries", dbID)
+	}
+
+	rows, err := db.Query(ctx, query, params...)
+	if err != nil {
+		return "", fmt.Errorf("query execution failed: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			logger.Error("error closing rows: %v", closeErr)
+		}
+	}()
+
+	return renderQueryResults(rows, db.MaxRows(), mask)
+}
+
 // formatQueryResults renders query results as text, stopping after maxRows
 // rows when maxRows > 0 so large result sets cannot flood the client's
 // context window. The caller owns closing rows.
 func formatQueryResults(rows domain.Rows, maxRows int) (string, error) {
-	columns, err := rows.Columns()
-	if err != nil {
-		return "", fmt.Errorf("failed to get column names: %w", err)
-	}
-
-	var resultText strings.Builder
-	resultText.WriteString("Results:\n\n")
-	resultText.WriteString(strings.Join(columns, "\t") + "\n")
-	resultText.WriteString(strings.Repeat("-", 80) + "\n")
-
-	// Prepare for scanning
-	values := make([]interface{}, len(columns))
-	valuePtrs := make([]interface{}, len(columns))
-	for i := range columns {
-		valuePtrs[i] = &values[i]
-	}
-
-	rowCount := 0
-	truncated := false
-	for rows.Next() {
-		if maxRows > 0 && rowCount >= maxRows {
-			truncated = true
-			break
-		}
-		rowCount++
-		if scanErr := rows.Scan(valuePtrs...); scanErr != nil {
-			return "", fmt.Errorf("failed to scan row: %w", scanErr)
-		}
-
-		// Convert to strings and print
-		var rowText []string
-		for i := range columns {
-			val := values[i]
-			if val == nil {
-				rowText = append(rowText, "NULL")
-			} else {
-				switch v := val.(type) {
-				case []byte:
-					rowText = append(rowText, string(v))
-				default:
-					rowText = append(rowText, fmt.Sprintf("%v", v))
-				}
-			}
-		}
-		resultText.WriteString(strings.Join(rowText, "\t") + "\n")
-	}
-	if err = rows.Err(); err != nil {
-		return "", fmt.Errorf("error reading rows: %w", err)
-	}
-
-	if truncated {
-		resultText.WriteString(fmt.Sprintf("\nTruncated: showing first %d rows (max_rows=%d). Refine the query with LIMIT or tighter filters to see more.", rowCount, maxRows))
-		resultText.WriteString(fmt.Sprintf("\nTotal rows shown: %d", rowCount))
-	} else {
-		resultText.WriteString(fmt.Sprintf("\nTotal rows: %d", rowCount))
-	}
-	return resultText.String(), nil
+	return renderQueryResults(rows, maxRows, false)
 }
 
 // ExecuteStatement executes a SQL statement (INSERT, UPDATE, DELETE)

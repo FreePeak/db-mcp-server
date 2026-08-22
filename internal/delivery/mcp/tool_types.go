@@ -159,7 +159,16 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 			tools.Description("Query parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
 		),
+		tools.WithBoolean("mask_pii",
+			tools.Description("Mask PII in results (emails, phones, cards, SSNs, IPs)"),
+		),
 	)
+}
+
+// piIMaskingUseCase is implemented by use cases that support opt-in PII
+// masking; detection keeps existing mocks and alternate providers compatible.
+type piIMaskingUseCase interface {
+	ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool) (string, error)
 }
 
 // HandleRequest handles query tool requests
@@ -178,6 +187,20 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 	if request.Parameters["params"] != nil {
 		if paramsArr, ok := request.Parameters["params"].([]interface{}); ok {
 			queryParams = paramsArr
+		}
+	}
+
+	maskPII := false
+	if v, ok := request.Parameters["mask_pii"].(bool); ok {
+		maskPII = v
+	}
+	if maskPII {
+		if m, canMask := useCase.(piIMaskingUseCase); canMask {
+			result, err := m.ExecuteQueryMasked(ctx, dbID, query, queryParams, true)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(result), nil
 		}
 	}
 
