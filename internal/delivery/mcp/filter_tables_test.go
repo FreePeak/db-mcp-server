@@ -44,6 +44,9 @@ func (f *fakeFilterUseCase) GetDatabaseType(dbID string) (string, error) {
 	return args.String(0), args.Error(1)
 }
 func (f *fakeFilterUseCase) IsLazyLoading() bool { return true }
+func (f *fakeFilterUseCase) ExecuteExplain(_ context.Context, _, _ string, _ bool) (string, error) {
+	return "", nil
+}
 
 func sampleWPInfo() map[string]interface{} {
 	return map[string]interface{}{

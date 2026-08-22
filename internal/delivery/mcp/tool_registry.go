@@ -102,7 +102,7 @@ func (tr *ToolRegistry) RegisterAllTools(ctx context.Context, useCase UseCasePro
 func (tr *ToolRegistry) registerDatabaseTools(ctx context.Context, dbID string) error {
 	// Get all tool types from the factory
 	toolTypeNames := []string{
-		"query", "execute", "transaction", "performance", "schema",
+		"query", "execute", "transaction", "performance", "explain", "schema",
 	}
 
 	logger.Info("Registering tools for database %s", dbID)
@@ -231,7 +231,7 @@ func (tr *ToolRegistry) registerTool(ctx context.Context, toolTypeName string, n
 func (tr *ToolRegistry) registerUnifiedTools(ctx context.Context) error {
 	dbList := tr.databaseUseCase.ListDatabases()
 
-	toolTypeNames := []string{"query", "execute", "transaction", "performance", "schema", "filter_tables"}
+	toolTypeNames := []string{"query", "execute", "transaction", "performance", "explain", "schema", "filter_tables"}
 
 	registrationErrors := 0
 	for _, typeName := range toolTypeNames {

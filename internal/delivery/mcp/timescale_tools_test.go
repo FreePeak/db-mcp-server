@@ -59,6 +59,11 @@ func (m *MockDatabaseUseCase) IsLazyLoading() bool {
 	return args.Bool(0)
 }
 
+// ExecuteExplain mocks the explain method
+func (m *MockDatabaseUseCase) ExecuteExplain(_ context.Context, _, _ string, _ bool) (string, error) {
+	return "", nil
+}
+
 func TestTimescaleDBTool(t *testing.T) {
 	tool := mcp.NewTimescaleDBTool()
 	assert.Equal(t, "timescaledb", tool.GetName())

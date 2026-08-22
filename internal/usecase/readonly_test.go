@@ -45,11 +45,14 @@ func (f *fakeDB) Begin(ctx context.Context, opts *domain.TxOptions) (domain.Tx, 
 func (f *fakeDB) IsReadOnly() bool { return f.readOnly }
 func (f *fakeDB) MaxRows() int     { return f.maxRows }
 
-type fakeRepo struct{ db domain.Database }
+type fakeRepo struct {
+	db     domain.Database
+	dbType string
+}
 
 func (r *fakeRepo) GetDatabase(_ string) (domain.Database, error) { return r.db, nil }
 func (r *fakeRepo) ListDatabases() []string                       { return nil }
-func (r *fakeRepo) GetDatabaseType(_ string) (string, error)      { return "", nil }
+func (r *fakeRepo) GetDatabaseType(_ string) (string, error)      { return r.dbType, nil }
 func (r *fakeRepo) IsLazyLoading() bool                           { return false }
 
 // TestExecuteStatement_ReadOnlyDatabaseRefusesWrites locks in the fix for

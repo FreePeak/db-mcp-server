@@ -57,6 +57,11 @@ func (m *MockDatabaseUseCase) IsLazyLoading() bool {
 	return args.Bool(0)
 }
 
+// ExecuteExplain mocks the explain method
+func (m *MockDatabaseUseCase) ExecuteExplain(_ context.Context, _, _ string, _ bool) (string, error) {
+	return "", nil
+}
+
 func TestTimescaleDBContextProvider(t *testing.T) {
 	// Create a mock use case provider
 	mockUseCase := new(MockDatabaseUseCase)

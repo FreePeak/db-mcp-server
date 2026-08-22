@@ -506,6 +506,7 @@ For each connected database, DB MCP Server automatically generates these special
 | Tool Name | Description |
 |-----------|-------------|
 | `performance_<db_id>` | Analyze query performance and get optimization suggestions |
+| `explain_<db_id>` | Show the execution plan for a SQL statement without running it; `analyze: true` executes with timing/buffer stats (PostgreSQL/MySQL). Writes stay blocked on read-only databases |
 
 ### TimescaleDB Tools
 

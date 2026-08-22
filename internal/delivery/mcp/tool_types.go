@@ -72,6 +72,8 @@ type UseCaseProvider interface {
 	ListDatabases() []string
 	GetDatabaseType(dbID string) (string, error)
 	IsLazyLoading() bool
+	// ExecuteExplain returns the engine's execution plan for a statement.
+	ExecuteExplain(ctx context.Context, dbID, statement string, analyze bool) (string, error)
 }
 
 // BaseToolType provides common functionality for tool types
@@ -530,6 +532,85 @@ func (t *PerformanceTool) HandleRequest(_ context.Context, request server.ToolCa
 }
 
 //------------------------------------------------------------------------------
+// ExplainTool implementation
+//------------------------------------------------------------------------------
+
+// ExplainTool handles execution-plan analysis without (normally) running
+// the statement.
+type ExplainTool struct {
+	BaseToolType
+}
+
+// NewExplainTool creates a new explain tool type
+func NewExplainTool() *ExplainTool {
+	return &ExplainTool{
+		BaseToolType: BaseToolType{
+			name:        "explain",
+			description: "Show the database execution plan for a SQL statement",
+		},
+	}
+}
+
+// CreateTool creates an explain tool for a specific database
+func (t *ExplainTool) CreateTool(name string, dbID string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetDescription(dbID)),
+		tools.WithString("statement",
+			tools.Description("SQL statement to explain (SELECT, INSERT, UPDATE, or DELETE)"),
+			tools.Required(),
+		),
+		tools.WithBoolean("analyze",
+			tools.Description("Execute the statement and include real timing/buffer statistics (writes still refused on read-only databases)"),
+		),
+	)
+}
+
+// CreateUnifiedTool creates an explain tool with a database parameter
+func (t *ExplainTool) CreateUnifiedTool(name string, dbList []string) interface{} {
+	return tools.NewTool(
+		name,
+		tools.WithDescription(t.GetUnifiedDescription(dbList)),
+		tools.WithString("database",
+			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			tools.Required(),
+		),
+		tools.WithString("statement",
+			tools.Description("SQL statement to explain (SELECT, INSERT, UPDATE, or DELETE)"),
+			tools.Required(),
+		),
+		tools.WithBoolean("analyze",
+			tools.Description("Execute the statement and include real timing/buffer statistics (writes still refused on read-only databases)"),
+		),
+	)
+}
+
+// HandleRequest handles explain tool requests
+func (t *ExplainTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	if dbID == "" {
+		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	statement, ok := request.Parameters["statement"].(string)
+	if !ok {
+		return nil, fmt.Errorf("statement parameter must be a string")
+	}
+
+	analyze := false
+	if request.Parameters["analyze"] != nil {
+		if b, ok := request.Parameters["analyze"].(bool); ok {
+			analyze = b
+		}
+	}
+
+	result, err := useCase.ExecuteExplain(ctx, dbID, statement, analyze)
+	if err != nil {
+		return nil, err
+	}
+	return createTextResponse(result), nil
+}
+
+//------------------------------------------------------------------------------
 // SchemaTool implementation
 //------------------------------------------------------------------------------
 
@@ -665,6 +746,7 @@ func NewToolTypeFactory() *ToolTypeFactory {
 	factory.Register(NewExecuteTool())
 	factory.Register(NewTransactionTool())
 	factory.Register(NewPerformanceTool())
+	factory.Register(NewExplainTool())
 	factory.Register(NewSchemaTool())
 	factory.Register(NewListDatabasesTool())
 	factory.Register(NewListDirectoryTool())

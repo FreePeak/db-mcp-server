@@ -18,6 +18,17 @@ type sqliteDB struct {
 	db *sql.DB
 }
 
+// openSQLiteForTest opens a fresh in-memory SQLite database for tests.
+func openSQLiteForTest(t *testing.T) *sql.DB {
+	t.Helper()
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	return raw
+}
+
 func (s *sqliteDB) Query(ctx context.Context, query string, args ...interface{}) (domain.Rows, error) {
 	return s.db.QueryContext(ctx, query, args...)
 }
@@ -50,11 +61,7 @@ func (t *sqliteTx) Exec(ctx context.Context, q string, args ...interface{}) (dom
 // discards staged writes, a commit persists them. The previous stub behavior
 // committed at begin and faked the rest, silently corrupting expectations.
 func TestExecuteTransaction_EndToEndRollbackAndCommit(t *testing.T) {
-	raw, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("failed to open sqlite: %v", err)
-	}
-	defer func() { _ = raw.Close() }()
+	raw := openSQLiteForTest(t)
 
 	if _, err := raw.Exec("CREATE TABLE kv (k TEXT PRIMARY KEY, v INTEGER)"); err != nil {
 		t.Fatalf("failed to create table: %v", err)

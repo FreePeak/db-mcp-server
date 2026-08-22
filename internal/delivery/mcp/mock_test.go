@@ -52,3 +52,9 @@ func (m *MockDatabaseUseCase) IsLazyLoading() bool {
 	args := m.Called()
 	return args.Bool(0)
 }
+
+// ExecuteExplain mocks the explain method
+func (m *MockDatabaseUseCase) ExecuteExplain(_ context.Context, _, _ string, _ bool) (string, error) {
+	args := m.Called()
+	return args.String(0), args.Error(1)
+}
