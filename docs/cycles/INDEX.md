@@ -191,6 +191,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 175 | random_page_cost audit, spinning-disk planner cost model detection (action=random_page_cost) | ✅ Shipped (hackathon branch) | [cycle-175](cycle-175-random-page-cost.md) |
 | 176 | innodb_log_buffer_size audit, WAL-buffer overflow evidence via Innodb_log_waits (action=log_buffer_size) | ✅ Shipped (hackathon branch) | [cycle-176](cycle-176-log-buffer-size.md) |
 | 177 | effective_cache_size audit, planner cache assumption vs host RAM (action=effective_cache_size) | ✅ Shipped (hackathon branch) | [cycle-177](cycle-177-effective-cache-size.md) |
+| 178 | default_statistics_target audit, ANALYZE sampling depth for skewed/high-cardinality columns (action=default_statistics_target) | ✅ Shipped (hackathon branch) | [cycle-178](cycle-178-statistics-target.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
