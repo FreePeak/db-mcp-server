@@ -160,6 +160,12 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithNumber("timeout_ms",
 			tools.Description("Cancel the query if it exceeds this many milliseconds"),
 		),
+		tools.WithBoolean("unused_indexes",
+			tools.Description("List indexes the engine has barely scanned (write-tax candidates; Postgres/MySQL)"),
+		),
+		tools.WithNumber("min_scans",
+			tools.Description("Threshold for unused_indexes: an index needs fewer than this many scans to qualify (default 100)"),
+		),
 		tools.WithString("databases",
 			tools.Description("Comma-separated database ids: run this SELECT on each and render per-database sections (staging vs prod spot-check)"),
 		),
@@ -207,6 +213,12 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 		tools.WithNumber("timeout_ms",
 			tools.Description("Cancel the query if it exceeds this many milliseconds"),
 		),
+		tools.WithBoolean("unused_indexes",
+			tools.Description("List indexes the engine has barely scanned (write-tax candidates; Postgres/MySQL)"),
+		),
+		tools.WithNumber("min_scans",
+			tools.Description("Threshold for unused_indexes: an index needs fewer than this many scans to qualify (default 100)"),
+		),
 		tools.WithString("databases",
 			tools.Description("Comma-separated database ids: run this SELECT on each and render per-database sections (staging vs prod spot-check)"),
 		),
@@ -227,6 +239,12 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 // providers compatible.
 type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
+}
+
+// indexUsageUseCase is implemented by use cases that report engine
+// index-usage statistics.
+type indexUsageUseCase interface {
+	ListUnusedIndexes(ctx context.Context, dbID string, minScans int) (string, error)
 }
 
 // tableCopyUseCase is implemented by use cases that can bulk-copy one
@@ -430,6 +448,23 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 				return createTextResponse(result), nil
 			}
 		}
+	}
+
+	// Unused index detection: write-tax candidates from usage stats.
+	if ui, ok := request.Parameters["unused_indexes"].(bool); ok && ui {
+		uuc, can := useCase.(indexUsageUseCase)
+		if !can {
+			return nil, fmt.Errorf("index usage reporting is not supported by this provider")
+		}
+		thr := 100.0
+		if v, ok2 := request.Parameters["min_scans"].(float64); ok2 && v > 0 {
+			thr = v
+		}
+		out, err := uuc.ListUnusedIndexes(ctx, dbID, int(thr))
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
 	}
 
 	// Random sampling draws N arbitrary rows.
