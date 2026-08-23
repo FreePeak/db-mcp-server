@@ -75,6 +75,7 @@ var configAuditors = []auditEntry{
 	{"wal_senders", (*DatabaseUseCase).AuditWalSenders},
 	{"wal_sender_timeout", (*DatabaseUseCase).AuditWalSenderTimeout},
 	{"wait_timeout", (*DatabaseUseCase).AuditWaitTimeout},
+	{"file_access", (*DatabaseUseCase).AuditFileAccess},
 }
 
 // auditResult is one check's outcome, rendered by renderHealthAudit.
