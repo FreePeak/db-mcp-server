@@ -112,6 +112,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 96 | Cross-database table copy (execute copy_table=) | ✅ Shipped (hackathon branch) | [cycle-96](cycle-96-copy-table.md) |
 | 97 | Unused index detection (query unused_indexes=) | ✅ Shipped (hackathon branch) | [cycle-97](cycle-97-unused-indexes.md) |
 | 98 | Long-query triage (query long_queries=N) | ✅ Shipped (hackathon branch) | [cycle-98](cycle-98-long-queries.md) |
+| 99 | Post-copy verification (execute verify_copy=) | ✅ Shipped (hackathon branch) | [cycle-99](cycle-99-verify-copy.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

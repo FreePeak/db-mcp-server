@@ -259,6 +259,12 @@ type indexUsageUseCase interface {
 	ListUnusedIndexes(ctx context.Context, dbID string, minScans int) (string, error)
 }
 
+// copyVerifyUseCase is implemented by use cases that reconcile row
+// counts between databases after a copy.
+type copyVerifyUseCase interface {
+	VerifyCopy(ctx context.Context, srcDB, dstDB, table string) (string, error)
+}
+
 // tableCopyUseCase is implemented by use cases that can bulk-copy one
 // table between databases.
 type tableCopyUseCase interface {
@@ -676,7 +682,10 @@ func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Copy every row of this table from another database into this one inside one transaction; requires from_db"),
 		),
 		tools.WithString("from_db",
-			tools.Description("Source database id for copy_table"),
+			tools.Description("Source database id for copy_table or verify_copy"),
+		),
+		tools.WithString("verify_copy",
+			tools.Description("Verify a previous copy: compare row counts of this table between from_db and here; requires from_db"),
 		),
 		tools.WithString("migrate_dir",
 			tools.Description("Directory of versioned .sql migration files (001_, 002_, …); applies pending ones in name order, each atomically, tracked in _mcp_migrations"),
@@ -717,7 +726,10 @@ func (t *ExecuteTool) CreateUnifiedTool(name string, dbList []string) interface{
 			tools.Description("Copy every row of this table from another database into this one inside one transaction; requires from_db"),
 		),
 		tools.WithString("from_db",
-			tools.Description("Source database id for copy_table"),
+			tools.Description("Source database id for copy_table or verify_copy"),
+		),
+		tools.WithString("verify_copy",
+			tools.Description("Verify a previous copy: compare row counts of this table between from_db and here; requires from_db"),
 		),
 		tools.WithString("migrate_dir",
 			tools.Description("Directory of versioned .sql migration files (001_, 002_, …); applies pending ones in name order, each atomically, tracked in _mcp_migrations"),
@@ -749,6 +761,23 @@ func (t *ExecuteTool) HandleRequest(ctx context.Context, request server.ToolCall
 		}
 		table, _ := request.Parameters["table"].(string) //nolint:errcheck // validated by usecase
 		out, err := puc.ProfileTable(ctx, dbID, table)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+
+	// Post-copy verification: row-count reconciliation between databases.
+	if vc, ok := request.Parameters["verify_copy"].(string); ok && strings.TrimSpace(vc) != "" {
+		fromDB, _ := request.Parameters["from_db"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(fromDB) == "" {
+			return nil, fmt.Errorf("from_db is required when verify_copy is provided")
+		}
+		vuc, can := useCase.(copyVerifyUseCase)
+		if !can {
+			return nil, fmt.Errorf("copy verification is not supported by this provider")
+		}
+		out, err := vuc.VerifyCopy(ctx, fromDB, dbID, vc)
 		if err != nil {
 			return nil, err
 		}
