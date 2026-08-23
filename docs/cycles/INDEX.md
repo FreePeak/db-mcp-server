@@ -153,6 +153,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 137 | Invalid-index audit (action=invalid_indexes) | ✅ Shipped (hackathon branch) | [cycle-137](cycle-137-invalid-indexes.md) |
 | 138 | Role connection-limit audit (action=role_connection_limits) | ✅ Shipped (hackathon branch) | [cycle-138](cycle-138-role-limits.md) |
 | 139 | Foreign-table (FDW) discovery (action=foreign_tables) | ✅ Shipped (hackathon branch) | [cycle-139](cycle-139-fdw.md) |
+| 140 | Unlogged-table audit (action=unlogged_tables) | ✅ Shipped (hackathon branch) | [cycle-140](cycle-140-unlogged.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
