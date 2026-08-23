@@ -208,6 +208,9 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 192 | autovacuum_naptime audit, raised pass cadence delaying cleanup so bloat accumulates between passes (action=autovacuum_naptime) | ✅ Shipped (hackathon branch) | [cycle-192](cycle-192-autovacuum-naptime.md) |
 | 193 | effective_io_concurrency audit, spinning-disk default serializing bitmap scans on SSD/NVMe storage (action=effective_io_concurrency) | ✅ Shipped (hackathon branch) | [cycle-193](cycle-193-effective-io-concurrency.md) |
 | 194 | replication-slot audit, stranded WAL retention on inactive slots plus exhausted max_replication_slots blocking new replicas (action=replication_slots) | ✅ Shipped (hackathon branch) | [cycle-194](cycle-194-replication-slots.md) |
+| 195 | MySQL slow-query-log audit, OFF switch or default 10s threshold leaving slow queries invisible to engine_slow_queries (action=slow_query_log) | ✅ Shipped (hackathon branch) | [cycle-195](cycle-195-slow-query-log.md) |
+| 196 | PostgreSQL timeout-guardrails audit, unlimited statement_timeout / idle_in_transaction_session_timeout letting runaway statements and forgotten transactions hold locks indefinitely (action=timeout_guards) | ✅ Shipped (hackathon branch) | [cycle-196](cycle-196-timeout-guards.md) |
+| 197 | Combined configuration health audit, one call runs every registered config audit and renders only findings plus an explicit clean summary — no more N round trips for "is this database configured sanely?" (action=health_audit) | ✅ Shipped (hackathon branch) | [cycle-197](cycle-197-health-audit.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
