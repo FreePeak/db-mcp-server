@@ -122,6 +122,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 106 | Maintenance suggestions from engine stats (format=maintenance) | ✅ Shipped (hackathon branch) | [cycle-106](cycle-106-maintenance.md) |
 | 107 | FK-safe dependency order (format=dependency_order) | ✅ Shipped (hackathon branch) | [cycle-107](cycle-107-dependency-order.md) |
 | 108 | Sequence exhaustion audit (format=sequences) | ✅ Shipped (hackathon branch) | [cycle-108](cycle-108-sequences.md) |
+| 109 | Grants audit (format=grants) | ✅ Shipped (hackathon branch) | [cycle-109](cycle-109-grants-audit.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
