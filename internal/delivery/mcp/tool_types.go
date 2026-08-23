@@ -285,6 +285,12 @@ type indexUsageUseCase interface {
 	ListUnusedIndexes(ctx context.Context, dbID string, minScans int) (string, error)
 }
 
+// strictModeUseCase is implemented by use cases that audit MySQL
+// sql_mode for silent data-coercion risk.
+type strictModeUseCase interface {
+	AuditStrictMode(ctx context.Context, dbID string) (string, error)
+}
+
 // durabilityUseCase is implemented by use cases that audit crash-
 // durability settings (redo-log flush behavior).
 type durabilityUseCase interface {
@@ -1505,7 +1511,7 @@ func (t *PerformanceTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, strict_mode, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -1533,7 +1539,7 @@ func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, strict_mode, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -1592,6 +1598,14 @@ func (t *PerformanceTool) HandleRequest(ctx context.Context, request server.Tool
 	case "list_sessions":
 		if s, can := useCase.(sessionObservabilityUseCase); can {
 			out, err := s.ListActiveSessions(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "strict_mode":
+		if suc, can := useCase.(strictModeUseCase); can {
+			out, err := suc.AuditStrictMode(ctx, dbID)
 			if err != nil {
 				return nil, err
 			}

@@ -163,6 +163,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 147 | Required-INSERT-columns audit (schema action=required_columns) | ✅ Shipped (hackathon branch) | [cycle-147](cycle-147-insert-requirements.md) |
 | 148 | table_open_cache pressure audit (action=table_cache) | ✅ Shipped (hackathon branch) | [cycle-148](cycle-148-table-cache.md) |
 | 149 | Crash-durability audit (action=durability) | ✅ Shipped (hackathon branch) | [cycle-149](cycle-149-durability.md) |
+| 150 | Strict-mode audit (action=strict_mode) | ✅ Shipped (hackathon branch) | [cycle-150](cycle-150-sql-mode.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
