@@ -265,6 +265,12 @@ type csvImportUseCase interface {
 	ImportCSV(ctx context.Context, dbID, table, csvContent string) (string, error)
 }
 
+// migrationRunnerUseCase is implemented by use cases that can apply
+// versioned .sql migrations from a directory.
+type migrationRunnerUseCase interface {
+	RunMigrations(ctx context.Context, dbID, dir string) (string, error)
+}
+
 // scriptExecutionUseCase is implemented by use cases that can run a
 // multi-statement script atomically.
 type scriptExecutionUseCase interface {
@@ -582,6 +588,9 @@ func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithString("script",
 			tools.Description("Multi-statement script (semicolon-separated) executed atomically: all commit or all roll back with the failing statement named"),
 		),
+		tools.WithString("migrate_dir",
+			tools.Description("Directory of versioned .sql migration files (001_, 002_, …); applies pending ones in name order, each atomically, tracked in _mcp_migrations"),
+		),
 		tools.WithString("csv_data",
 			tools.Description("CSV content (header + rows) to bulk-insert atomically; requires csv_table; capped at 10k rows"),
 		),
@@ -614,6 +623,9 @@ func (t *ExecuteTool) CreateUnifiedTool(name string, dbList []string) interface{
 		tools.WithString("script",
 			tools.Description("Multi-statement script (semicolon-separated) executed atomically: all commit or all roll back with the failing statement named"),
 		),
+		tools.WithString("migrate_dir",
+			tools.Description("Directory of versioned .sql migration files (001_, 002_, …); applies pending ones in name order, each atomically, tracked in _mcp_migrations"),
+		),
 		tools.WithString("csv_data",
 			tools.Description("CSV content (header + rows) to bulk-insert atomically; requires csv_table; capped at 10k rows"),
 		),
@@ -631,6 +643,19 @@ func (t *ExecuteTool) HandleRequest(ctx context.Context, request server.ToolCall
 	// If dbID is not provided, extract it from the tool name
 	if dbID == "" {
 		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	// Migration runner: apply pending .sql files from a directory.
+	if migDir, ok := request.Parameters["migrate_dir"].(string); ok && strings.TrimSpace(migDir) != "" {
+		mr, can := useCase.(migrationRunnerUseCase)
+		if !can {
+			return nil, fmt.Errorf("migrations are not supported by this provider")
+		}
+		out, err := mr.RunMigrations(ctx, dbID, migDir)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
 	}
 
 	// CSV import: atomic bulk insert.

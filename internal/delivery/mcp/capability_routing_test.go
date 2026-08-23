@@ -35,6 +35,10 @@ func (s *stubCaps) ImportCSV(_ context.Context, _, table, _ string) (string, err
 	s.route = "csv:" + table
 	return "ok", nil
 }
+func (s *stubCaps) RunMigrations(_ context.Context, _, dir string) (string, error) {
+	s.route = "migrate:" + dir
+	return "ok", nil
+}
 func (s *stubCaps) ListViews(_ context.Context, dbID string) (string, error) {
 	s.route = "views"
 	return "ok", nil
@@ -86,6 +90,8 @@ func TestCapabilityRouting(t *testing.T) {
 			map[string]interface{}{"script": "A; B"}, "script:A; B"},
 		{"csv_import", func() ToolType { return NewExecuteTool() },
 			map[string]interface{}{"csv_data": "h\n1\n", "csv_table": "t"}, "csv:t"},
+		{"migrate_dir", func() ToolType { return NewExecuteTool() },
+			map[string]interface{}{"migrate_dir": "/migrations"}, "migrate:/migrations"},
 		{"views_format", func() ToolType { return NewSchemaTool() },
 			map[string]interface{}{"format": "views"}, "views"},
 		{"triggers_format", func() ToolType { return NewSchemaTool() },
