@@ -176,6 +176,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 160 | crash-safety audit, fsync/full_page_writes (action=crash_safety) | ✅ Shipped (hackathon branch) | [cycle-160](cycle-160-crash-safety.md) |
 | 161 | wal_level audit, replication/PITR capability (action=wal_level) | ✅ Shipped (hackathon branch) | [cycle-161](cycle-161-wal-level.md) |
 | 162 | shared_buffers sizing audit vs database size (action=shared_buffers) | ✅ Shipped (hackathon branch) | [cycle-162](cycle-162-shared-buffers.md) |
+| 163 | open_files_limit audit vs table cache (action=open_files_limit) | ✅ Shipped (hackathon branch) | [cycle-163](cycle-163-open-files-limit.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
