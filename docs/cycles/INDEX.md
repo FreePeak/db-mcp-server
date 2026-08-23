@@ -114,6 +114,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 98 | Long-query triage (query long_queries=N) | ✅ Shipped (hackathon branch) | [cycle-98](cycle-98-long-queries.md) |
 | 99 | Post-copy verification (execute verify_copy=) | ✅ Shipped (hackathon branch) | [cycle-99](cycle-99-verify-copy.md) |
 | 100 | Database overview snapshot (schema format=overview) | ✅ Shipped (hackathon branch) | [cycle-100](cycle-100-overview.md) |
+| 101 | Combined PII audit (schema format=pii_audit) | ✅ Shipped (hackathon branch) | [cycle-101](cycle-101-pii-audit.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
