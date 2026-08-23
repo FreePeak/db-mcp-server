@@ -160,6 +160,15 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithNumber("timeout_ms",
 			tools.Description("Cancel the query if it exceeds this many milliseconds"),
 		),
+		tools.WithString("save_query",
+			tools.Description("Save the `query` SQL under this name for this database (bookmark for replay)"),
+		),
+		tools.WithBoolean("saved_queries",
+			tools.Description("List this database's saved query bookmarks with SQL previews"),
+		),
+		tools.WithString("run_saved_query",
+			tools.Description("Execute a saved query bookmark by name"),
+		),
 		tools.WithNumber("long_queries",
 			tools.Description("List queries running longer than this many seconds (activity catalog; Postgres/MySQL)"),
 		),
@@ -216,6 +225,15 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 		tools.WithNumber("timeout_ms",
 			tools.Description("Cancel the query if it exceeds this many milliseconds"),
 		),
+		tools.WithString("save_query",
+			tools.Description("Save the `query` SQL under this name for this database (bookmark for replay)"),
+		),
+		tools.WithBoolean("saved_queries",
+			tools.Description("List this database's saved query bookmarks with SQL previews"),
+		),
+		tools.WithString("run_saved_query",
+			tools.Description("Execute a saved query bookmark by name"),
+		),
 		tools.WithNumber("long_queries",
 			tools.Description("List queries running longer than this many seconds (activity catalog; Postgres/MySQL)"),
 		),
@@ -245,6 +263,14 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 // providers compatible.
 type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
+}
+
+// savedQueryUseCase is implemented by use cases that keep named
+// per-database query bookmarks.
+type savedQueryUseCase interface {
+	SaveQuery(dbID, name, query string) error
+	ListSavedQueries(dbID string) (string, error)
+	RunSavedQuery(ctx context.Context, dbID, name string) (string, error)
 }
 
 // longQueryUseCase is implemented by use cases that list engine
@@ -478,6 +504,41 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 				return createTextResponse(result), nil
 			}
 		}
+	}
+
+	// Saved queries: bookmark and replay named SELECTs per database.
+	if sq, ok := request.Parameters["save_query"].(string); ok && strings.TrimSpace(sq) != "" {
+		sqlText, _ := request.Parameters["query"].(string) //nolint:errcheck // validated below
+		suc, can := useCase.(savedQueryUseCase)
+		if !can {
+			return nil, fmt.Errorf("saved queries are not supported by this provider")
+		}
+		if err := suc.SaveQuery(dbID, sq, sqlText); err != nil {
+			return nil, err
+		}
+		return createTextResponse(fmt.Sprintf("Saved %q on %s. Run with run_saved_query.", sq, dbID)), nil
+	}
+	if list, ok := request.Parameters["saved_queries"].(bool); ok && list {
+		suc, can := useCase.(savedQueryUseCase)
+		if !can {
+			return nil, fmt.Errorf("saved queries are not supported by this provider")
+		}
+		out, err := suc.ListSavedQueries(dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+	if rn, ok := request.Parameters["run_saved_query"].(string); ok && strings.TrimSpace(rn) != "" {
+		ruc, can := useCase.(savedQueryUseCase)
+		if !can {
+			return nil, fmt.Errorf("saved queries are not supported by this provider")
+		}
+		out, err := ruc.RunSavedQuery(ctx, dbID, rn)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
 	}
 
 	// Long-query triage: active queries over an age threshold.

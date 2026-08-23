@@ -146,6 +146,9 @@ type DatabaseUseCase struct {
 	healthMu      sync.Mutex
 	healthSamples map[string][]healthSample
 
+	// savedQueries holds named query bookmarks per database.
+	savedQueries *savedQueryStore
+
 	// schemaSnaps holds schema baselines for drift detection.
 	schemaSnaps *schemaSnapshotStore
 
@@ -168,6 +171,7 @@ func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 		schemaSnaps:   newSchemaSnapshotStore(),
 		queryHist:     newQueryHistoryStore(),
 		healthSamples: make(map[string][]healthSample),
+		savedQueries:  newSavedQueryStore(),
 		riskWarnAt:    "high",
 	}
 }
