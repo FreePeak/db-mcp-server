@@ -285,6 +285,12 @@ type indexUsageUseCase interface {
 	ListUnusedIndexes(ctx context.Context, dbID string, minScans int) (string, error)
 }
 
+// busyTimeoutUseCase is implemented by use cases that audit SQLite's
+// lock-contention retry window.
+type busyTimeoutUseCase interface {
+	AuditBusyTimeout(ctx context.Context, dbID string) (string, error)
+}
+
 // syncCommitUseCase is implemented by use cases that audit
 // PostgreSQL's synchronous_commit setting for commit-loss risk.
 type syncCommitUseCase interface {
@@ -1535,7 +1541,7 @@ func (t *PerformanceTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, strict_mode, aborted_connections, max_packet, wal_mode, synchronous_commit, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, strict_mode, aborted_connections, max_packet, wal_mode, synchronous_commit, busy_timeout, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -1563,7 +1569,7 @@ func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, strict_mode, aborted_connections, max_packet, wal_mode, synchronous_commit, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, strict_mode, aborted_connections, max_packet, wal_mode, synchronous_commit, busy_timeout, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -1622,6 +1628,14 @@ func (t *PerformanceTool) HandleRequest(ctx context.Context, request server.Tool
 	case "list_sessions":
 		if s, can := useCase.(sessionObservabilityUseCase); can {
 			out, err := s.ListActiveSessions(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "busy_timeout":
+		if buc, can := useCase.(busyTimeoutUseCase); can {
+			out, err := buc.AuditBusyTimeout(ctx, dbID)
 			if err != nil {
 				return nil, err
 			}

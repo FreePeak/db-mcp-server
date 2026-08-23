@@ -168,6 +168,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 152 | max_allowed_packet audit (action=max_packet) | ✅ Shipped (hackathon branch) | [cycle-152](cycle-152-max-packet.md) |
 | 153 | SQLite WAL-mode audit (action=wal_mode) | ✅ Shipped (hackathon branch) | [cycle-153](cycle-153-wal-mode.md) |
 | 154 | synchronous_commit audit (action=synchronous_commit) | ✅ Shipped (hackathon branch) | [cycle-154](cycle-154-sync-commit.md) |
+| 155 | SQLite busy_timeout audit (action=busy_timeout) | ✅ Shipped (hackathon branch) | [cycle-155](cycle-155-busy-timeout.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
