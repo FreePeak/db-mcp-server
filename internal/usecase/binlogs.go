@@ -29,10 +29,10 @@ func binlogRetentionQuery(dbType string) string {
 // zero retention is always a warning regardless of current size.
 func binlogVerdict(files int, expireSecs int64, totalBytes uint64) string {
 	if files == 0 {
-		return "No binary log files present — binary logging is disabled or just rotated."
+		return "No binary log file present — logging is disabled or just rotated, so replication and point-in-time recovery have nothing to work from; verify log_bin before relying on either."
 	}
 	if expireSecs <= 0 {
-		return fmt.Sprintf("WARNING: %d binary log file(s) totalling %s never expire — set binlog_expire_logs_seconds (e.g. 604800 for 7 days) before the disk fills.",
+		return fmt.Sprintf("WARNING: %d binary log file(s) totalling %s never expire — retention is unset or unreadable (possibly logging recently disabled, leaving a rotation-lag file). Set binlog_expire_logs_seconds (e.g. 604800 for 7 days) before the disk fills.",
 			files, humanBytes(int64(totalBytes)))
 	}
 	return fmt.Sprintf("Binary logs healthy: %d file(s), %s retained, expiring after %d day(s).",
