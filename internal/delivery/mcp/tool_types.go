@@ -285,6 +285,12 @@ type indexUsageUseCase interface {
 	ListUnusedIndexes(ctx context.Context, dbID string, minScans int) (string, error)
 }
 
+// keyDiffUseCase is implemented by use cases that compare primary-key
+// sets of one table across two databases.
+type keyDiffUseCase interface {
+	DiffKeys(ctx context.Context, dbA, dbB, table string) (string, error)
+}
+
 // grantsUseCase is implemented by use cases that audit table
 // privileges from the engine's grant catalogs.
 type grantsUseCase interface {
@@ -1776,7 +1782,7 @@ func (t *SchemaTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Table name; required only for format=compare_samples"),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), "grants" (table privileges grouped by grantee from the engine catalogs; Postgres/MySQL), "sequences" (integer-key sequences at >=80% of their ceiling — exhaustion is a silent insert-failure incident; Postgres), "dependency_order" (FK-safe topological table order for seeding/truncating, cycles flagged), "maintenance" (bloat/fragmentation/stale-statistics suggestions from engine catalogs; Postgres/MySQL), "dictionary" (whole schema as a Markdown data dictionary), "sizes" (row counts and disk size per table), "baseline_capture" / "baseline_compare" (record row counts now, diff later for growth), "overview" (one-call shape snapshot: tables/columns/indexes/FK edges/rows plus PII-name suspects), or "pii_audit" (merged name+content PII report; optional sample_rows, default 50)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), "key_diff" (primary-key set difference for one table vs compare_with; requires compare_with + table), "grants" (table privileges grouped by grantee from the engine catalogs; Postgres/MySQL), "sequences" (integer-key sequences at >=80% of their ceiling — exhaustion is a silent insert-failure incident; Postgres), "dependency_order" (FK-safe topological table order for seeding/truncating, cycles flagged), "maintenance" (bloat/fragmentation/stale-statistics suggestions from engine catalogs; Postgres/MySQL), "dictionary" (whole schema as a Markdown data dictionary), "sizes" (row counts and disk size per table), "baseline_capture" / "baseline_compare" (record row counts now, diff later for growth), "overview" (one-call shape snapshot: tables/columns/indexes/FK edges/rows plus PII-name suspects), or "pii_audit" (merged name+content PII report; optional sample_rows, default 50)`),
 		),
 	)
 }
@@ -1794,7 +1800,7 @@ func (t *SchemaTool) CreateUnifiedTool(name string, dbList []string) interface{}
 			tools.Description("Table name; required only for format=compare_samples"),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), "grants" (table privileges grouped by grantee from the engine catalogs; Postgres/MySQL), "sequences" (integer-key sequences at >=80% of their ceiling — exhaustion is a silent insert-failure incident; Postgres), "dependency_order" (FK-safe topological table order for seeding/truncating, cycles flagged), "maintenance" (bloat/fragmentation/stale-statistics suggestions from engine catalogs; Postgres/MySQL), "dictionary" (whole schema as a Markdown data dictionary), "sizes" (row counts and disk size per table), "baseline_capture" / "baseline_compare" (record row counts now, diff later for growth), "overview" (one-call shape snapshot: tables/columns/indexes/FK edges/rows plus PII-name suspects), or "pii_audit" (merged name+content PII report; optional sample_rows, default 50)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), "key_diff" (primary-key set difference for one table vs compare_with; requires compare_with + table), "grants" (table privileges grouped by grantee from the engine catalogs; Postgres/MySQL), "sequences" (integer-key sequences at >=80% of their ceiling — exhaustion is a silent insert-failure incident; Postgres), "dependency_order" (FK-safe topological table order for seeding/truncating, cycles flagged), "maintenance" (bloat/fragmentation/stale-statistics suggestions from engine catalogs; Postgres/MySQL), "dictionary" (whole schema as a Markdown data dictionary), "sizes" (row counts and disk size per table), "baseline_capture" / "baseline_compare" (record row counts now, diff later for growth), "overview" (one-call shape snapshot: tables/columns/indexes/FK edges/rows plus PII-name suspects), or "pii_audit" (merged name+content PII report; optional sample_rows, default 50)`),
 		),
 	)
 }
@@ -1848,6 +1854,24 @@ func (t *SchemaTool) HandleRequest(ctx context.Context, request server.ToolCallR
 			return nil, fmt.Errorf("sample comparison is not supported by this provider")
 		}
 		out, err := dc.CompareTableSamples(ctx, dbID, compareWith, table, limit)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "key_diff":
+		kuc, can := useCase.(keyDiffUseCase)
+		if !can {
+			return nil, fmt.Errorf("key diff is not supported by this provider")
+		}
+		compareWith2, _ := request.Parameters["compare_with"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(compareWith2) == "" {
+			return nil, fmt.Errorf("format=key_diff requires the compare_with parameter (database id to diff against)")
+		}
+		table2, _ := request.Parameters["table"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(table2) == "" {
+			return nil, fmt.Errorf("format=key_diff requires the table parameter")
+		}
+		out, err := kuc.DiffKeys(ctx, dbID, compareWith2, table2)
 		if err != nil {
 			return nil, err
 		}
