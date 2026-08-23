@@ -188,6 +188,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 172 | JIT compiler audit, OLTP compilation-overhead detection (action=jit) | ✅ Shipped (hackathon branch) | [cycle-172](cycle-172-jit.md) |
 | 173 | innodb_flush_neighbors audit, SSD-era page-coalescing detection (action=flush_neighbors) | ✅ Shipped (hackathon branch) | [cycle-173](cycle-173-flush-neighbors.md) |
 | 174 | binlog_row_image audit, replica write-amplification detection (action=binlog_row_image) | ✅ Shipped (hackathon branch) | [cycle-174](cycle-174-binlog-row-image.md) |
+| 175 | random_page_cost audit, spinning-disk planner cost model detection (action=random_page_cost) | ✅ Shipped (hackathon branch) | [cycle-175](cycle-175-random-page-cost.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
