@@ -229,6 +229,12 @@ type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
 }
 
+// orphanAuditUseCase is implemented by use cases that can count child
+// rows violating each foreign-key edge.
+type orphanAuditUseCase interface {
+	AuditOrphans(ctx context.Context, dbID string) (string, error)
+}
+
 // ddlDumpUseCase is implemented by use cases that can dump the engine's
 // stored CREATE statements.
 type ddlDumpUseCase interface {
@@ -1479,7 +1485,7 @@ func (t *SchemaTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Table name; required only for format=compare_samples"),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), or "ddl" (verbatim CREATE statements; sqlite only)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), or "orphans" (count child rows violating each foreign key)`),
 		),
 	)
 }
@@ -1497,7 +1503,7 @@ func (t *SchemaTool) CreateUnifiedTool(name string, dbList []string) interface{}
 			tools.Description("Table name; required only for format=compare_samples"),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), or "ddl" (verbatim CREATE statements; sqlite only)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), or "orphans" (count child rows violating each foreign key)`),
 		),
 	)
 }
@@ -1551,6 +1557,16 @@ func (t *SchemaTool) HandleRequest(ctx context.Context, request server.ToolCallR
 			return nil, fmt.Errorf("sample comparison is not supported by this provider")
 		}
 		out, err := dc.CompareTableSamples(ctx, dbID, compareWith, table, limit)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "orphans":
+		ao, can := useCase.(orphanAuditUseCase)
+		if !can {
+			return nil, fmt.Errorf("orphan audit is not supported by this provider")
+		}
+		out, err := ao.AuditOrphans(ctx, dbID)
 		if err != nil {
 			return nil, err
 		}

@@ -106,6 +106,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 90 | Delivery routing tests (capability wiring) | ✅ Shipped (hackathon branch) | [cycle-90](cycle-90-routing-tests.md) |
 | 91 | Value-search ranking by hit count | ✅ Shipped (hackathon branch) | [cycle-91](cycle-91-ranked-search.md) |
 | 92 | Versioned migration runner (execute migrate_dir=) | ✅ Shipped (hackathon branch) | [cycle-92](cycle-92-migrations.md) |
+| 93 | FK integrity audit (schema format=orphans) | ✅ Shipped (hackathon branch) | [cycle-93](cycle-93-orphan-audit.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
