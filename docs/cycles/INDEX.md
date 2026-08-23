@@ -128,6 +128,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 112 | Idle-in-transaction audit (action=long_transactions) | ✅ Shipped (hackathon branch) | [cycle-112](cycle-112-long-transactions.md) |
 | 113 | Missing-FK-index detection (format=fk_indexes) | ✅ Shipped (hackathon branch) | [cycle-113](cycle-113-fk-indexes.md) |
 | 114 | Replication status (action=replication_status) | ✅ Shipped (hackathon branch) | [cycle-114](cycle-114-replication-status.md) |
+| 115 | CHECK-constraint listing (format=checks) | ✅ Shipped (hackathon branch) | [cycle-115](cycle-115-check-constraints.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
