@@ -18,17 +18,44 @@ import (
 
 const copyBatchSize = 500
 
+// valueTransform rewrites one cell during a copy; empty transform = pass-through.
+type valueTransform func(column string, value any) any
+
 // CopyTable transfers all rows of table from srcDB to dstDB. Values are
 // passed through as driver values; cross-engine type fidelity is
 // best-effort (same-engine copies are exact).
 func (uc *DatabaseUseCase) CopyTable(ctx context.Context, srcDB, dstDB, table string) (string, error) {
+	return uc.copyTableWith(ctx, srcDB, dstDB, table, nil)
+}
+
+// CopyTableMasked copies like CopyTable but anonymizes PII-bearing text
+// (emails, phones, cards, SSNs, IPs) with the shared masking rules so a
+// prod snapshot can seed staging safely.
+func (uc *DatabaseUseCase) CopyTableMasked(ctx context.Context, srcDB, dstDB, table string) (string, error) {
+	out, err := uc.copyTableWith(ctx, srcDB, dstDB, table, func(column string, v any) any {
+		if s, ok := v.(string); ok {
+			return maskPIIInText(s, column)
+		}
+		if b, ok := v.([]byte); ok {
+			return []byte(maskPIIInText(string(b), column))
+		}
+		return v
+	})
+	if err != nil {
+		return "", err
+	}
+	return out + " PII-bearing values were anonymized with the shared masking rules.", nil
+}
+
+// copyTableWith is the shared read-transform-insert pipeline behind both
+// copy variants.
+func (uc *DatabaseUseCase) copyTableWith(ctx context.Context, srcDB, dstDB, table string, transform valueTransform) (string, error) {
 	if !isPlainIdentifier(table) {
 		return "", fmt.Errorf("invalid table name %q", table)
 	}
 	if srcDB == dstDB {
 		return "", fmt.Errorf("source and destination must differ")
 	}
-
 	// Column list from the source catalog keeps inserts explicit and
 	// order-stable regardless of physical column order differences.
 	desc, err := uc.DescribeTable(ctx, srcDB, table)
@@ -52,7 +79,6 @@ func (uc *DatabaseUseCase) CopyTable(ctx context.Context, srcDB, dstDB, table st
 	if len(cols) == 0 {
 		return "", fmt.Errorf("no columns discovered for source %s.%s", srcDB, table)
 	}
-
 	src, err := uc.repo.GetDatabase(srcDB)
 	if err != nil {
 		return "", fmt.Errorf("failed to get source database: %w", err)
@@ -82,6 +108,11 @@ func (uc *DatabaseUseCase) CopyTable(ctx context.Context, srcDB, dstDB, table st
 			}
 			return "", fmt.Errorf("failed to scan source row: %w", scanErr)
 		}
+		if transform != nil {
+			for i := range vals {
+				vals[i] = transform(cols[i], vals[i])
+			}
+		}
 		cur = append(cur, vals)
 		if len(cur) >= copyBatchSize {
 			batches = append(batches, cur)
@@ -97,7 +128,6 @@ func (uc *DatabaseUseCase) CopyTable(ctx context.Context, srcDB, dstDB, table st
 	if len(cur) > 0 {
 		batches = append(batches, cur)
 	}
-
 	colList := quoteIdentList(cols)
 	tx, err := dst.Begin(ctx, &domain.TxOptions{})
 	if err != nil {

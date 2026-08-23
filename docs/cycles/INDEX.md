@@ -130,6 +130,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 114 | Replication status (action=replication_status) | ✅ Shipped (hackathon branch) | [cycle-114](cycle-114-replication-status.md) |
 | 115 | CHECK-constraint listing (format=checks) | ✅ Shipped (hackathon branch) | [cycle-115](cycle-115-check-constraints.md) |
 | 116 | No-primary-key audit (format=no_pk) | ✅ Shipped (hackathon branch) | [cycle-116](cycle-116-no-pk.md) |
+| 117 | Anonymized cross-database copy (mask_pii) | ✅ Shipped (hackathon branch) | [cycle-117](cycle-117-anonymized-copy.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

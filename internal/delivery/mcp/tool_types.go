@@ -376,6 +376,12 @@ type copyVerifyUseCase interface {
 	VerifyCopy(ctx context.Context, srcDB, dstDB, table string) (string, error)
 }
 
+// tableCopyMaskedUseCase is implemented by use cases that copy tables
+// while anonymizing PII-bearing values.
+type tableCopyMaskedUseCase interface {
+	CopyTableMasked(ctx context.Context, srcDB, dstDB, table string) (string, error)
+}
+
 // tableCopyUseCase is implemented by use cases that can bulk-copy one
 // table between databases.
 type tableCopyUseCase interface {
@@ -831,6 +837,9 @@ func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithString("from_db",
 			tools.Description("Source database id for copy_table or verify_copy"),
 		),
+		tools.WithBoolean("mask_pii",
+			tools.Description("With copy_table: anonymize PII-bearing text (emails, phones, cards, SSNs, IPs) during the copy so prod data can seed staging safely"),
+		),
 		tools.WithString("verify_copy",
 			tools.Description("Verify a previous copy: compare row counts of this table between from_db and here; requires from_db"),
 		),
@@ -874,6 +883,9 @@ func (t *ExecuteTool) CreateUnifiedTool(name string, dbList []string) interface{
 		),
 		tools.WithString("from_db",
 			tools.Description("Source database id for copy_table or verify_copy"),
+		),
+		tools.WithBoolean("mask_pii",
+			tools.Description("With copy_table: anonymize PII-bearing text (emails, phones, cards, SSNs, IPs) during the copy so prod data can seed staging safely"),
 		),
 		tools.WithString("verify_copy",
 			tools.Description("Verify a previous copy: compare row counts of this table between from_db and here; requires from_db"),
@@ -936,6 +948,17 @@ func (t *ExecuteTool) HandleRequest(ctx context.Context, request server.ToolCall
 		fromDB, _ := request.Parameters["from_db"].(string) //nolint:errcheck // absent means error below
 		if strings.TrimSpace(fromDB) == "" {
 			return nil, fmt.Errorf("from_db is required when copy_table is provided")
+		}
+		if maskPII, _ := request.Parameters["mask_pii"].(bool); maskPII { //nolint:errcheck // absent means false
+			mc, mcan := useCase.(tableCopyMaskedUseCase)
+			if !mcan {
+				return nil, fmt.Errorf("anonymized copy is not supported by this provider")
+			}
+			out, err := mc.CopyTableMasked(ctx, fromDB, dbID, ct)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
 		}
 		cc, can := useCase.(tableCopyUseCase)
 		if !can {
