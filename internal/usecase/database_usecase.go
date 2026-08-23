@@ -149,6 +149,10 @@ type DatabaseUseCase struct {
 	// savedQueries holds named query bookmarks per database.
 	savedQueries *savedQueryStore
 
+	// sizeBaselines holds one captured row-count snapshot per database
+	// for growth comparison.
+	sizeBaselines *sizeBaselineStore
+
 	// schemaSnaps holds schema baselines for drift detection.
 	schemaSnaps *schemaSnapshotStore
 
@@ -172,6 +176,7 @@ func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 		queryHist:     newQueryHistoryStore(),
 		healthSamples: make(map[string][]healthSample),
 		savedQueries:  newSavedQueryStore(),
+		sizeBaselines: newSizeBaselineStore(),
 		riskWarnAt:    "high",
 	}
 }

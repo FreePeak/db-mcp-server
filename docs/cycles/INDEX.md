@@ -117,6 +117,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 101 | Combined PII audit (schema format=pii_audit) | ✅ Shipped (hackathon branch) | [cycle-101](cycle-101-pii-audit.md) |
 | 102 | Health trend history (health action=trend) | ✅ Shipped (hackathon branch) | [cycle-102](cycle-102-health-trend.md) |
 | 103 | Saved query bookmarks (query save/run/list) | ✅ Shipped (hackathon branch) | [cycle-103](cycle-103-saved-queries.md) |
+| 104 | Size baselines for growth diffs (schema format=baseline_*) | ✅ Shipped (hackathon branch) | [cycle-104](cycle-104-size-baselines.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
