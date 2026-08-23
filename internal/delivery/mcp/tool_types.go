@@ -1573,6 +1573,9 @@ func (t *HealthTool) CreateTool(name string, dbID string) interface{} {
 	return tools.NewTool(
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
+		tools.WithString("action",
+			tools.Description(`"trend" renders the rolling pool-pressure history with deltas instead of a fresh check`),
+		),
 	)
 }
 
@@ -1585,13 +1588,35 @@ func (t *HealthTool) CreateUnifiedTool(name string, dbList []string) interface{}
 			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
 			tools.Required(),
 		),
+		tools.WithString("action",
+			tools.Description(`"trend" renders the rolling pool-pressure history with deltas instead of a fresh check`),
+		),
 	)
 }
 
-// HandleRequest handles health tool requests
+// healthTrendUseCase is implemented by use cases that keep a rolling
+// per-database health sample history.
+type healthTrendUseCase interface {
+	HealthTrend(dbID string) (string, error)
+}
+
+// HandleRequest handles health tool requests; action=trend renders the
+// rolling sample history instead of a fresh check.
 func (t *HealthTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	if dbID == "" {
 		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	if action, _ := request.Parameters["action"].(string); action == "trend" { //nolint:errcheck // non-string means no trend
+		tuc, can := useCase.(healthTrendUseCase)
+		if !can {
+			return nil, fmt.Errorf("health trend is not supported by this provider")
+		}
+		out, err := tuc.HealthTrend(dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
 	}
 
 	info, err := useCase.HealthCheck(ctx, dbID)

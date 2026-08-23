@@ -141,6 +141,11 @@ type DatabaseUseCase struct {
 	// snapshots holds pre-mutation row captures for rollback.
 	snapshots *snapshotStore
 
+	// healthSamples keeps the last N health observations per database
+	// so trends (pool exhaustion chronic vs one-off) are visible.
+	healthMu      sync.Mutex
+	healthSamples map[string][]healthSample
+
 	// schemaSnaps holds schema baselines for drift detection.
 	schemaSnaps *schemaSnapshotStore
 
@@ -156,13 +161,14 @@ type DatabaseUseCase struct {
 // NewDatabaseUseCase creates a new database use case
 func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 	return &DatabaseUseCase{
-		repo:         repo,
-		transactions: make(map[string]domain.Tx),
-		maskingAudit: newMaskingAudit(),
-		snapshots:    newSnapshotStore(),
-		schemaSnaps:  newSchemaSnapshotStore(),
-		queryHist:    newQueryHistoryStore(),
-		riskWarnAt:   "high",
+		repo:          repo,
+		transactions:  make(map[string]domain.Tx),
+		maskingAudit:  newMaskingAudit(),
+		snapshots:     newSnapshotStore(),
+		schemaSnaps:   newSchemaSnapshotStore(),
+		queryHist:     newQueryHistoryStore(),
+		healthSamples: make(map[string][]healthSample),
+		riskWarnAt:    "high",
 	}
 }
 
