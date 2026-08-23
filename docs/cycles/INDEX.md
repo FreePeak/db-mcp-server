@@ -30,6 +30,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 14 | Engine-level slow queries (pg_stat_statements / MySQL digests) | ✅ Shipped | [cycle-14](cycle-14-engine-slow-queries.md) |
 | 15 | FK referenced-table resolution in describe | ✅ Shipped | [cycle-15](cycle-15-fk-references.md) |
 | 16 | Mermaid ERD via schema tool (`format=mermaid`) | ✅ Shipped | [cycle-16](cycle-16-mermaid-erd.md) |
+| 17 | Index advisor: `suggest_indexes` action with alias + column validation | ✅ Shipped | [cycle-17](cycle-17-index-advisor.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -45,7 +46,8 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 1. Oracle engine-level read-only enforcement (needs live Oracle container)
 2. Token-efficiency benchmark: unified vs per-db vs DBHub claim
 3. Merge PR #85 → tag v1.10.0 when CI green
-4. Hypothetical-index tuning depth (Postgres MCP Pro differentiator)
+4. Hypothetical-index tuning depth — first step shipped (cycle 17 heuristic advisor); composite-index synthesis and constraint-aware coverage remain
 5. Column masking / governance features (Bytebase differentiator)
 6. FK referenced-table detail — done (cycle 15); multi-table relationship graph remains
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing
+8. Wire suggest_indexes into explain/slow-query output so plan analysis points at concrete fixes (close the Postgres MCP Pro loop)
