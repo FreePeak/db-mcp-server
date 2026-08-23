@@ -229,6 +229,12 @@ type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
 }
 
+// tableCopyUseCase is implemented by use cases that can bulk-copy one
+// table between databases.
+type tableCopyUseCase interface {
+	CopyTable(ctx context.Context, srcDB, dstDB, table string) (string, error)
+}
+
 // tableProfileUseCase is implemented by use cases that profile every
 // column of one table (nulls, distinct, range).
 type tableProfileUseCase interface {
@@ -606,6 +612,12 @@ func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithString("script",
 			tools.Description("Multi-statement script (semicolon-separated) executed atomically: all commit or all roll back with the failing statement named"),
 		),
+		tools.WithString("copy_table",
+			tools.Description("Copy every row of this table from another database into this one inside one transaction; requires from_db"),
+		),
+		tools.WithString("from_db",
+			tools.Description("Source database id for copy_table"),
+		),
 		tools.WithString("migrate_dir",
 			tools.Description("Directory of versioned .sql migration files (001_, 002_, …); applies pending ones in name order, each atomically, tracked in _mcp_migrations"),
 		),
@@ -641,6 +653,12 @@ func (t *ExecuteTool) CreateUnifiedTool(name string, dbList []string) interface{
 		tools.WithString("script",
 			tools.Description("Multi-statement script (semicolon-separated) executed atomically: all commit or all roll back with the failing statement named"),
 		),
+		tools.WithString("copy_table",
+			tools.Description("Copy every row of this table from another database into this one inside one transaction; requires from_db"),
+		),
+		tools.WithString("from_db",
+			tools.Description("Source database id for copy_table"),
+		),
 		tools.WithString("migrate_dir",
 			tools.Description("Directory of versioned .sql migration files (001_, 002_, …); applies pending ones in name order, each atomically, tracked in _mcp_migrations"),
 		),
@@ -671,6 +689,23 @@ func (t *ExecuteTool) HandleRequest(ctx context.Context, request server.ToolCall
 		}
 		table, _ := request.Parameters["table"].(string) //nolint:errcheck // validated by usecase
 		out, err := puc.ProfileTable(ctx, dbID, table)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+
+	// Cross-database table copy: destination is this tool's database.
+	if ct, ok := request.Parameters["copy_table"].(string); ok && strings.TrimSpace(ct) != "" {
+		fromDB, _ := request.Parameters["from_db"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(fromDB) == "" {
+			return nil, fmt.Errorf("from_db is required when copy_table is provided")
+		}
+		cc, can := useCase.(tableCopyUseCase)
+		if !can {
+			return nil, fmt.Errorf("table copy is not supported by this provider")
+		}
+		out, err := cc.CopyTable(ctx, fromDB, dbID, ct)
 		if err != nil {
 			return nil, err
 		}

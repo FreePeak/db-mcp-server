@@ -39,6 +39,10 @@ func (s *stubCaps) RunMigrations(_ context.Context, _, dir string) (string, erro
 	s.route = "migrate:" + dir
 	return "ok", nil
 }
+func (s *stubCaps) CopyTable(_ context.Context, src, dst, table string) (string, error) {
+	s.route = "copy:" + src + "->" + dst + ":" + table
+	return "ok", nil
+}
 func (s *stubCaps) ListViews(_ context.Context, dbID string) (string, error) {
 	s.route = "views"
 	return "ok", nil
@@ -92,6 +96,8 @@ func TestCapabilityRouting(t *testing.T) {
 			map[string]interface{}{"csv_data": "h\n1\n", "csv_table": "t"}, "csv:t"},
 		{"migrate_dir", func() ToolType { return NewExecuteTool() },
 			map[string]interface{}{"migrate_dir": "/migrations"}, "migrate:/migrations"},
+		{"copy_table", func() ToolType { return NewExecuteTool() },
+			map[string]interface{}{"copy_table": "items", "from_db": "src"}, "copy:src->db1:items"},
 		{"views_format", func() ToolType { return NewSchemaTool() },
 			map[string]interface{}{"format": "views"}, "views"},
 		{"triggers_format", func() ToolType { return NewSchemaTool() },
