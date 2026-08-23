@@ -285,6 +285,12 @@ type indexUsageUseCase interface {
 	ListUnusedIndexes(ctx context.Context, dbID string, minScans int) (string, error)
 }
 
+// doublewriteUseCase is implemented by use cases that audit
+// InnoDB's torn-page protection.
+type doublewriteUseCase interface {
+	AuditDoublewrite(ctx context.Context, dbID string) (string, error)
+}
+
 // binlogFormatUseCase is implemented by use cases that audit
 // MySQL's replication logging format.
 type binlogFormatUseCase interface {
@@ -1595,7 +1601,7 @@ func (t *PerformanceTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, strict_mode, aborted_connections, max_packet, wal_mode, synchronous_commit, busy_timeout, track_io_timing, wait_timeout, buffer_pool, fk_enforcement, crash_safety, wal_level, shared_buffers, open_files_limit, binlog_format, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, strict_mode, aborted_connections, max_packet, wal_mode, synchronous_commit, busy_timeout, track_io_timing, wait_timeout, buffer_pool, fk_enforcement, crash_safety, wal_level, shared_buffers, open_files_limit, binlog_format, doublewrite, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -1623,7 +1629,7 @@ func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, strict_mode, aborted_connections, max_packet, wal_mode, synchronous_commit, busy_timeout, track_io_timing, wait_timeout, buffer_pool, fk_enforcement, crash_safety, wal_level, shared_buffers, open_files_limit, binlog_format, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, strict_mode, aborted_connections, max_packet, wal_mode, synchronous_commit, busy_timeout, track_io_timing, wait_timeout, buffer_pool, fk_enforcement, crash_safety, wal_level, shared_buffers, open_files_limit, binlog_format, doublewrite, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -1682,6 +1688,14 @@ func (t *PerformanceTool) HandleRequest(ctx context.Context, request server.Tool
 	case "list_sessions":
 		if s, can := useCase.(sessionObservabilityUseCase); can {
 			out, err := s.ListActiveSessions(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "doublewrite":
+		if dwuc, can := useCase.(doublewriteUseCase); can {
+			out, err := dwuc.AuditDoublewrite(ctx, dbID)
 			if err != nil {
 				return nil, err
 			}
