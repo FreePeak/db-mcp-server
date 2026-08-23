@@ -285,6 +285,12 @@ type indexUsageUseCase interface {
 	ListUnusedIndexes(ctx context.Context, dbID string, minScans int) (string, error)
 }
 
+// staleSlotUseCase is implemented by use cases that report inactive
+// replication slots retaining WAL.
+type staleSlotUseCase interface {
+	ListStaleSlots(ctx context.Context, dbID string) (string, error)
+}
+
 // seqScanUseCase is implemented by use cases that report per-table
 // sequential-vs-index scan counters.
 type seqScanUseCase interface {
@@ -1367,7 +1373,7 @@ func (t *PerformanceTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -1395,7 +1401,7 @@ func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -1454,6 +1460,14 @@ func (t *PerformanceTool) HandleRequest(ctx context.Context, request server.Tool
 	case "list_sessions":
 		if s, can := useCase.(sessionObservabilityUseCase); can {
 			out, err := s.ListActiveSessions(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "stale_slots":
+		if wsc, can := useCase.(staleSlotUseCase); can {
+			out, err := wsc.ListStaleSlots(ctx, dbID)
 			if err != nil {
 				return nil, err
 			}
