@@ -118,3 +118,6 @@ func TestListDirectoryTool(t *testing.T) {
 	_, err = tool.HandleRequest(context.Background(), req, "", mockUseCase)
 	assert.Error(t, err)
 }
+func (m *MockUseCaseProvider) GenerateSchemaCode(_ context.Context, _, _ string) (string, error) {
+	return "", nil
+}

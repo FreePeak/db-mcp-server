@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/FreePeak/cortex/pkg/server"
 	"github.com/FreePeak/cortex/pkg/tools"
+	"github.com/FreePeak/db-mcp-server/internal/usecase"
 )
 
 // createTextResponse creates a simple response with a text content
@@ -83,6 +85,10 @@ type UseCaseProvider interface {
 	HealthCheck(ctx context.Context, dbID string) (map[string]interface{}, error)
 	// RelationshipGraph renders the database's FK relationships as Mermaid.
 	RelationshipGraph(ctx context.Context, dbID string) (string, error)
+
+	// GenerateSchemaCode renders the schema as application code
+	// (target: "go" structs or "typescript" interfaces).
+	GenerateSchemaCode(ctx context.Context, dbID, target string) (string, error)
 }
 
 // BaseToolType provides common functionality for tool types
@@ -139,6 +145,51 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Query parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
 		),
+		tools.WithBoolean("mask_pii",
+			tools.Description("Mask PII in results (emails, phones, cards, SSNs, IPs)"),
+		),
+		tools.WithString("verbosity",
+			tools.Description("Result size: full (default), normal (cells truncated at 500 chars with …(+N) markers), minimal (row count + first row preview — ideal for write confirmations/polling)"),
+		),
+		tools.WithString("format",
+			tools.Description(`Output format: text (default, human-readable table), csv (RFC4180), json (array of row objects), or inserts (INSERT INTO statements for the queried table)`),
+		),
+		tools.WithBoolean("count_only",
+			tools.Description("Return the row COUNT(*) for the statement instead of rows"),
+		),
+		tools.WithNumber("timeout_ms",
+			tools.Description("Cancel the query if it exceeds this many milliseconds"),
+		),
+		tools.WithString("save_query",
+			tools.Description("Save the `query` SQL under this name for this database (bookmark for replay)"),
+		),
+		tools.WithBoolean("saved_queries",
+			tools.Description("List this database's saved query bookmarks with SQL previews"),
+		),
+		tools.WithString("run_saved_query",
+			tools.Description("Execute a saved query bookmark by name"),
+		),
+		tools.WithNumber("long_queries",
+			tools.Description("List queries running longer than this many seconds (activity catalog; Postgres/MySQL)"),
+		),
+		tools.WithBoolean("unused_indexes",
+			tools.Description("List indexes the engine has barely scanned (write-tax candidates; Postgres/MySQL)"),
+		),
+		tools.WithNumber("min_scans",
+			tools.Description("Threshold for unused_indexes: an index needs fewer than this many scans to qualify (default 100)"),
+		),
+		tools.WithString("databases",
+			tools.Description("Comma-separated database ids: run this SELECT on each and render per-database sections (staging vs prod spot-check)"),
+		),
+		tools.WithNumber("sample_rows",
+			tools.Description("Return N randomly ordered rows instead of running the query as written (engine-aware ORDER BY)"),
+		),
+		tools.WithNumber("page",
+			tools.Description("1-based page number; requires page_size; returns data plus total matching rows"),
+		),
+		tools.WithNumber("page_size",
+			tools.Description("Rows per page when paging (default 50)"),
+		),
 	)
 }
 
@@ -159,7 +210,817 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 			tools.Description("Query parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
 		),
+		tools.WithBoolean("mask_pii",
+			tools.Description("Mask PII in results (emails, phones, cards, SSNs, IPs)"),
+		),
+		tools.WithString("verbosity",
+			tools.Description("Result size: full (default), normal (cells truncated at 500 chars with …(+N) markers), minimal (row count + first row preview — ideal for write confirmations/polling)"),
+		),
+		tools.WithString("format",
+			tools.Description(`Output format: text (default, human-readable table), csv (RFC4180), json (array of row objects), or inserts (INSERT INTO statements for the queried table)`),
+		),
+		tools.WithBoolean("count_only",
+			tools.Description("Return the row COUNT(*) for the statement instead of rows"),
+		),
+		tools.WithNumber("timeout_ms",
+			tools.Description("Cancel the query if it exceeds this many milliseconds"),
+		),
+		tools.WithString("save_query",
+			tools.Description("Save the `query` SQL under this name for this database (bookmark for replay)"),
+		),
+		tools.WithBoolean("saved_queries",
+			tools.Description("List this database's saved query bookmarks with SQL previews"),
+		),
+		tools.WithString("run_saved_query",
+			tools.Description("Execute a saved query bookmark by name"),
+		),
+		tools.WithNumber("long_queries",
+			tools.Description("List queries running longer than this many seconds (activity catalog; Postgres/MySQL)"),
+		),
+		tools.WithBoolean("unused_indexes",
+			tools.Description("List indexes the engine has barely scanned (write-tax candidates; Postgres/MySQL)"),
+		),
+		tools.WithNumber("min_scans",
+			tools.Description("Threshold for unused_indexes: an index needs fewer than this many scans to qualify (default 100)"),
+		),
+		tools.WithString("databases",
+			tools.Description("Comma-separated database ids: run this SELECT on each and render per-database sections (staging vs prod spot-check)"),
+		),
+		tools.WithNumber("sample_rows",
+			tools.Description("Return N randomly ordered rows instead of running the query as written (engine-aware ORDER BY)"),
+		),
+		tools.WithNumber("page",
+			tools.Description("1-based page number; requires page_size; returns data plus total matching rows"),
+		),
+		tools.WithNumber("page_size",
+			tools.Description("Rows per page when paging (default 50)"),
+		),
 	)
+}
+
+// queryExportUseCase is implemented by use cases that support machine-
+// readable export formats; detection keeps existing mocks and alternate
+// providers compatible.
+type queryExportUseCase interface {
+	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
+}
+
+// savedQueryUseCase is implemented by use cases that keep named
+// per-database query bookmarks.
+type savedQueryUseCase interface {
+	SaveQuery(dbID, name, query string) error
+	ListSavedQueries(dbID string) (string, error)
+	RunSavedQuery(ctx context.Context, dbID, name string) (string, error)
+}
+
+// longQueryUseCase is implemented by use cases that list engine
+// queries over an age threshold.
+type longQueryUseCase interface {
+	ListLongQueries(ctx context.Context, dbID string, minSeconds int) (string, error)
+}
+
+// indexUsageUseCase is implemented by use cases that report engine
+// index-usage statistics.
+type indexUsageUseCase interface {
+	ListUnusedIndexes(ctx context.Context, dbID string, minScans int) (string, error)
+}
+
+// healthAuditUseCase is implemented by use cases that run the combined
+// configuration health audit.
+type healthAuditUseCase interface {
+	RunHealthAudit(ctx context.Context, dbID string) (string, error)
+}
+
+// timeoutGuardsUseCase is implemented by use cases that audit the
+// PostgreSQL runaway-statement guards.
+type timeoutGuardsUseCase interface {
+	AuditTimeoutGuards(ctx context.Context, dbID string) (string, error)
+}
+
+// fileAccessUseCase is implemented by use cases that audit the MySQL
+// server-side file read/write surface.
+type fileAccessUseCase interface {
+	AuditFileAccess(ctx context.Context, dbID string) (string, error)
+}
+
+// slowQueryLogUseCase is implemented by use cases that audit the
+// MySQL slow query log switch and threshold.
+type slowQueryLogUseCase interface {
+	AuditSlowQueryLog(ctx context.Context, dbID string) (string, error)
+}
+
+// tableBloatUseCase is implemented by use cases that audit Postgres
+// dead-tuple bloat per user table.
+type tableBloatUseCase interface {
+	CheckTableBloat(ctx context.Context, dbID string) (string, error)
+}
+
+// replicationSlotsUseCase is implemented by use cases that audit
+// PostgreSQL replication slots for stranded WAL retention and
+// exhausted capacity.
+type replicationSlotsUseCase interface {
+	AuditReplicationSlots(ctx context.Context, dbID string) (string, error)
+}
+
+// effectiveIOConcurrencyUseCase is implemented by use cases that
+// audit whether PostgreSQL scan prefetching is tuned for SSD storage.
+type effectiveIOConcurrencyUseCase interface {
+	AuditEffectiveIOConcurrency(ctx context.Context, dbID string) (string, error)
+}
+
+// autovacuumNaptimeUseCase is implemented by use cases that audit
+// PostgreSQL's vacuum pass cadence against bloat accumulation
+// between passes.
+type autovacuumNaptimeUseCase interface {
+	AuditAutovacuumNaptime(ctx context.Context, dbID string) (string, error)
+}
+
+// maintenanceWorkMemUseCase is implemented by use cases that audit
+// PostgreSQL's maintenance memory budget against temp-disk spills in
+// VACUUM / CREATE INDEX / ANALYZE.
+type maintenanceWorkMemUseCase interface {
+	AuditMaintenanceWorkMem(ctx context.Context, dbID string) (string, error)
+}
+
+// trackCountsUseCase is implemented by use cases that audit
+// PostgreSQL's statistics-collection flag against frozen pg_stat
+// counters and blind autovacuum.
+type trackCountsUseCase interface {
+	AuditTrackCounts(ctx context.Context, dbID string) (string, error)
+}
+
+// logCheckpointsUseCase is implemented by use cases that audit
+// PostgreSQL's checkpoint logging flag against invisible checkpoint
+// I/O evidence.
+type logCheckpointsUseCase interface {
+	AuditLogCheckpoints(ctx context.Context, dbID string) (string, error)
+}
+
+// logLockWaitsUseCase is implemented by use cases that audit
+// PostgreSQL's lock-wait logging flag against missing post-incident
+// evidence.
+type logLockWaitsUseCase interface {
+	AuditLogLockWaits(ctx context.Context, dbID string) (string, error)
+}
+
+// tcpKeepalivesUseCase is implemented by use cases that audit
+// PostgreSQL's TCP keepalive idle interval against dead-client
+// slot retention.
+type tcpKeepalivesUseCase interface {
+	AuditTCPKeepalives(ctx context.Context, dbID string) (string, error)
+}
+
+// tempFileLimitUseCase is implemented by use cases that audit
+// PostgreSQL's per-session temp-file cap against disk-fill risk.
+type tempFileLimitUseCase interface {
+	AuditTempFileLimit(ctx context.Context, dbID string) (string, error)
+}
+
+// sslMinProtocolUseCase is implemented by use cases that audit
+// PostgreSQL's TLS floor and whether ssl is enabled at all.
+type sslMinProtocolUseCase interface {
+	AuditSSLMinProtocol(ctx context.Context, dbID string) (string, error)
+}
+
+// checkpointTimeoutUseCase is implemented by use cases that audit
+// PostgreSQL's checkpoint frequency vs storm/recovery trade-off.
+type checkpointTimeoutUseCase interface {
+	AuditCheckpointTimeout(ctx context.Context, dbID string) (string, error)
+}
+
+// backLogUseCase is implemented by use cases that audit MySQL's
+// TCP listen backlog for connection bursts.
+type backLogUseCase interface {
+	AuditBackLog(ctx context.Context, dbID string) (string, error)
+}
+
+// walSendersUseCase is implemented by use cases that audit
+// PostgreSQL's walsender capacity against live usage.
+type walSendersUseCase interface {
+	AuditWalSenders(ctx context.Context, dbID string) (string, error)
+}
+
+// walSenderTimeoutUseCase is implemented by use cases that audit
+// PostgreSQL's dead-standby reap window.
+type walSenderTimeoutUseCase interface {
+	AuditWalSenderTimeout(ctx context.Context, dbID string) (string, error)
+}
+
+// threadCacheUseCase is implemented by use cases that audit MySQL's
+// connection-thread churn against the configured cache.
+type threadCacheUseCase interface {
+	AuditThreadCache(ctx context.Context, dbID string) (string, error)
+}
+
+// syncBinlogUseCase is implemented by use cases that audit MySQL's
+// binary-log fsync durability.
+type syncBinlogUseCase interface {
+	AuditSyncBinlog(ctx context.Context, dbID string) (string, error)
+}
+
+// statisticsTargetUseCase is implemented by use cases that audit
+// PostgreSQL's ANALYZE sampling depth.
+type statisticsTargetUseCase interface {
+	AuditStatisticsTarget(ctx context.Context, dbID string) (string, error)
+}
+
+// effectiveCacheUseCase is implemented by use cases that audit
+// PostgreSQL's planner cache-size assumption.
+type effectiveCacheUseCase interface {
+	AuditEffectiveCache(ctx context.Context, dbID string) (string, error)
+}
+
+// logBufferUseCase is implemented by use cases that audit MySQL's
+// WAL log-buffer sizing against observed overflow waits.
+type logBufferUseCase interface {
+	AuditLogBuffer(ctx context.Context, dbID string) (string, error)
+}
+
+// randomPageCostUseCase is implemented by use cases that audit
+// PostgreSQL's random-I/O planner cost model.
+type randomPageCostUseCase interface {
+	AuditRandomPageCost(ctx context.Context, dbID string) (string, error)
+}
+
+// binlogRowImageUseCase is implemented by use cases that audit
+// MySQL's binary-log row-image width.
+type binlogRowImageUseCase interface {
+	AuditBinlogRowImage(ctx context.Context, dbID string) (string, error)
+}
+
+// flushNeighborsUseCase is implemented by use cases that audit
+// MySQL's innodb_flush_neighbors page-coalescing setting.
+type flushNeighborsUseCase interface {
+	AuditFlushNeighbors(ctx context.Context, dbID string) (string, error)
+}
+
+// jitUseCase is implemented by use cases that audit PostgreSQL's JIT
+// compiler toggle.
+type jitUseCase interface {
+	AuditJIT(ctx context.Context, dbID string) (string, error)
+}
+
+// avThrottleUseCase is implemented by use cases that audit whether
+// PostgreSQL's autovacuum cost budget keeps pace with writes.
+type avThrottleUseCase interface {
+	AuditAVThrottle(ctx context.Context, dbID string) (string, error)
+}
+
+// slotWalCapUseCase is implemented by use cases that audit
+// PostgreSQL's replication-slot WAL-retention cap.
+type slotWalCapUseCase interface {
+	AuditSlotWalCap(ctx context.Context, dbID string) (string, error)
+}
+
+// redoLogUseCase is implemented by use cases that audit InnoDB's
+// redo-log sizing.
+type redoLogUseCase interface {
+	AuditRedoLog(ctx context.Context, dbID string) (string, error)
+}
+
+// walCompressionUseCase is implemented by use cases that audit
+// PostgreSQL's checkpoint full-page-image compression.
+type walCompressionUseCase interface {
+	AuditWalCompression(ctx context.Context, dbID string) (string, error)
+}
+
+// ioCapacityUseCase is implemented by use cases that audit InnoDB's
+// background-flush pacing.
+type ioCapacityUseCase interface {
+	AuditIOCapacity(ctx context.Context, dbID string) (string, error)
+}
+
+// flushMethodUseCase is implemented by use cases that audit how
+// InnoDB issues writes (page-cache bypass vs double buffering).
+type flushMethodUseCase interface {
+	AuditFlushMethod(ctx context.Context, dbID string) (string, error)
+}
+
+// doublewriteUseCase is implemented by use cases that audit
+// InnoDB's torn-page protection.
+type doublewriteUseCase interface {
+	AuditDoublewrite(ctx context.Context, dbID string) (string, error)
+}
+
+// binlogFormatUseCase is implemented by use cases that audit
+// MySQL's replication logging format.
+type binlogFormatUseCase interface {
+	AuditBinlogFormat(ctx context.Context, dbID string) (string, error)
+}
+
+// openFilesLimitUseCase is implemented by use cases that audit
+// MySQL's file-descriptor ceiling against the table cache.
+type openFilesLimitUseCase interface {
+	AuditOpenFilesLimit(ctx context.Context, dbID string) (string, error)
+}
+
+// sharedBuffersUseCase is implemented by use cases that size
+// PostgreSQL's shared_buffers against the database volume.
+type sharedBuffersUseCase interface {
+	AuditSharedBuffers(ctx context.Context, dbID string) (string, error)
+}
+
+// walLevelUseCase is implemented by use cases that audit
+// PostgreSQL's wal_level replication/recovery setting.
+type walLevelUseCase interface {
+	AuditWALLevel(ctx context.Context, dbID string) (string, error)
+}
+
+// crashSafetyUseCase is implemented by use cases that audit
+// PostgreSQL's fsync / full_page_writes durability switches.
+type crashSafetyUseCase interface {
+	AuditCrashSafety(ctx context.Context, dbID string) (string, error)
+}
+
+// fkEnforcementUseCase is implemented by use cases that audit
+// SQLite's foreign-key enforcement flag.
+type fkEnforcementUseCase interface {
+	AuditFKEnforcement(ctx context.Context, dbID string) (string, error)
+}
+
+// bufferPoolUseCase is implemented by use cases that audit MySQL's
+// innodb_buffer_pool_size against the data volume.
+type bufferPoolUseCase interface {
+	AuditBufferPool(ctx context.Context, dbID string) (string, error)
+}
+
+// waitTimeoutUseCase is implemented by use cases that audit MySQL's
+// idle-connection timeout.
+type waitTimeoutUseCase interface {
+	AuditWaitTimeout(ctx context.Context, dbID string) (string, error)
+}
+
+// ioTimingUseCase is implemented by use cases that audit
+// PostgreSQL's track_io_timing observability switch.
+type ioTimingUseCase interface {
+	AuditTrackIoTiming(ctx context.Context, dbID string) (string, error)
+}
+
+// busyTimeoutUseCase is implemented by use cases that audit SQLite's
+// lock-contention retry window.
+type busyTimeoutUseCase interface {
+	AuditBusyTimeout(ctx context.Context, dbID string) (string, error)
+}
+
+// syncCommitUseCase is implemented by use cases that audit
+// PostgreSQL's synchronous_commit setting for commit-loss risk.
+type syncCommitUseCase interface {
+	AuditSyncCommit(ctx context.Context, dbID string) (string, error)
+}
+
+// walModeUseCase is implemented by use cases that audit SQLite
+// journal mode for concurrent read/write support.
+type walModeUseCase interface {
+	AuditWALMode(ctx context.Context, dbID string) (string, error)
+}
+
+// maxPacketUseCase is implemented by use cases that audit the MySQL
+// statement size ceiling.
+type maxPacketUseCase interface {
+	AuditMaxAllowedPacket(ctx context.Context, dbID string) (string, error)
+}
+
+// abortedConnsUseCase is implemented by use cases that audit MySQL
+// connection-abort counters.
+type abortedConnsUseCase interface {
+	AuditAbortedConnections(ctx context.Context, dbID string) (string, error)
+}
+
+// strictModeUseCase is implemented by use cases that audit MySQL
+// sql_mode for silent data-coercion risk.
+type strictModeUseCase interface {
+	AuditStrictMode(ctx context.Context, dbID string) (string, error)
+}
+
+// durabilityUseCase is implemented by use cases that audit crash-
+// durability settings (redo-log flush behavior).
+type durabilityUseCase interface {
+	AuditDurability(ctx context.Context, dbID string) (string, error)
+}
+
+// tableCacheUseCase is implemented by use cases that audit the
+// MySQL table-definition cache for saturation.
+type tableCacheUseCase interface {
+	AuditTableCache(ctx context.Context, dbID string) (string, error)
+}
+
+// passwordAuthUseCase is implemented by use cases that audit stored
+// password hashes and the server hashing default.
+type passwordAuthUseCase interface {
+	AuditPasswordAuth(ctx context.Context, dbID string) (string, error)
+}
+
+// slowLogUseCase is implemented by use cases that audit whether the
+// engine would even record a slow query.
+type slowLogUseCase interface {
+	AuditSlowLog(ctx context.Context, dbID string) (string, error)
+}
+
+// autoIncrementUseCase is implemented by use cases that audit
+// auto-increment counters against their type ceilings.
+type autoIncrementUseCase interface {
+	AuditAutoIncrement(ctx context.Context, dbID string) (string, error)
+}
+
+// binaryLogUseCase is implemented by use cases that audit binary-log
+// growth against retention.
+type binaryLogUseCase interface {
+	AuditBinaryLogs(ctx context.Context, dbID string) (string, error)
+}
+
+// matviewUseCase is implemented by use cases that audit materialized
+// views that error on query (never populated).
+type matviewUseCase interface {
+	ListUnpopulatedMatviews(ctx context.Context, dbID string) (string, error)
+}
+
+// myISAMUseCase is implemented by use cases that audit tables still
+// on the MyISAM engine.
+type myISAMUseCase interface {
+	ListMyISAMTables(ctx context.Context, dbID string) (string, error)
+}
+
+// unloggedTableUseCase is implemented by use cases that audit
+// WAL-skipping (UNLOGGED) tables.
+type unloggedTableUseCase interface {
+	ListUnloggedTables(ctx context.Context, dbID string) (string, error)
+}
+
+// foreignTableUseCase is implemented by use cases that list FDW
+// servers and the local names proxying to them.
+type foreignTableUseCase interface {
+	ListForeignTables(ctx context.Context, dbID string) (string, error)
+}
+
+// roleLimitUseCase is implemented by use cases that audit login roles
+// against their connection limits.
+type roleLimitUseCase interface {
+	ListRoleConnectionLimits(ctx context.Context, dbID string) (string, error)
+}
+
+// invalidIndexUseCase is implemented by use cases that audit invalid
+// (planner-ignored) indexes.
+type invalidIndexUseCase interface {
+	ListInvalidIndexes(ctx context.Context, dbID string) (string, error)
+}
+
+// checkpointUseCase is implemented by use cases that report checkpoint
+// pressure (timed vs requested).
+type checkpointUseCase interface {
+	CheckCheckpointPressure(ctx context.Context, dbID string) (string, error)
+}
+
+// autovacuumOffUseCase is implemented by use cases that list tables
+// with autovacuum explicitly disabled.
+type autovacuumOffUseCase interface {
+	ListAutovacuumDisabled(ctx context.Context, dbID string) (string, error)
+}
+
+// walArchiveUseCase is implemented by use cases that report WAL
+// archiver health.
+type walArchiveUseCase interface {
+	CheckWALArchive(ctx context.Context, dbID string) (string, error)
+}
+
+// preparedXactUseCase is implemented by use cases that list in-doubt
+// two-phase transactions.
+type preparedXactUseCase interface {
+	ListPreparedTransactions(ctx context.Context, dbID string) (string, error)
+}
+
+// extensionUseCase is implemented by use cases that list installed and
+// available engine extensions.
+type extensionUseCase interface {
+	ListExtensions(ctx context.Context, dbID string) (string, error)
+}
+
+// charsetUseCase is implemented by use cases that audit deprecated
+// column charsets.
+type charsetUseCase interface {
+	AuditCharsets(ctx context.Context, dbID string) (string, error)
+}
+
+// wraparoundUseCase is implemented by use cases that audit
+// transaction-ID wraparound risk.
+type wraparoundUseCase interface {
+	CheckWraparoundRisk(ctx context.Context, dbID string) (string, error)
+}
+
+// deadlockUseCase is implemented by use cases that report cumulative
+// engine deadlock counters.
+type deadlockUseCase interface {
+	CheckDeadlocks(ctx context.Context, dbID string) (string, error)
+}
+
+// staleSlotUseCase is implemented by use cases that report inactive
+// replication slots retaining WAL.
+type staleSlotUseCase interface {
+	ListStaleSlots(ctx context.Context, dbID string) (string, error)
+}
+
+// seqScanUseCase is implemented by use cases that report per-table
+// sequential-vs-index scan counters.
+type seqScanUseCase interface {
+	FindSeqScanHeavy(ctx context.Context, dbID string) (string, error)
+}
+
+// tempSpillUseCase is implemented by use cases that report disk-spill
+// counters for sorts and temp tables.
+type tempSpillUseCase interface {
+	CheckTempSpills(ctx context.Context, dbID string) (string, error)
+}
+
+// idleSessionsUseCase is implemented by use cases that list idle
+// engine connections holding pool slots.
+type idleSessionsUseCase interface {
+	ListIdleSessions(ctx context.Context, dbID string) (string, error)
+}
+
+// guardrailUseCase is implemented by use cases that audit engine-side
+// runaway-query timeout settings.
+type guardrailUseCase interface {
+	CheckTimeoutGuardrails(ctx context.Context, dbID string) (string, error)
+}
+
+// saturationUseCase is implemented by use cases that report engine
+// connection usage against max_connections.
+type saturationUseCase interface {
+	CheckConnectionSaturation(ctx context.Context, dbID string) (string, error)
+}
+
+// replicationUseCase is implemented by use cases that report replica
+// replay status and lag.
+type replicationUseCase interface {
+	ListReplication(ctx context.Context, dbID string) (string, error)
+}
+
+// partitionUseCase is implemented by use cases that list a table's
+// child partitions with bounds and sizes.
+type partitionUseCase interface {
+	ListPartitions(ctx context.Context, dbID, table string) (string, error)
+}
+
+// fkRulesUseCase is implemented by use cases that report FK edges with
+// their ON DELETE / ON UPDATE referential actions.
+type fkRulesUseCase interface {
+	ListFKRules(ctx context.Context, dbID string) (string, error)
+}
+
+// typeConsistencyUseCase is implemented by use cases that flag shared
+// column names with divergent types across tables.
+type typeConsistencyUseCase interface {
+	FindTypeInconsistencies(ctx context.Context, dbID string) (string, error)
+}
+
+// noPKUseCase is implemented by use cases that flag tables without a
+// primary key.
+// insertRequirementsUseCase is implemented by use cases that report
+// which columns an INSERT must supply per table.
+type insertRequirementsUseCase interface {
+	InsertRequirements(ctx context.Context, dbID string) (string, error)
+}
+
+type noPKUseCase interface {
+	FindTablesWithoutPK(ctx context.Context, dbID string) (string, error)
+}
+
+// checkConstraintUseCase is implemented by use cases that list CHECK
+// constraints from the engine catalogs.
+type checkConstraintUseCase interface {
+	ListCheckConstraints(ctx context.Context, dbID string) (string, error)
+}
+
+// fkIndexUseCase is implemented by use cases that detect foreign-key
+// child columns lacking a leading index.
+type fkIndexUseCase interface {
+	FindMissingFKIndexes(ctx context.Context, dbID string) (string, error)
+}
+
+// redundantIndexUseCase is implemented by use cases that detect
+// prefix-covered (redundant) indexes.
+type redundantIndexUseCase interface {
+	FindRedundantIndexes(ctx context.Context, dbID string) (string, error)
+}
+
+// keyDiffUseCase is implemented by use cases that compare primary-key
+// sets of one table across two databases.
+type keyDiffUseCase interface {
+	DiffKeys(ctx context.Context, dbA, dbB, table string) (string, error)
+}
+
+// grantsUseCase is implemented by use cases that audit table
+// privileges from the engine's grant catalogs.
+type grantsUseCase interface {
+	ListGrants(ctx context.Context, dbID string) (string, error)
+}
+
+// sequenceUseCase is implemented by use cases that audit integer-key
+// sequence exhaustion.
+type sequenceUseCase interface {
+	ListSequences(ctx context.Context, dbID string) (string, error)
+}
+
+// dependencyOrderUseCase is implemented by use cases that render the
+// FK-safe topological table ordering.
+type dependencyOrderUseCase interface {
+	DependencyOrder(ctx context.Context, dbID string) (string, error)
+}
+
+// maintenanceUseCase is implemented by use cases that surface engine
+// statistics-driven upkeep suggestions.
+type maintenanceUseCase interface {
+	ListMaintenance(ctx context.Context, dbID string) (string, error)
+}
+
+// dataDictionaryUseCase is implemented by use cases that render the
+// schema as a Markdown data dictionary.
+type dataDictionaryUseCase interface {
+	DataDictionary(ctx context.Context, dbID string) (string, error)
+}
+
+// sizeBaselineUseCase is implemented by use cases that keep a captured
+// row-count snapshot per database for growth comparison.
+type sizeBaselineUseCase interface {
+	CaptureSizeBaseline(ctx context.Context, dbID string) (string, error)
+	CompareSizeBaseline(ctx context.Context, dbID string) (string, error)
+}
+
+// piiAuditUseCase is implemented by use cases that merge name and
+// content PII detectors into one report.
+type piiAuditUseCase interface {
+	AuditPII(ctx context.Context, dbID string, sampleRows int) (string, error)
+}
+
+// overviewUseCase is implemented by use cases that render a one-call
+// database shape snapshot.
+type overviewUseCase interface {
+	DatabaseOverview(ctx context.Context, dbID string) (string, error)
+}
+
+// copyVerifyUseCase is implemented by use cases that reconcile row
+// counts between databases after a copy.
+type copyVerifyUseCase interface {
+	VerifyCopy(ctx context.Context, srcDB, dstDB, table string) (string, error)
+}
+
+// tableCopyMaskedUseCase is implemented by use cases that copy tables
+// while anonymizing PII-bearing values.
+type tableCopyMaskedUseCase interface {
+	CopyTableMasked(ctx context.Context, srcDB, dstDB, table string) (string, error)
+}
+
+// tableCopyUseCase is implemented by use cases that can bulk-copy one
+// table between databases.
+type tableCopyUseCase interface {
+	CopyTable(ctx context.Context, srcDB, dstDB, table string) (string, error)
+}
+
+// tableProfileUseCase is implemented by use cases that profile every
+// column of one table (nulls, distinct, range).
+type tableProfileUseCase interface {
+	ProfileTable(ctx context.Context, dbID, table string) (string, error)
+}
+
+// tableSizeUseCase is implemented by use cases that report per-table
+// row counts and disk sizes.
+type tableSizeUseCase interface {
+	TableSizes(ctx context.Context, dbID string) (string, error)
+}
+
+// orphanAuditUseCase is implemented by use cases that can count child
+// rows violating each foreign-key edge.
+type orphanAuditUseCase interface {
+	AuditOrphans(ctx context.Context, dbID string) (string, error)
+}
+
+// ddlDumpUseCase is implemented by use cases that can dump the engine's
+// stored CREATE statements.
+type ddlDumpUseCase interface {
+	DumpDDL(ctx context.Context, dbID string) (string, error)
+}
+
+// customTypeListingUseCase is implemented by use cases that can enumerate
+// user-defined enum/composite types.
+type customTypeListingUseCase interface {
+	ListCustomTypes(ctx context.Context, dbID string) (string, error)
+}
+
+// routineListingUseCase is implemented by use cases that can enumerate
+// stored functions and procedures.
+type routineListingUseCase interface {
+	ListRoutines(ctx context.Context, dbID string) (string, error)
+}
+
+// triggerListingUseCase is implemented by use cases that can enumerate
+// triggers with their definitions.
+type triggerListingUseCase interface {
+	ListTriggers(ctx context.Context, dbID string) (string, error)
+}
+
+// viewListingUseCase is implemented by use cases that can enumerate views
+// with their definitions.
+type viewListingUseCase interface {
+	ListViews(ctx context.Context, dbID string) (string, error)
+}
+
+// csvImportUseCase is implemented by use cases that can bulk-load CSV
+// content atomically.
+type csvImportUseCase interface {
+	ImportCSV(ctx context.Context, dbID, table, csvContent string) (string, error)
+}
+
+// migrationRunnerUseCase is implemented by use cases that can apply
+// versioned .sql migrations from a directory.
+type migrationRunnerUseCase interface {
+	RunMigrations(ctx context.Context, dbID, dir string) (string, error)
+}
+
+// scriptExecutionUseCase is implemented by use cases that can run a
+// multi-statement script atomically.
+type scriptExecutionUseCase interface {
+	ExecuteScript(ctx context.Context, dbID, script string) (string, error)
+}
+
+// duplicateDetectionUseCase is implemented by use cases that can report
+// duplicated values in one column.
+type duplicateDetectionUseCase interface {
+	FindDuplicates(ctx context.Context, dbID, table, column string) (string, error)
+}
+
+// acrossQueryUseCase is implemented by use cases that can fan one SELECT
+// out over several databases.
+type acrossQueryUseCase interface {
+	ExecuteQueryAcross(ctx context.Context, query string, dbIDs []string) (string, error)
+}
+
+// sampleQueryUseCase is implemented by use cases that can draw N random
+// rows from a statement with engine-appropriate ordering.
+type sampleQueryUseCase interface {
+	ExecuteQuerySample(ctx context.Context, dbID, query string, params []interface{}, n int) (string, error)
+}
+
+// pagedQueryUseCase is implemented by use cases that can window a SELECT
+// into a page with total count.
+type pagedQueryUseCase interface {
+	ExecuteQueryPage(ctx context.Context, dbID, query string, params []interface{}, page, pageSize int) (string, int64, error)
+}
+
+// relatedRowsUseCase is implemented by use cases that can traverse
+// foreign keys for one row.
+type relatedRowsUseCase interface {
+	RelatedRows(ctx context.Context, dbID, table, keyValue string) (string, error)
+}
+
+// valueSearchUseCase is implemented by use cases that can locate a literal
+// across every textual column of a database.
+type valueSearchUseCase interface {
+	SearchValues(ctx context.Context, dbID, needle string) (string, error)
+}
+
+// columnProfilingUseCase is implemented by use cases that can compute a
+// single-column statistical profile.
+type columnProfilingUseCase interface {
+	ProfileColumn(ctx context.Context, dbID, table, column string) (string, error)
+}
+
+// timeoutQueryUseCase is implemented by use cases that support a per-query
+// deadline.
+type timeoutQueryUseCase interface {
+	ExecuteQueryWithTimeout(ctx context.Context, dbID, query string, params []interface{}, timeoutMs int) (string, error)
+}
+
+// rowCountPreviewUseCase is implemented by use cases that can price a
+// SELECT via a COUNT(*) wrap without fetching rows.
+type rowCountPreviewUseCase interface {
+	CountQueryRows(ctx context.Context, dbID, query string, params []interface{}) (string, error)
+}
+
+// sessionObservabilityUseCase is implemented by use cases that can list
+// active engine sessions and cancel running queries.
+type sessionObservabilityUseCase interface {
+	ListActiveSessions(ctx context.Context, dbID string) (string, error)
+	ListBlockingWaits(ctx context.Context, dbID string) (string, error)
+	ListLongTransactions(ctx context.Context, dbID string, minAgeSecs int) (string, error)
+	CancelQuery(ctx context.Context, dbID string, sessionID int64) (string, error)
+}
+
+// schemaCompareUseCase is implemented by use cases that can structurally
+// diff two databases' schemas.
+type schemaCompareUseCase interface {
+	CompareSchemas(ctx context.Context, dbIDA, dbIDB string) (string, error)
+}
+
+// dataCompareUseCase is implemented by use cases that can compare table
+// row counts between two databases.
+type dataCompareUseCase interface {
+	CompareTableCounts(ctx context.Context, dbIDA, dbIDB string) (string, error)
+	CompareTableSamples(ctx context.Context, dbIDA, dbIDB, table string, limit int) (string, error)
+}
+
+// piIMaskingUseCase is implemented by use cases that support opt-in PII
+// masking; detection keeps existing mocks and alternate providers compatible.
+type piIMaskingUseCase interface {
+	ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool, verbosity usecase.ResultVerbosity) (string, error)
 }
 
 // HandleRequest handles query tool requests
@@ -179,6 +1040,181 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 		if paramsArr, ok := request.Parameters["params"].([]interface{}); ok {
 			queryParams = paramsArr
 		}
+	}
+
+	maskPII := false
+	if v, ok := request.Parameters["mask_pii"].(bool); ok {
+		maskPII = v
+	}
+
+	verbosity := usecase.VerbosityFull
+	if v, ok := request.Parameters["verbosity"].(string); ok {
+		switch usecase.ResultVerbosity(v) {
+		case usecase.VerbosityMinimal, usecase.VerbosityNormal:
+			verbosity = usecase.ResultVerbosity(v)
+		}
+	}
+	// Fan-out runs the SELECT on every listed database.
+	if dbsRaw, _ := request.Parameters["databases"].(string); strings.TrimSpace(dbsRaw) != "" { //nolint:errcheck // absent means single-db mode
+		var dbIDs []string
+		for _, d := range strings.Split(dbsRaw, ",") {
+			if t := strings.TrimSpace(d); t != "" {
+				dbIDs = append(dbIDs, t)
+			}
+		}
+		if len(dbIDs) > 1 {
+			if aq, can := useCase.(acrossQueryUseCase); can {
+				result, err := aq.ExecuteQueryAcross(ctx, query, dbIDs)
+				if err != nil {
+					return nil, err
+				}
+				return createTextResponse(result), nil
+			}
+		}
+	}
+
+	// Saved queries: bookmark and replay named SELECTs per database.
+	if sq, ok := request.Parameters["save_query"].(string); ok && strings.TrimSpace(sq) != "" {
+		sqlText, _ := request.Parameters["query"].(string) //nolint:errcheck // validated below
+		suc, can := useCase.(savedQueryUseCase)
+		if !can {
+			return nil, fmt.Errorf("saved queries are not supported by this provider")
+		}
+		if err := suc.SaveQuery(dbID, sq, sqlText); err != nil {
+			return nil, err
+		}
+		return createTextResponse(fmt.Sprintf("Saved %q on %s. Run with run_saved_query.", sq, dbID)), nil
+	}
+	if list, ok := request.Parameters["saved_queries"].(bool); ok && list {
+		suc, can := useCase.(savedQueryUseCase)
+		if !can {
+			return nil, fmt.Errorf("saved queries are not supported by this provider")
+		}
+		out, err := suc.ListSavedQueries(dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+	if rn, ok := request.Parameters["run_saved_query"].(string); ok && strings.TrimSpace(rn) != "" {
+		ruc, can := useCase.(savedQueryUseCase)
+		if !can {
+			return nil, fmt.Errorf("saved queries are not supported by this provider")
+		}
+		out, err := ruc.RunSavedQuery(ctx, dbID, rn)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+
+	// Long-query triage: active queries over an age threshold.
+	if secs, ok := request.Parameters["long_queries"].(float64); ok && secs > 0 {
+		luc, can := useCase.(longQueryUseCase)
+		if !can {
+			return nil, fmt.Errorf("long-query reporting is not supported by this provider")
+		}
+		out, err := luc.ListLongQueries(ctx, dbID, int(secs))
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+
+	// Unused index detection: write-tax candidates from usage stats.
+	if ui, ok := request.Parameters["unused_indexes"].(bool); ok && ui {
+		uuc, can := useCase.(indexUsageUseCase)
+		if !can {
+			return nil, fmt.Errorf("index usage reporting is not supported by this provider")
+		}
+		thr := 100.0
+		if v, ok2 := request.Parameters["min_scans"].(float64); ok2 && v > 0 {
+			thr = v
+		}
+		out, err := uuc.ListUnusedIndexes(ctx, dbID, int(thr))
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+
+	// Random sampling draws N arbitrary rows.
+	if n, ok := request.Parameters["sample_rows"].(float64); ok && int(n) > 0 {
+		if sq, can := useCase.(sampleQueryUseCase); can {
+			result, err := sq.ExecuteQuerySample(ctx, dbID, query, queryParams, int(n))
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(result), nil
+		}
+	}
+
+	// Pagination windows the result and reports the total in one call.
+	page, hasPage := request.Parameters["page"].(float64)
+	pageSize, hasSize := request.Parameters["page_size"].(float64)
+	if hasPage && int(page) > 0 || hasSize && int(pageSize) > 0 {
+		if pq, can := useCase.(pagedQueryUseCase); can {
+			result, _, err := pq.ExecuteQueryPage(ctx, dbID, query, queryParams,
+				int(page), int(pageSize))
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(result), nil
+		}
+	}
+
+	// count_only prices the statement instead of fetching rows.
+	if countOnly, ok := request.Parameters["count_only"].(bool); ok && countOnly {
+		if c, can := useCase.(rowCountPreviewUseCase); can {
+			result, err := c.CountQueryRows(ctx, dbID, query, queryParams)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(result), nil
+		}
+	}
+
+	// Export formats bypass the text renderer entirely.
+	if format, _ := request.Parameters["format"].(string); format == "csv" || format == "json" || format == "inserts" { //nolint:errcheck // absent means text
+		if x, canExport := useCase.(queryExportUseCase); canExport {
+			result, err := x.ExecuteQueryFormat(ctx, dbID, query, queryParams, format)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(result), nil
+		}
+	}
+
+	// Per-query deadline, when requested and supported.
+	if tm, ok := request.Parameters["timeout_ms"].(float64); ok && int(tm) > 0 {
+		if tq, can := useCase.(timeoutQueryUseCase); can {
+			if m, canMask := useCase.(piIMaskingUseCase); canMask {
+				result, err := func() (string, error) {
+					tctx, cancel := context.WithTimeout(ctx, time.Duration(int(tm))*time.Millisecond)
+					defer cancel()
+					return m.ExecuteQueryMasked(tctx, dbID, query, queryParams, maskPII, verbosity)
+				}()
+				if err != nil {
+					return nil, err
+				}
+				return createTextResponse(result), nil
+			}
+			result, err := tq.ExecuteQueryWithTimeout(ctx, dbID, query, queryParams, int(tm))
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(result), nil
+		}
+	}
+
+	// Route through the masked path whenever the provider supports it; the
+	// use case layer enforces server-level MaskPII config there.
+	if m, canMask := useCase.(piIMaskingUseCase); canMask {
+		result, err := m.ExecuteQueryMasked(ctx, dbID, query, queryParams, maskPII, verbosity)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(result), nil
 	}
 
 	result, err := useCase.ExecuteQuery(ctx, dbID, query, queryParams)
@@ -215,12 +1251,58 @@ func NewExecuteTool() *ExecuteTool {
 	return &ExecuteTool{
 		BaseToolType: BaseToolType{
 			name:        "execute",
-			description: "Execute SQL statement",
+			description: "Execute SQL statements",
 		},
 	}
 }
 
-// CreateTool creates an execute tool
+// dryRunCapable is implemented by use cases offering offline statement-risk
+// analysis; detection keeps existing mocks and alternate providers compatible.
+type dryRunCapable interface {
+	ExecuteStatementDryRun(ctx context.Context, dbID, statement string) (*usecase.RiskReport, error)
+}
+
+// snapshotCapable is implemented by use cases exposing pre-mutation
+// snapshots for agent-driven undo.
+type snapshotCapable interface {
+	ListSnapshots(dbID string) []usecase.MutationSnapshot
+	RollbackSnapshot(ctx context.Context, dbID, snapshotID string) (string, error)
+}
+
+// sensitiveColumnCapable is implemented by use cases offering PII column
+// discovery.
+type sensitiveColumnCapable interface {
+	FindSensitiveColumns(ctx context.Context, dbID string) ([]usecase.SensitiveFinding, error)
+}
+
+// contentPICapable is implemented by use cases offering sampled content-based
+// PII detection; optional companion to sensitiveColumnCapable.
+type contentPICapable interface {
+	ScanContentPII(ctx context.Context, dbID string, sampleRows int) ([]usecase.ContentPIIFinding, error)
+}
+
+// queryHistoryCapable is implemented by use cases exposing executed-statement
+// history for introspection.
+type queryHistoryCapable interface {
+	GetQueryHistory(dbID string) []usecase.HistoryEntry
+}
+
+func pluralY(n int) string {
+	if n == 1 {
+		return "y"
+	}
+	return "ies"
+}
+
+// schemaDriftCapable is implemented by use cases offering schema baselines
+// and drift detection.
+type schemaDriftCapable interface {
+	CaptureSchemaSnapshot(ctx context.Context, dbID string) (*usecase.SchemaSnapshot, error)
+	CheckSchemaDrift(ctx context.Context, dbID, baselineID string) (*usecase.SchemaDriftReport, error)
+	ListSchemaSnapshots(dbID string) []usecase.SchemaSnapshot
+}
+
+// CreateTool creates a per-database execute tool
 func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 	return tools.NewTool(
 		name,
@@ -232,6 +1314,33 @@ func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithArray("params",
 			tools.Description("Statement parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
+		),
+		tools.WithString("script",
+			tools.Description("Multi-statement script (semicolon-separated) executed atomically: all commit or all roll back with the failing statement named"),
+		),
+		tools.WithString("copy_table",
+			tools.Description("Copy every row of this table from another database into this one inside one transaction; requires from_db"),
+		),
+		tools.WithString("from_db",
+			tools.Description("Source database id for copy_table or verify_copy"),
+		),
+		tools.WithBoolean("mask_pii",
+			tools.Description("With copy_table: anonymize PII-bearing text (emails, phones, cards, SSNs, IPs) during the copy so prod data can seed staging safely"),
+		),
+		tools.WithString("verify_copy",
+			tools.Description("Verify a previous copy: compare row counts of this table between from_db and here; requires from_db"),
+		),
+		tools.WithString("migrate_dir",
+			tools.Description("Directory of versioned .sql migration files (001_, 002_, …); applies pending ones in name order, each atomically, tracked in _mcp_migrations"),
+		),
+		tools.WithString("csv_data",
+			tools.Description("CSV content (header + rows) to bulk-insert atomically; requires csv_table; capped at 10k rows"),
+		),
+		tools.WithString("csv_table",
+			tools.Description("Target table for csv_data imports"),
+		),
+		tools.WithBoolean("dry_run",
+			tools.Description("Analyze the statement's risk (destructive ops, missing WHERE, table rewrites) WITHOUT executing it"),
 		),
 	)
 }
@@ -253,6 +1362,33 @@ func (t *ExecuteTool) CreateUnifiedTool(name string, dbList []string) interface{
 			tools.Description("Statement parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
 		),
+		tools.WithString("script",
+			tools.Description("Multi-statement script (semicolon-separated) executed atomically: all commit or all roll back with the failing statement named"),
+		),
+		tools.WithString("copy_table",
+			tools.Description("Copy every row of this table from another database into this one inside one transaction; requires from_db"),
+		),
+		tools.WithString("from_db",
+			tools.Description("Source database id for copy_table or verify_copy"),
+		),
+		tools.WithBoolean("mask_pii",
+			tools.Description("With copy_table: anonymize PII-bearing text (emails, phones, cards, SSNs, IPs) during the copy so prod data can seed staging safely"),
+		),
+		tools.WithString("verify_copy",
+			tools.Description("Verify a previous copy: compare row counts of this table between from_db and here; requires from_db"),
+		),
+		tools.WithString("migrate_dir",
+			tools.Description("Directory of versioned .sql migration files (001_, 002_, …); applies pending ones in name order, each atomically, tracked in _mcp_migrations"),
+		),
+		tools.WithString("csv_data",
+			tools.Description("CSV content (header + rows) to bulk-insert atomically; requires csv_table; capped at 10k rows"),
+		),
+		tools.WithString("csv_table",
+			tools.Description("Target table for csv_data imports"),
+		),
+		tools.WithBoolean("dry_run",
+			tools.Description("Analyze the statement's risk (destructive ops, missing WHERE, table rewrites) WITHOUT executing it"),
+		),
 	)
 }
 
@@ -263,9 +1399,111 @@ func (t *ExecuteTool) HandleRequest(ctx context.Context, request server.ToolCall
 		dbID = extractDatabaseIDFromName(request.Name)
 	}
 
+	// Column profiling: nulls/distinct/range per column in one call.
+	if prof, ok := request.Parameters["profile"].(bool); ok && prof {
+		puc, can := useCase.(tableProfileUseCase)
+		if !can {
+			return nil, fmt.Errorf("profiling is not supported by this provider")
+		}
+		table, _ := request.Parameters["table"].(string) //nolint:errcheck // validated by usecase
+		out, err := puc.ProfileTable(ctx, dbID, table)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+
+	// Post-copy verification: row-count reconciliation between databases.
+	if vc, ok := request.Parameters["verify_copy"].(string); ok && strings.TrimSpace(vc) != "" {
+		fromDB, _ := request.Parameters["from_db"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(fromDB) == "" {
+			return nil, fmt.Errorf("from_db is required when verify_copy is provided")
+		}
+		vuc, can := useCase.(copyVerifyUseCase)
+		if !can {
+			return nil, fmt.Errorf("copy verification is not supported by this provider")
+		}
+		out, err := vuc.VerifyCopy(ctx, fromDB, dbID, vc)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+
+	// Cross-database table copy: destination is this tool's database.
+	if ct, ok := request.Parameters["copy_table"].(string); ok && strings.TrimSpace(ct) != "" {
+		fromDB, _ := request.Parameters["from_db"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(fromDB) == "" {
+			return nil, fmt.Errorf("from_db is required when copy_table is provided")
+		}
+		if maskPII, _ := request.Parameters["mask_pii"].(bool); maskPII { //nolint:errcheck // absent means false
+			mc, mcan := useCase.(tableCopyMaskedUseCase)
+			if !mcan {
+				return nil, fmt.Errorf("anonymized copy is not supported by this provider")
+			}
+			out, err := mc.CopyTableMasked(ctx, fromDB, dbID, ct)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+		cc, can := useCase.(tableCopyUseCase)
+		if !can {
+			return nil, fmt.Errorf("table copy is not supported by this provider")
+		}
+		out, err := cc.CopyTable(ctx, fromDB, dbID, ct)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+
+	// Migration runner: apply pending .sql files from a directory.
+	if migDir, ok := request.Parameters["migrate_dir"].(string); ok && strings.TrimSpace(migDir) != "" {
+		mr, can := useCase.(migrationRunnerUseCase)
+		if !can {
+			return nil, fmt.Errorf("migrations are not supported by this provider")
+		}
+		out, err := mr.RunMigrations(ctx, dbID, migDir)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+
+	// CSV import: atomic bulk insert.
+	if csvData, ok := request.Parameters["csv_data"].(string); ok && strings.TrimSpace(csvData) != "" {
+		csvTable, _ := request.Parameters["csv_table"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(csvTable) == "" {
+			return nil, fmt.Errorf("csv_table is required when csv_data is provided")
+		}
+		im, can := useCase.(csvImportUseCase)
+		if !can {
+			return nil, fmt.Errorf("CSV import is not supported by this provider")
+		}
+		out, err := im.ImportCSV(ctx, dbID, csvTable, csvData)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+
+	// Atomic multi-statement scripts.
+	if script, ok := request.Parameters["script"].(string); ok && strings.TrimSpace(script) != "" {
+		sc, can := useCase.(scriptExecutionUseCase)
+		if !can {
+			return nil, fmt.Errorf("script execution is not supported by this provider")
+		}
+		out, err := sc.ExecuteScript(ctx, dbID, script)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	}
+
 	statement, ok := request.Parameters["statement"].(string)
 	if !ok {
-		return nil, fmt.Errorf("statement parameter must be a string")
+		return nil, fmt.Errorf("statement parameter must be a string (or use the script parameter for a multi-statement batch)")
 	}
 
 	var statementParams []interface{}
@@ -275,12 +1513,41 @@ func (t *ExecuteTool) HandleRequest(ctx context.Context, request server.ToolCall
 		}
 	}
 
+	// Offline pre-flight: report what the statement WOULD do without running it.
+	dryRun, _ := request.Parameters["dry_run"].(bool) //nolint:errcheck // type assertion; absent param means false
+	if dryRun {
+		dc, capable := useCase.(dryRunCapable)
+		if !capable {
+			return nil, fmt.Errorf("dry_run is not supported by this provider")
+		}
+		report, rerr := dc.ExecuteStatementDryRun(ctx, dbID, statement)
+		if rerr != nil {
+			return nil, rerr
+		}
+		return createTextResponse(formatRiskReport(report)), nil
+	}
+
 	result, err := useCase.ExecuteStatement(ctx, dbID, statement, statementParams)
 	if err != nil {
 		return nil, err
 	}
 
 	return createTextResponse(result), nil
+}
+
+// formatRiskReport renders a RiskReport as compact agent-readable text.
+func formatRiskReport(r *usecase.RiskReport) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "DRY RUN — nothing was executed.\n")
+	fmt.Fprintf(&b, "Kind: %s  Risk: %s  Statements: %d\n", strings.ToUpper(r.Kind[:1])+r.Kind[1:], strings.ToUpper(r.Risk[:1])+r.Risk[1:], r.Statements)
+	if len(r.Notes) > 0 {
+		b.WriteString("\nAdvisories:\n")
+		for _, n := range r.Notes {
+			fmt.Fprintf(&b, "- %s\n", n)
+		}
+	}
+	b.WriteString("\nRe-run without dry_run to execute.")
+	return b.String()
 }
 
 //------------------------------------------------------------------------------
@@ -308,7 +1575,7 @@ func (t *TransactionTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Transaction action (begin, commit, rollback, execute)"),
+			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot, capture_schema_snapshot, check_schema_drift, list_schema_snapshots, list_query_history)"),
 			tools.Required(),
 		),
 		tools.WithString("transactionId",
@@ -337,7 +1604,7 @@ func (t *TransactionTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Transaction action (begin, commit, rollback, execute)"),
+			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot, capture_schema_snapshot, check_schema_drift, list_schema_snapshots, list_query_history)"),
 			tools.Required(),
 		),
 		tools.WithString("transactionId",
@@ -402,6 +1669,108 @@ func (t *TransactionTool) HandleRequest(ctx context.Context, request server.Tool
 		}
 	}
 
+	// Snapshot management actions (capability-detected so existing mocks
+	// and alternate providers stay compatible).
+	if action == "list_snapshots" || action == "rollback_snapshot" {
+		sc, capable := useCase.(snapshotCapable)
+		if !capable {
+			return nil, fmt.Errorf("%s is not supported by this provider", action)
+		}
+		if action == "list_snapshots" {
+			snaps := sc.ListSnapshots(dbID)
+			var b strings.Builder
+			fmt.Fprintf(&b, "Snapshots for %s: %d\n", dbID, len(snaps))
+			for _, sn := range snaps {
+				fmt.Fprintf(&b, "- %s  %s on %s (%d rows) at %s\n",
+					sn.ID, sn.Kind, sn.Table, len(sn.Rows), sn.Timestamp.Format(time.RFC3339))
+			}
+			return createTextResponse(b.String()), nil
+		}
+		snapID, _ := request.Parameters["snapshot_id"].(string) //nolint:errcheck // absent param handled below
+		if snapID == "" {
+			return nil, fmt.Errorf("snapshot_id parameter is required for rollback_snapshot")
+		}
+		msg, err := sc.RollbackSnapshot(ctx, dbID, snapID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(msg), nil
+	}
+
+	// Schema drift actions (capability-detected).
+	if action == "capture_schema_snapshot" || action == "check_schema_drift" || action == "list_schema_snapshots" {
+		sd, capable := useCase.(schemaDriftCapable)
+		if !capable {
+			return nil, fmt.Errorf("%s is not supported by this provider", action)
+		}
+		switch action {
+		case "capture_schema_snapshot":
+			snap, err := sd.CaptureSchemaSnapshot(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			var b strings.Builder
+			fmt.Fprintf(&b, "Schema baseline %s captured: %d tables.\n", snap.ID, len(snap.Tables))
+			for t, cols := range snap.Tables {
+				names := make([]string, 0, len(cols))
+				for _, c := range cols {
+					names = append(names, c.Name+" "+c.Type)
+				}
+				fmt.Fprintf(&b, "- %s (%s)\n", t, strings.Join(names, ", "))
+			}
+			return createTextResponse(b.String()), nil
+		case "check_schema_drift":
+			baselineID, _ := request.Parameters["baseline_id"].(string) //nolint:errcheck // absent handled below
+			if baselineID == "" {
+				return nil, fmt.Errorf("baseline_id parameter is required for check_schema_drift")
+			}
+			report, err := sd.CheckSchemaDrift(ctx, dbID, baselineID)
+			if err != nil {
+				return nil, err
+			}
+			var b strings.Builder
+			if !report.Drifted {
+				b.WriteString("No schema drift detected (matches baseline " + baselineID + ").\n")
+			} else {
+				fmt.Fprintf(&b, "Schema drift detected vs %s:\n", baselineID)
+				for _, ch := range report.Changes {
+					b.WriteString("- " + ch + "\n")
+				}
+			}
+			return createTextResponse(b.String()), nil
+		case "list_schema_snapshots":
+			snaps := sd.ListSchemaSnapshots(dbID)
+			var b strings.Builder
+			fmt.Fprintf(&b, "Schema baselines for %s: %d\n", dbID, len(snaps))
+			for _, sn := range snaps {
+				fmt.Fprintf(&b, "- %s  %d tables  %s\n", sn.ID, len(sn.Tables), sn.Timestamp.Format(time.RFC3339))
+			}
+			return createTextResponse(b.String()), nil
+		}
+	}
+
+	// Query history action (capability-detected).
+	if action == "list_query_history" {
+		hc, capable := useCase.(queryHistoryCapable)
+		if !capable {
+			return nil, fmt.Errorf("list_query_history is not supported by this provider")
+		}
+		entries := hc.GetQueryHistory(dbID)
+		var b strings.Builder
+		fmt.Fprintf(&b, "Query history for %s: %d entr%s\n", dbID, len(entries), pluralY(len(entries)))
+		for _, h := range entries {
+			status := "ok"
+			if !h.Success {
+				status = "failed"
+			}
+			fmt.Fprintf(&b, "- [%s] %s  %.2fms  %s\n", status, strings.ToUpper(h.Kind[:1])+h.Kind[1:], h.DurationMs, h.Statement)
+			if h.Error != "" {
+				b.WriteString("    error: " + h.Error + "\n")
+			}
+		}
+		return createTextResponse(b.String()), nil
+	}
+
 	message, metadata, err := useCase.ExecuteTransaction(ctx, dbID, action, txID, statement, params, readOnly)
 	if err != nil {
 		return nil, err
@@ -443,7 +1812,7 @@ func (t *PerformanceTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, getMetrics, analyzeQuery, reset, setThreshold)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, strict_mode, aborted_connections, max_packet, wal_mode, synchronous_commit, busy_timeout, track_io_timing, wait_timeout, buffer_pool, fk_enforcement, crash_safety, wal_level, shared_buffers, open_files_limit, binlog_format, doublewrite, flush_method, io_capacity, wal_compression, redo_log, slot_wal_cap, autovacuum_throttle, jit, flush_neighbors, binlog_row_image, random_page_cost, log_buffer_size, effective_cache_size, default_statistics_target, sync_binlog, thread_cache_size, max_wal_senders, wal_sender_timeout, back_log, checkpoint_timeout, ssl_min_protocol_version, temp_file_limit, tcp_keepalives_idle, log_lock_waits, log_checkpoints, track_counts, maintenance_work_mem, autovacuum_naptime, effective_io_concurrency, replication_slots, slow_query_log, bloat, timeout_guards, file_access, health_audit, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -454,6 +1823,9 @@ func (t *PerformanceTool) CreateTool(name string, dbID string) interface{} {
 		),
 		tools.WithNumber("threshold",
 			tools.Description("Slow query threshold in milliseconds (required for setThreshold)"),
+		),
+		tools.WithNumber("min_age_secs",
+			tools.Description("Minimum transaction age in seconds for long_transactions (default 60)"),
 		),
 	)
 }
@@ -468,7 +1840,7 @@ func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, getMetrics, analyzeQuery, reset, setThreshold)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, replication_status, connection_saturation, timeout_guardrails, idle_sessions, temp_spills, seq_scan_heavy, stale_slots, deadlock_counts, wraparound_risk, charset_audit, list_extensions, prepared_xacts, wal_archive, autovacuum_disabled, checkpoint_pressure, invalid_indexes, role_connection_limits, foreign_tables, unlogged_tables, myisam_tables, unpopulated_matviews, binlog_growth, auto_increment_headroom, slow_log, password_auth, table_cache, durability, strict_mode, aborted_connections, max_packet, wal_mode, synchronous_commit, busy_timeout, track_io_timing, wait_timeout, buffer_pool, fk_enforcement, crash_safety, wal_level, shared_buffers, open_files_limit, binlog_format, doublewrite, flush_method, io_capacity, wal_compression, redo_log, slot_wal_cap, autovacuum_throttle, jit, flush_neighbors, binlog_row_image, random_page_cost, log_buffer_size, effective_cache_size, default_statistics_target, sync_binlog, thread_cache_size, max_wal_senders, wal_sender_timeout, back_log, checkpoint_timeout, ssl_min_protocol_version, temp_file_limit, tcp_keepalives_idle, log_lock_waits, log_checkpoints, track_counts, maintenance_work_mem, autovacuum_naptime, effective_io_concurrency, replication_slots, slow_query_log, bloat, timeout_guards, file_access, health_audit, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -479,6 +1851,9 @@ func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interf
 		),
 		tools.WithNumber("threshold",
 			tools.Description("Slow query threshold in milliseconds (required for setThreshold)"),
+		),
+		tools.WithNumber("min_age_secs",
+			tools.Description("Minimum transaction age in seconds for long_transactions (default 60)"),
 		),
 	)
 }
@@ -515,6 +1890,672 @@ func (t *PerformanceTool) HandleRequest(ctx context.Context, request server.Tool
 	if request.Parameters["threshold"] != nil {
 		if thresholdParam, ok := request.Parameters["threshold"].(float64); ok {
 			threshold = int(thresholdParam)
+		}
+	}
+
+	// Session observability actions bypass the analyzer: they talk to the
+	// engine's session catalog directly.
+	switch action {
+	case "list_sessions":
+		if s, can := useCase.(sessionObservabilityUseCase); can {
+			out, err := s.ListActiveSessions(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "health_audit":
+		if hauc, can := useCase.(healthAuditUseCase); can {
+			out, err := hauc.RunHealthAudit(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "timeout_guards":
+		if tguc, can := useCase.(timeoutGuardsUseCase); can {
+			out, err := tguc.AuditTimeoutGuards(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "file_access":
+		if fauc, can := useCase.(fileAccessUseCase); can {
+			out, err := fauc.AuditFileAccess(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "slow_query_log":
+		if sluc, can := useCase.(slowQueryLogUseCase); can {
+			out, err := sluc.AuditSlowQueryLog(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "bloat":
+		if bluc, can := useCase.(tableBloatUseCase); can {
+			out, err := bluc.CheckTableBloat(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "replication_slots":
+		if rsuc, can := useCase.(replicationSlotsUseCase); can {
+			out, err := rsuc.AuditReplicationSlots(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "effective_io_concurrency":
+		if eucuc, can := useCase.(effectiveIOConcurrencyUseCase); can {
+			out, err := eucuc.AuditEffectiveIOConcurrency(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "autovacuum_naptime":
+		if anuc, can := useCase.(autovacuumNaptimeUseCase); can {
+			out, err := anuc.AuditAutovacuumNaptime(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "maintenance_work_mem":
+		if mwuc, can := useCase.(maintenanceWorkMemUseCase); can {
+			out, err := mwuc.AuditMaintenanceWorkMem(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "track_counts":
+		if tcuc, can := useCase.(trackCountsUseCase); can {
+			out, err := tcuc.AuditTrackCounts(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "log_checkpoints":
+		if lcuc, can := useCase.(logCheckpointsUseCase); can {
+			out, err := lcuc.AuditLogCheckpoints(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "log_lock_waits":
+		if llwuc, can := useCase.(logLockWaitsUseCase); can {
+			out, err := llwuc.AuditLogLockWaits(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "tcp_keepalives_idle":
+		if tkuc, can := useCase.(tcpKeepalivesUseCase); can {
+			out, err := tkuc.AuditTCPKeepalives(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "temp_file_limit":
+		if tfluc, can := useCase.(tempFileLimitUseCase); can {
+			out, err := tfluc.AuditTempFileLimit(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "ssl_min_protocol_version":
+		if sluc, can := useCase.(sslMinProtocolUseCase); can {
+			out, err := sluc.AuditSSLMinProtocol(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "checkpoint_timeout":
+		if ctuc, can := useCase.(checkpointTimeoutUseCase); can {
+			out, err := ctuc.AuditCheckpointTimeout(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "back_log":
+		if bluc, can := useCase.(backLogUseCase); can {
+			out, err := bluc.AuditBackLog(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "max_wal_senders":
+		if wsuc, can := useCase.(walSendersUseCase); can {
+			out, err := wsuc.AuditWalSenders(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "wal_sender_timeout":
+		if wstuc, can := useCase.(walSenderTimeoutUseCase); can {
+			out, err := wstuc.AuditWalSenderTimeout(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "thread_cache_size":
+		if tcuc, can := useCase.(threadCacheUseCase); can {
+			out, err := tcuc.AuditThreadCache(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "sync_binlog":
+		if sbuc, can := useCase.(syncBinlogUseCase); can {
+			out, err := sbuc.AuditSyncBinlog(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "default_statistics_target":
+		if stuc, can := useCase.(statisticsTargetUseCase); can {
+			out, err := stuc.AuditStatisticsTarget(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "effective_cache_size":
+		if ecuc, can := useCase.(effectiveCacheUseCase); can {
+			out, err := ecuc.AuditEffectiveCache(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "log_buffer_size":
+		if lbuc, can := useCase.(logBufferUseCase); can {
+			out, err := lbuc.AuditLogBuffer(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "random_page_cost":
+		if rpcuc, can := useCase.(randomPageCostUseCase); can {
+			out, err := rpcuc.AuditRandomPageCost(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "binlog_row_image":
+		if briuc, can := useCase.(binlogRowImageUseCase); can {
+			out, err := briuc.AuditBinlogRowImage(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "flush_neighbors":
+		if fnuc, can := useCase.(flushNeighborsUseCase); can {
+			out, err := fnuc.AuditFlushNeighbors(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "jit":
+		if juc, can := useCase.(jitUseCase); can {
+			out, err := juc.AuditJIT(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "autovacuum_throttle":
+		if avtuc, can := useCase.(avThrottleUseCase); can {
+			out, err := avtuc.AuditAVThrottle(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "slot_wal_cap":
+		if swcuc, can := useCase.(slotWalCapUseCase); can {
+			out, err := swcuc.AuditSlotWalCap(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "redo_log":
+		if rluc, can := useCase.(redoLogUseCase); can {
+			out, err := rluc.AuditRedoLog(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "wal_compression":
+		if wcmpuc, can := useCase.(walCompressionUseCase); can {
+			out, err := wcmpuc.AuditWalCompression(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "io_capacity":
+		if iocuc, can := useCase.(ioCapacityUseCase); can {
+			out, err := iocuc.AuditIOCapacity(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "flush_method":
+		if fmuc, can := useCase.(flushMethodUseCase); can {
+			out, err := fmuc.AuditFlushMethod(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "doublewrite":
+		if dwuc, can := useCase.(doublewriteUseCase); can {
+			out, err := dwuc.AuditDoublewrite(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "binlog_format":
+		if bfuc, can := useCase.(binlogFormatUseCase); can {
+			out, err := bfuc.AuditBinlogFormat(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "open_files_limit":
+		if ofluc, can := useCase.(openFilesLimitUseCase); can {
+			out, err := ofluc.AuditOpenFilesLimit(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "shared_buffers":
+		if sbuc, can := useCase.(sharedBuffersUseCase); can {
+			out, err := sbuc.AuditSharedBuffers(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "wal_level":
+		if wluc, can := useCase.(walLevelUseCase); can {
+			out, err := wluc.AuditWALLevel(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "crash_safety":
+		if csuc, can := useCase.(crashSafetyUseCase); can {
+			out, err := csuc.AuditCrashSafety(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "fk_enforcement":
+		if fkuc, can := useCase.(fkEnforcementUseCase); can {
+			out, err := fkuc.AuditFKEnforcement(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "buffer_pool":
+		if bpuc, can := useCase.(bufferPoolUseCase); can {
+			out, err := bpuc.AuditBufferPool(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "wait_timeout":
+		if wtuc, can := useCase.(waitTimeoutUseCase); can {
+			out, err := wtuc.AuditWaitTimeout(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "track_io_timing":
+		if tiuc, can := useCase.(ioTimingUseCase); can {
+			out, err := tiuc.AuditTrackIoTiming(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "busy_timeout":
+		if buc, can := useCase.(busyTimeoutUseCase); can {
+			out, err := buc.AuditBusyTimeout(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "synchronous_commit":
+		if suc, can := useCase.(syncCommitUseCase); can {
+			out, err := suc.AuditSyncCommit(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "wal_mode":
+		if wuc, can := useCase.(walModeUseCase); can {
+			out, err := wuc.AuditWALMode(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "max_packet":
+		if mpc, can := useCase.(maxPacketUseCase); can {
+			out, err := mpc.AuditMaxAllowedPacket(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "aborted_connections":
+		if auc, can := useCase.(abortedConnsUseCase); can {
+			out, err := auc.AuditAbortedConnections(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "strict_mode":
+		if suc, can := useCase.(strictModeUseCase); can {
+			out, err := suc.AuditStrictMode(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "durability":
+		if duc, can := useCase.(durabilityUseCase); can {
+			out, err := duc.AuditDurability(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "table_cache":
+		if tcc, can := useCase.(tableCacheUseCase); can {
+			out, err := tcc.AuditTableCache(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "password_auth":
+		if pac, can := useCase.(passwordAuthUseCase); can {
+			out, err := pac.AuditPasswordAuth(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "slow_log":
+		if slc, can := useCase.(slowLogUseCase); can {
+			out, err := slc.AuditSlowLog(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "auto_increment_headroom":
+		if aic, can := useCase.(autoIncrementUseCase); can {
+			out, err := aic.AuditAutoIncrement(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "binlog_growth":
+		if blc, can := useCase.(binaryLogUseCase); can {
+			out, err := blc.AuditBinaryLogs(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "unpopulated_matviews":
+		if mvc, can := useCase.(matviewUseCase); can {
+			out, err := mvc.ListUnpopulatedMatviews(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "myisam_tables":
+		if mtc, can := useCase.(myISAMUseCase); can {
+			out, err := mtc.ListMyISAMTables(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "unlogged_tables":
+		if utc, can := useCase.(unloggedTableUseCase); can {
+			out, err := utc.ListUnloggedTables(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "foreign_tables":
+		if ftc, can := useCase.(foreignTableUseCase); can {
+			out, err := ftc.ListForeignTables(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "role_connection_limits":
+		if rlc, can := useCase.(roleLimitUseCase); can {
+			out, err := rlc.ListRoleConnectionLimits(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "invalid_indexes":
+		if iic, can := useCase.(invalidIndexUseCase); can {
+			out, err := iic.ListInvalidIndexes(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "checkpoint_pressure":
+		if cpc, can := useCase.(checkpointUseCase); can {
+			out, err := cpc.CheckCheckpointPressure(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "autovacuum_disabled":
+		if adc, can := useCase.(autovacuumOffUseCase); can {
+			out, err := adc.ListAutovacuumDisabled(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "wal_archive":
+		if wac, can := useCase.(walArchiveUseCase); can {
+			out, err := wac.CheckWALArchive(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "prepared_xacts":
+		if pxc, can := useCase.(preparedXactUseCase); can {
+			out, err := pxc.ListPreparedTransactions(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "list_extensions":
+		if lec, can := useCase.(extensionUseCase); can {
+			out, err := lec.ListExtensions(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "charset_audit":
+		if csc, can := useCase.(charsetUseCase); can {
+			out, err := csc.AuditCharsets(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "wraparound_risk":
+		if wrc, can := useCase.(wraparoundUseCase); can {
+			out, err := wrc.CheckWraparoundRisk(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "deadlock_counts":
+		if duc, can := useCase.(deadlockUseCase); can {
+			out, err := duc.CheckDeadlocks(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "stale_slots":
+		if wsc, can := useCase.(staleSlotUseCase); can {
+			out, err := wsc.ListStaleSlots(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "seq_scan_heavy":
+		if ssc, can := useCase.(seqScanUseCase); can {
+			out, err := ssc.FindSeqScanHeavy(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "temp_spills":
+		if tsc, can := useCase.(tempSpillUseCase); can {
+			out, err := tsc.CheckTempSpills(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "idle_sessions":
+		if isc, can := useCase.(idleSessionsUseCase); can {
+			out, err := isc.ListIdleSessions(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "timeout_guardrails":
+		if g, can := useCase.(guardrailUseCase); can {
+			out, err := g.CheckTimeoutGuardrails(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "connection_saturation":
+		if s, can := useCase.(saturationUseCase); can {
+			out, err := s.CheckConnectionSaturation(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "replication_status":
+		if s, can := useCase.(replicationUseCase); can {
+			out, err := s.ListReplication(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "long_transactions":
+		if s, can := useCase.(sessionObservabilityUseCase); can {
+			minAge := 60
+			if v, ok := request.Parameters["min_age_secs"].(float64); ok && v > 0 {
+				minAge = int(v)
+			}
+			out, err := s.ListLongTransactions(ctx, dbID, minAge)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "lock_waits":
+		if s, can := useCase.(sessionObservabilityUseCase); can {
+			out, err := s.ListBlockingWaits(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "cancel_query":
+		if s, can := useCase.(sessionObservabilityUseCase); can {
+			sessionID := int64(0)
+			if v, ok := request.Parameters["session_id"].(float64); ok {
+				sessionID = int64(v)
+			} else if vStr, ok := request.Parameters["query_id"].(string); ok && vStr != "" {
+				return nil, fmt.Errorf("session_id parameter must be a number")
+			}
+			if sessionID <= 0 {
+				return nil, fmt.Errorf("session_id parameter is required for cancel_query")
+			}
+			out, err := s.CancelQuery(ctx, dbID, sessionID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
 		}
 	}
 
@@ -633,6 +2674,18 @@ func (t *DescribeTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Table name to inspect (schema-qualified allowed, e.g. public.users)"),
 			tools.Required(),
 		),
+		tools.WithString("profile_column",
+			tools.Description("Profile one column instead of describing the table: rows, null count, cardinality, min/max, top values"),
+		),
+		tools.WithString("related_key",
+			tools.Description("Primary-key value: follow this row's foreign keys to parents and list referencing children"),
+		),
+		tools.WithBoolean("profile",
+			tools.Description("Profile the table: per-column rows, NULL count, distinct count, and min/max"),
+		),
+		tools.WithString("duplicates_column",
+			tools.Description("Report duplicated values in this column with counts and an example PK per group"),
+		),
 	)
 }
 
@@ -649,6 +2702,18 @@ func (t *DescribeTool) CreateUnifiedTool(name string, dbList []string) interface
 			tools.Description("Table name to inspect (schema-qualified allowed, e.g. public.users)"),
 			tools.Required(),
 		),
+		tools.WithString("profile_column",
+			tools.Description("Profile one column instead of describing the table: rows, null count, cardinality, min/max, top values"),
+		),
+		tools.WithString("related_key",
+			tools.Description("Primary-key value: follow this row's foreign keys to parents and list referencing children"),
+		),
+		tools.WithBoolean("profile",
+			tools.Description("Profile the table: per-column rows, NULL count, distinct count, and min/max"),
+		),
+		tools.WithString("duplicates_column",
+			tools.Description("Report duplicated values in this column with counts and an example PK per group"),
+		),
 	)
 }
 
@@ -661,6 +2726,38 @@ func (t *DescribeTool) HandleRequest(ctx context.Context, request server.ToolCal
 	table, ok := request.Parameters["table"].(string)
 	if !ok {
 		return nil, fmt.Errorf("table parameter must be a string")
+	}
+
+	// Duplicate detection on one column.
+	if colName, ok := request.Parameters["duplicates_column"].(string); ok && strings.TrimSpace(colName) != "" {
+		if dd, can := useCase.(duplicateDetectionUseCase); can {
+			out, err := dd.FindDuplicates(ctx, dbID, table, colName)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	}
+
+	// FK traversal: resolve one row by PK and render its relations.
+	if keyVal, ok := request.Parameters["related_key"].(string); ok && strings.TrimSpace(keyVal) != "" {
+		if rr, can := useCase.(relatedRowsUseCase); can {
+			out, err := rr.RelatedRows(ctx, dbID, table, keyVal)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	}
+
+	if col, ok := request.Parameters["profile_column"].(string); ok && strings.TrimSpace(col) != "" {
+		if pc, can := useCase.(columnProfilingUseCase); can {
+			out, err := pc.ProfileColumn(ctx, dbID, table, col)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
 	}
 
 	info, err := useCase.DescribeTable(ctx, dbID, table)
@@ -755,6 +2852,9 @@ func (t *HealthTool) CreateTool(name string, dbID string) interface{} {
 	return tools.NewTool(
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
+		tools.WithString("action",
+			tools.Description(`"trend" renders the rolling pool-pressure history with deltas instead of a fresh check`),
+		),
 	)
 }
 
@@ -767,13 +2867,35 @@ func (t *HealthTool) CreateUnifiedTool(name string, dbList []string) interface{}
 			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
 			tools.Required(),
 		),
+		tools.WithString("action",
+			tools.Description(`"trend" renders the rolling pool-pressure history with deltas instead of a fresh check`),
+		),
 	)
 }
 
-// HandleRequest handles health tool requests
+// healthTrendUseCase is implemented by use cases that keep a rolling
+// per-database health sample history.
+type healthTrendUseCase interface {
+	HealthTrend(dbID string) (string, error)
+}
+
+// HandleRequest handles health tool requests; action=trend renders the
+// rolling sample history instead of a fresh check.
 func (t *HealthTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	if dbID == "" {
 		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	if action, _ := request.Parameters["action"].(string); action == "trend" { //nolint:errcheck // non-string means no trend
+		tuc, can := useCase.(healthTrendUseCase)
+		if !can {
+			return nil, fmt.Errorf("health trend is not supported by this provider")
+		}
+		out, err := tuc.HealthTrend(dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
 	}
 
 	info, err := useCase.HealthCheck(ctx, dbID)
@@ -831,8 +2953,11 @@ func (t *SchemaTool) CreateTool(name string, dbID string) interface{} {
 	return tools.NewTool(
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
+		tools.WithString("table",
+			tools.Description("Table name; required only for format=compare_samples"),
+		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing) or "mermaid" (entity-relationship diagram of foreign-key relationships)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), "type_consistency" (shared column names with divergent types across tables — joins will coerce or fail), "no_pk" (user tables lacking a PRIMARY KEY — replication breaks, rows unaddressable), "required_columns" (NOT NULL columns without a DEFAULT per table — exactly what an INSERT must supply), "fk_rules" (every FK edge with its ON DELETE / ON UPDATE behavior — CASCADE silently destroys children, NO ACTION blocks the delete; Postgres/MySQL), "partitions" (child partitions of one table with bounds, row estimates, and sizes — requires table; Postgres/MySQL), "checks" (CHECK-constraint clauses grouped by table — the business rules valid data must satisfy; Postgres/MySQL 8+), "fk_indexes" (foreign-key child columns with no leading index — parent deletes scan the child table; candidate DDL included), "redundant_indexes" (non-unique indexes whose column list is a prefix of a wider sibling — write amplification with no read benefit), "key_diff" (primary-key set difference for one table vs compare_with; requires compare_with + table), "grants" (table privileges grouped by grantee from the engine catalogs; Postgres/MySQL), "sequences" (integer-key sequences at >=80% of their ceiling — exhaustion is a silent insert-failure incident; Postgres), "dependency_order" (FK-safe topological table order for seeding/truncating, cycles flagged), "maintenance" (bloat/fragmentation/stale-statistics suggestions from engine catalogs; Postgres/MySQL), "dictionary" (whole schema as a Markdown data dictionary), "sizes" (row counts and disk size per table), "baseline_capture" / "baseline_compare" (record row counts now, diff later for growth), "overview" (one-call shape snapshot: tables/columns/indexes/FK edges/rows plus PII-name suspects), or "pii_audit" (merged name+content PII report; optional sample_rows, default 50)`),
 		),
 	)
 }
@@ -846,8 +2971,11 @@ func (t *SchemaTool) CreateUnifiedTool(name string, dbList []string) interface{}
 			tools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
 			tools.Required(),
 		),
+		tools.WithString("table",
+			tools.Description("Table name; required only for format=compare_samples"),
+		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing) or "mermaid" (entity-relationship diagram of foreign-key relationships)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), "type_consistency" (shared column names with divergent types across tables — joins will coerce or fail), "no_pk" (user tables lacking a PRIMARY KEY — replication breaks, rows unaddressable), "fk_rules" (every FK edge with its ON DELETE / ON UPDATE behavior — CASCADE silently destroys children, NO ACTION blocks the delete; Postgres/MySQL), "partitions" (child partitions of one table with bounds, row estimates, and sizes — requires table; Postgres/MySQL), "checks" (CHECK-constraint clauses grouped by table — the business rules valid data must satisfy; Postgres/MySQL 8+), "fk_indexes" (foreign-key child columns with no leading index — parent deletes scan the child table; candidate DDL included), "redundant_indexes" (non-unique indexes whose column list is a prefix of a wider sibling — write amplification with no read benefit), "key_diff" (primary-key set difference for one table vs compare_with; requires compare_with + table), "grants" (table privileges grouped by grantee from the engine catalogs; Postgres/MySQL), "sequences" (integer-key sequences at >=80% of their ceiling — exhaustion is a silent insert-failure incident; Postgres), "dependency_order" (FK-safe topological table order for seeding/truncating, cycles flagged), "maintenance" (bloat/fragmentation/stale-statistics suggestions from engine catalogs; Postgres/MySQL), "dictionary" (whole schema as a Markdown data dictionary), "sizes" (row counts and disk size per table), "baseline_capture" / "baseline_compare" (record row counts now, diff later for growth), "overview" (one-call shape snapshot: tables/columns/indexes/FK edges/rows plus PII-name suspects), or "pii_audit" (merged name+content PII report; optional sample_rows, default 50)`),
 		),
 	)
 }
@@ -859,14 +2987,357 @@ func (t *SchemaTool) HandleRequest(ctx context.Context, request server.ToolCallR
 		dbID = extractDatabaseIDFromName(request.Name)
 	}
 
-	// format=mermaid renders the entity-relationship graph instead of a
-	// plain table listing.
-	if format, ok := request.Parameters["format"].(string); ok && format == "mermaid" {
+	// format selects alternate renderings of the schema (mermaid ERD,
+	// sensitive-column report) instead of a plain table listing.
+	format, _ := request.Parameters["format"].(string) //nolint:errcheck // absent means default listing
+	switch {
+	case format == "mermaid":
 		graph, err := useCase.RelationshipGraph(ctx, dbID)
 		if err != nil {
 			return nil, err
 		}
 		return createTextResponse(graph), nil
+	case format == "compare_data_counts":
+		compareWith, _ := request.Parameters["compare_with"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(compareWith) == "" {
+			return nil, fmt.Errorf("format=compare_data_counts requires the compare_with parameter (database id to diff against)")
+		}
+		dc, can := useCase.(dataCompareUseCase)
+		if !can {
+			return nil, fmt.Errorf("row-count comparison is not supported by this provider")
+		}
+		out, err := dc.CompareTableCounts(ctx, dbID, compareWith)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "compare_samples":
+		compareWith, _ := request.Parameters["compare_with"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(compareWith) == "" {
+			return nil, fmt.Errorf("format=compare_samples requires the compare_with parameter (database id to diff against)")
+		}
+		table, _ := request.Parameters["table"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(table) == "" {
+			return nil, fmt.Errorf("format=compare_samples requires the table parameter")
+		}
+		limit := 50
+		if v, ok := request.Parameters["limit"].(float64); ok && int(v) > 0 {
+			limit = int(v)
+		}
+		dc, can := useCase.(dataCompareUseCase)
+		if !can {
+			return nil, fmt.Errorf("sample comparison is not supported by this provider")
+		}
+		out, err := dc.CompareTableSamples(ctx, dbID, compareWith, table, limit)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "partitions":
+		ptc, can := useCase.(partitionUseCase)
+		if !can {
+			return nil, fmt.Errorf("partition introspection is not supported by this provider")
+		}
+		table, _ := request.Parameters["table"].(string) //nolint:errcheck // empty means missing
+		if table == "" {
+			return nil, fmt.Errorf(`format "partitions" requires a "table" parameter`)
+		}
+		out, err := ptc.ListPartitions(ctx, dbID, table)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "fk_rules":
+		fuc, can := useCase.(fkRulesUseCase)
+		if !can {
+			return nil, fmt.Errorf("foreign-key rule auditing is not supported by this provider")
+		}
+		out, err := fuc.ListFKRules(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "type_consistency":
+		tuc, can := useCase.(typeConsistencyUseCase)
+		if !can {
+			return nil, fmt.Errorf("type-consistency auditing is not supported by this provider")
+		}
+		out, err := tuc.FindTypeInconsistencies(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "required_columns":
+		irc, can := useCase.(insertRequirementsUseCase)
+		if !can {
+			return nil, fmt.Errorf("insert-requirements auditing is not supported by this provider")
+		}
+		out, err := irc.InsertRequirements(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "no_pk":
+		nuc, can := useCase.(noPKUseCase)
+		if !can {
+			return nil, fmt.Errorf("primary-key auditing is not supported by this provider")
+		}
+		out, err := nuc.FindTablesWithoutPK(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "checks":
+		cc, can := useCase.(checkConstraintUseCase)
+		if !can {
+			return nil, fmt.Errorf("CHECK-constraint reporting is not supported by this provider")
+		}
+		out, err := cc.ListCheckConstraints(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "fk_indexes":
+		fuc, can := useCase.(fkIndexUseCase)
+		if !can {
+			return nil, fmt.Errorf("missing-FK-index detection is not supported by this provider")
+		}
+		out, err := fuc.FindMissingFKIndexes(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "redundant_indexes":
+		ruc, can := useCase.(redundantIndexUseCase)
+		if !can {
+			return nil, fmt.Errorf("redundant-index detection is not supported by this provider")
+		}
+		out, err := ruc.FindRedundantIndexes(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "key_diff":
+		kuc, can := useCase.(keyDiffUseCase)
+		if !can {
+			return nil, fmt.Errorf("key diff is not supported by this provider")
+		}
+		compareWith2, _ := request.Parameters["compare_with"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(compareWith2) == "" {
+			return nil, fmt.Errorf("format=key_diff requires the compare_with parameter (database id to diff against)")
+		}
+		table2, _ := request.Parameters["table"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(table2) == "" {
+			return nil, fmt.Errorf("format=key_diff requires the table parameter")
+		}
+		out, err := kuc.DiffKeys(ctx, dbID, compareWith2, table2)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "grants":
+		guc, can := useCase.(grantsUseCase)
+		if !can {
+			return nil, fmt.Errorf("grants reporting is not supported by this provider")
+		}
+		out, err := guc.ListGrants(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "sequences":
+		suc2, can := useCase.(sequenceUseCase)
+		if !can {
+			return nil, fmt.Errorf("sequence reporting is not supported by this provider")
+		}
+		out, err := suc2.ListSequences(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "dependency_order":
+		doc, can := useCase.(dependencyOrderUseCase)
+		if !can {
+			return nil, fmt.Errorf("dependency ordering is not supported by this provider")
+		}
+		out, err := doc.DependencyOrder(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "maintenance":
+		muc, can := useCase.(maintenanceUseCase)
+		if !can {
+			return nil, fmt.Errorf("maintenance reporting is not supported by this provider")
+		}
+		out, err := muc.ListMaintenance(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "dictionary":
+		dic, can := useCase.(dataDictionaryUseCase)
+		if !can {
+			return nil, fmt.Errorf("data dictionary is not supported by this provider")
+		}
+		out, err := dic.DataDictionary(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "baseline_capture":
+		buc, can := useCase.(sizeBaselineUseCase)
+		if !can {
+			return nil, fmt.Errorf("size baselines are not supported by this provider")
+		}
+		out, err := buc.CaptureSizeBaseline(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "baseline_compare":
+		bcuc, can2 := useCase.(sizeBaselineUseCase)
+		if !can2 {
+			return nil, fmt.Errorf("size baselines are not supported by this provider")
+		}
+		out, err := bcuc.CompareSizeBaseline(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "pii_audit":
+		pauc, can := useCase.(piiAuditUseCase)
+		if !can {
+			return nil, fmt.Errorf("combined PII audit is not supported by this provider")
+		}
+		sr := 50.0
+		if v, ok2 := request.Parameters["sample_rows"].(float64); ok2 && v > 0 {
+			sr = v
+		}
+		out, err := pauc.AuditPII(ctx, dbID, int(sr))
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "overview":
+		ouc, can := useCase.(overviewUseCase)
+		if !can {
+			return nil, fmt.Errorf("database overview is not supported by this provider")
+		}
+		out, err := ouc.DatabaseOverview(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "sizes":
+		ts, can := useCase.(tableSizeUseCase)
+		if !can {
+			return nil, fmt.Errorf("table size reporting is not supported by this provider")
+		}
+		out, err := ts.TableSizes(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "orphans":
+		ao, can := useCase.(orphanAuditUseCase)
+		if !can {
+			return nil, fmt.Errorf("orphan audit is not supported by this provider")
+		}
+		out, err := ao.AuditOrphans(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "ddl":
+		dd, can := useCase.(ddlDumpUseCase)
+		if !can {
+			return nil, fmt.Errorf("DDL dump is not supported by this provider")
+		}
+		out, err := dd.DumpDDL(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "types":
+		ct, can := useCase.(customTypeListingUseCase)
+		if !can {
+			return nil, fmt.Errorf("custom type listing is not supported by this provider")
+		}
+		out, err := ct.ListCustomTypes(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "routines":
+		lr, can := useCase.(routineListingUseCase)
+		if !can {
+			return nil, fmt.Errorf("routine listing is not supported by this provider")
+		}
+		out, err := lr.ListRoutines(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "triggers":
+		lt, can := useCase.(triggerListingUseCase)
+		if !can {
+			return nil, fmt.Errorf("trigger listing is not supported by this provider")
+		}
+		out, err := lt.ListTriggers(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "views":
+		lv, can := useCase.(viewListingUseCase)
+		if !can {
+			return nil, fmt.Errorf("view listing is not supported by this provider")
+		}
+		out, err := lv.ListViews(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "compare":
+		compareWith, _ := request.Parameters["compare_with"].(string) //nolint:errcheck // absent means error below
+		if strings.TrimSpace(compareWith) == "" {
+			return nil, fmt.Errorf("format=compare requires the compare_with parameter (database id to diff against)")
+		}
+		sc, can := useCase.(schemaCompareUseCase)
+		if !can {
+			return nil, fmt.Errorf("schema comparison is not supported by this provider")
+		}
+		diff, err := sc.CompareSchemas(ctx, dbID, compareWith)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(diff), nil
+	case format == "sensitive":
+		sc, capable := useCase.(sensitiveColumnCapable)
+		if !capable {
+			return nil, fmt.Errorf("sensitive column discovery is not supported by this provider")
+		}
+		findings, err := sc.FindSensitiveColumns(ctx, dbID)
+		if err != nil {
+			return nil, err
+		}
+		report := usecase.FormatSensitiveColumnsReport(dbID, findings)
+		// Merge content-based findings when the provider supports sampling.
+		if cc, contentCapable := useCase.(contentPICapable); contentCapable {
+			contentFindings, cerr := cc.ScanContentPII(ctx, dbID, 50)
+			if cerr == nil && len(contentFindings) > 0 {
+				var b strings.Builder
+				b.WriteString(report)
+				b.WriteString("\nContent-detected columns (PII patterns found in sampled values):\n")
+				for _, f := range contentFindings {
+					fmt.Fprintf(&b, "  %s.%s [%s] (%d rows sampled)\n",
+						f.Table, f.Column, strings.Join(f.Categories, ", "), f.SamplesScanned)
+				}
+				report = b.String()
+			}
+		}
+		return createTextResponse(report), nil
 	}
 
 	info, err := useCase.GetDatabaseInfo(dbID)
@@ -956,6 +3427,7 @@ func NewToolTypeFactory() *ToolTypeFactory {
 	factory.Register(NewDescribeTool())
 	factory.Register(NewHealthTool())
 	factory.Register(NewSchemaTool())
+	factory.Register(NewGenerateSchemaTool())
 	factory.Register(NewListDatabasesTool())
 	factory.Register(NewListDirectoryTool())
 	factory.Register(NewFilterTablesTool())
@@ -1037,7 +3509,7 @@ func NewFilterTablesTool() *FilterTablesTool {
 	return &FilterTablesTool{
 		BaseToolType: BaseToolType{
 			name:        "filter_tables",
-			description: "Find tables by substring match",
+			description: "Find tables by substring match, or find where a value lives",
 		},
 	}
 }
@@ -1048,8 +3520,11 @@ func (t *FilterTablesTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("pattern",
-			tools.Description("Case-insensitive substring to match table names against"),
+			tools.Description("Case-insensitive substring to match table names against (ignored when value is set)"),
 			tools.Required(),
+		),
+		tools.WithString("value",
+			tools.Description("Search every textual column of every table for this literal instead of filtering table names"),
 		),
 	)
 }
@@ -1064,8 +3539,11 @@ func (t *FilterTablesTool) CreateUnifiedTool(name string, dbList []string) inter
 			tools.Required(),
 		),
 		tools.WithString("pattern",
-			tools.Description("Case-insensitive substring to match table names against"),
+			tools.Description("Case-insensitive substring to match table names against (ignored when value is set)"),
 			tools.Required(),
+		),
+		tools.WithString("value",
+			tools.Description("Search every textual column of every table for this literal instead of filtering table names"),
 		),
 	)
 }
@@ -1073,9 +3551,20 @@ func (t *FilterTablesTool) CreateUnifiedTool(name string, dbList []string) inter
 // HandleRequest handles the filter_tables request: it pulls the database
 // schema, filters the tables whose names contain the pattern (case
 // insensitive), and returns a small text response with the matched names.
-func (t *FilterTablesTool) HandleRequest(_ context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+func (t *FilterTablesTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	if dbID == "" {
 		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	// Value search mode: locate a literal across all textual columns.
+	if value, _ := request.Parameters["value"].(string); strings.TrimSpace(value) != "" { //nolint:errcheck // absent means table-name mode
+		if vs, can := useCase.(valueSearchUseCase); can {
+			out, err := vs.SearchValues(ctx, dbID, value)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
 	}
 
 	pattern, _ := request.Parameters["pattern"].(string) //nolint:errcheck // type assertion; missing pattern is handled below

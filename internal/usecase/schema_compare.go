@@ -1,0 +1,299 @@
+package usecase
+
+import (
+	"context"
+
+	"fmt"
+	"github.com/FreePeak/db-mcp-server/internal/logger"
+	"sort"
+	"strings"
+)
+
+// Cross-database schema compare: diff two databases' table/column shapes
+// (e.g. staging vs production) so an agent can verify a migration landed
+// on both sides. Structural only — no row data is read.
+
+// schemaSnapshot is one database's tables mapped to column-name → type,
+// plus per-table index fingerprints (name → normalized definition).
+type schemaSnapshot struct {
+	columns     map[string]map[string]string
+	indexes     map[string]map[string]string
+	constraints map[string]map[string]bool
+	views       map[string]bool
+}
+
+func newSchemaSnapshot() *schemaSnapshot {
+	return &schemaSnapshot{
+		columns:     map[string]map[string]string{},
+		indexes:     map[string]map[string]string{},
+		constraints: map[string]map[string]bool{},
+		views:       map[string]bool{},
+	}
+}
+
+// normalizeDefinition collapses whitespace and lowercases an index DDL so
+// cosmetic formatting differences do not read as drift.
+func normalizeDefinition(def string) string {
+	return strings.Join(strings.Fields(strings.ToLower(def)), " ")
+}
+
+// collectSchemaSnapshot walks GetDatabaseInfo + DescribeTable for dbID.
+func (uc *DatabaseUseCase) collectSchemaSnapshot(ctx context.Context, dbID string) (schemaSnapshot, error) {
+	info, err := uc.GetDatabaseInfo(dbID)
+	if err != nil {
+		return schemaSnapshot{}, fmt.Errorf("failed to list tables on %q: %w", dbID, err)
+	}
+	tablesRaw, ok := info["tables"].([]map[string]interface{})
+	if !ok {
+		return schemaSnapshot{}, fmt.Errorf("no table listing available for %q", dbID)
+	}
+	snap := newSchemaSnapshot()
+	for _, tr := range tablesRaw {
+		tableName := ""
+		for _, k := range []string{"name", "table_name", "tableName", "TABLE_NAME"} {
+			if v, ok := tr[k].(string); ok && v != "" {
+				tableName = v
+				break
+			}
+		}
+		if strings.TrimSpace(tableName) == "" || strings.HasPrefix(tableName, "sqlite_") {
+			continue
+		}
+		desc, err := uc.DescribeTable(ctx, dbID, tableName)
+		if err != nil {
+			continue // unreadable table: skip rather than fail the compare
+		}
+		cols := map[string]string{}
+		colsRaw, _ := desc["columns"].([]map[string]interface{}) //nolint:errcheck // absent columns means empty table
+		for _, cr := range colsRaw {
+			colName := ""
+			colType := ""
+			for _, k := range []string{"name", "column_name", "COLUMN_NAME"} {
+				if v, ok := cr[k].(string); ok && v != "" {
+					colName = v
+					break
+				}
+			}
+			for _, k := range []string{"type", "data_type", "Type", "DATA_TYPE"} {
+				if v, ok := cr[k].(string); ok && v != "" {
+					colType = v
+					break
+				}
+			}
+			if colName == "" {
+				continue
+			}
+			cols[colName] = strings.ToLower(colType)
+		}
+		snap.columns[tableName] = cols
+
+		idxRaw, _ := desc["indexes"].([]map[string]interface{}) //nolint:errcheck // absent indexes means none
+		if len(idxRaw) > 0 && snap.indexes[tableName] == nil {
+			snap.indexes[tableName] = map[string]string{}
+		}
+		for _, ir := range idxRaw {
+			name, _ := ir["index_name"].(string) //nolint:errcheck // absent name means unidentifiable
+			def, _ := ir["definition"].(string)  //nolint:errcheck // absent definition means unidentifiable
+			if name == "" || def == "" {
+				continue
+			}
+			snap.indexes[tableName][name] = normalizeDefinition(def)
+		}
+
+		conRaw, _ := desc["constraints"].([]map[string]interface{}) //nolint:errcheck // absent constraints means none
+		for _, cr := range conRaw {
+			fp := constraintFingerprint(cr)
+			if fp == "" {
+				continue
+			}
+			if snap.constraints[tableName] == nil {
+				snap.constraints[tableName] = map[string]bool{}
+			}
+			snap.constraints[tableName][fp] = true
+		}
+	}
+	if dbType, terr := uc.repo.GetDatabaseType(dbID); terr == nil {
+		if vq, _, _ := viewsQuery(dbType); vq != "" {
+			if db, derr := uc.repo.GetDatabase(dbID); derr == nil {
+				vrows, qerr := db.Query(ctx, vq)
+				if qerr == nil {
+					for vrows.Next() {
+						var name, def interface{}
+						if serr := vrows.Scan(&name, &def); serr == nil {
+							snap.views[renderScalar(name)] = true
+						}
+					}
+					if cerr := vrows.Close(); cerr != nil {
+						logger.Error("error closing view rows: %v", cerr)
+					}
+				}
+			}
+		}
+	}
+	return *snap, nil
+}
+
+// CompareSchemas renders the structural differences between two databases:
+// tables present on only one side, and per shared table the columns missing
+// or type-divergent on either side.
+func (uc *DatabaseUseCase) CompareSchemas(ctx context.Context, dbIDA, dbIDB string) (string, error) {
+	snapA, err := uc.collectSchemaSnapshot(ctx, dbIDA)
+	if err != nil {
+		return "", err
+	}
+	snapB, err := uc.collectSchemaSnapshot(ctx, dbIDB)
+	if err != nil {
+		return "", err
+	}
+
+	var lines []string
+	tables := map[string]bool{}
+	for t := range snapA.columns {
+		tables[t] = true
+	}
+	for t := range snapB.columns {
+		tables[t] = true
+	}
+	names := make([]string, 0, len(tables))
+	for t := range tables {
+		names = append(names, t)
+	}
+	sort.Strings(names)
+
+	for _, t := range names {
+		colsA, inA := snapA.columns[t]
+		colsB, inB := snapB.columns[t]
+		switch {
+		case !inB:
+			lines = append(lines, fmt.Sprintf("table %q: only in %s", t, dbIDA))
+			continue
+		case !inA:
+			lines = append(lines, fmt.Sprintf("table %q: only in %s", t, dbIDB))
+			continue
+		}
+		colNames := map[string]bool{}
+		for c := range colsA {
+			colNames[c] = true
+		}
+		for c := range colsB {
+			colNames[c] = true
+		}
+		sortedCols := make([]string, 0, len(colNames))
+		for c := range colNames {
+			sortedCols = append(sortedCols, c)
+		}
+		sort.Strings(sortedCols)
+		for _, c := range sortedCols {
+			ta, okA := colsA[c]
+			tb, okB := colsB[c]
+			switch {
+			case !okA:
+				lines = append(lines, fmt.Sprintf("table %q column %q: missing in %s (present as %s)", t, c, dbIDA, tb))
+			case !okB:
+				lines = append(lines, fmt.Sprintf("table %q column %q: missing in %s (present as %s)", t, c, dbIDB, ta))
+			case ta != tb:
+				lines = append(lines, fmt.Sprintf("table %q column %q: type differs (%s=%s, %s=%s)", t, c, dbIDA, ta, dbIDB, tb))
+			}
+		}
+
+		idxNames := map[string]bool{}
+		for i := range snapA.indexes[t] {
+			idxNames[i] = true
+		}
+		for i := range snapB.indexes[t] {
+			idxNames[i] = true
+		}
+		sortedIdx := make([]string, 0, len(idxNames))
+		for i := range idxNames {
+			sortedIdx = append(sortedIdx, i)
+		}
+		sort.Strings(sortedIdx)
+		for _, i := range sortedIdx {
+			fa, okA := snapA.indexes[t][i]
+			fb, okB := snapB.indexes[t][i]
+			switch {
+			case !okB:
+				lines = append(lines, fmt.Sprintf("table %q index %q: only in %s", t, i, dbIDA))
+			case !okA:
+				lines = append(lines, fmt.Sprintf("table %q index %q: only in %s", t, i, dbIDB))
+			case fa != fb:
+				lines = append(lines, fmt.Sprintf("table %q index %q: definition differs (%s=%s, %s=%s)", t, i, dbIDA, fa, dbIDB, fb))
+			}
+		}
+
+		conNames := map[string]bool{}
+		for c := range snapA.constraints[t] {
+			conNames[c] = true
+		}
+		for c := range snapB.constraints[t] {
+			conNames[c] = true
+		}
+		sortedCons := make([]string, 0, len(conNames))
+		for c := range conNames {
+			sortedCons = append(sortedCons, c)
+		}
+		sort.Strings(sortedCons)
+		for _, c := range sortedCons {
+			inA := snapA.constraints[t][c]
+			inB := snapB.constraints[t][c]
+			switch {
+			case !inB:
+				lines = append(lines, fmt.Sprintf("table %q constraint %s: only in %s", t, c, dbIDA))
+			case !inA:
+				lines = append(lines, fmt.Sprintf("table %q constraint %s: only in %s", t, c, dbIDB))
+			}
+		}
+	}
+
+	viewNames := make([]string, 0, len(snapA.views)+len(snapB.views))
+	for v := range snapA.views {
+		viewNames = append(viewNames, v)
+	}
+	for v := range snapB.views {
+		if !snapA.views[v] {
+			viewNames = append(viewNames, v)
+		}
+	}
+	sort.Strings(viewNames)
+	for _, v := range viewNames {
+		inA := snapA.views[v]
+		inB := snapB.views[v]
+		switch {
+		case !inB:
+			lines = append(lines, fmt.Sprintf("view %q: only in %s", v, dbIDA))
+		case !inA:
+			lines = append(lines, fmt.Sprintf("view %q: only in %s", v, dbIDB))
+		}
+	}
+
+	if len(lines) == 0 {
+		return fmt.Sprintf("Schemas match: %d common table(s), no differences.", len(snapA.columns)), nil
+	}
+	sort.Strings(lines)
+	return "Schema differences between " + dbIDA + " and " + dbIDB + ":\n- " + strings.Join(lines, "\n- "), nil
+}
+
+// constraintFingerprint renders one constraint row as a comparable
+// string: "PRIMARY KEY(id)", "FOREIGN KEY(pid)->p.id". Unidentifiable
+// rows render "" and are skipped.
+func constraintFingerprint(cr map[string]interface{}) string {
+	get := func(keys ...string) string {
+		for _, k := range keys {
+			if v, ok := cr[k].(string); ok && v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	typ := get("constraint_type", "CONSTRAINT_TYPE")
+	col := get("column_name", "COLUMN_NAME")
+	if typ == "" || col == "" {
+		return ""
+	}
+	refTable := get("referenced_table", "REFERENCED_TABLE")
+	refCol := get("referenced_column", "REFERENCED_COLUMN")
+	if refTable != "" && refCol != "" {
+		return fmt.Sprintf("%s(%s)->%s.%s", typ, col, refTable, refCol)
+	}
+	return fmt.Sprintf("%s(%s)", typ, col)
+}

@@ -30,6 +30,191 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 14 | Engine-level slow queries (pg_stat_statements / MySQL digests) | ✅ Shipped | [cycle-14](cycle-14-engine-slow-queries.md) |
 | 15 | FK referenced-table resolution in describe | ✅ Shipped | [cycle-15](cycle-15-fk-references.md) |
 | 16 | Mermaid ERD via schema tool (`format=mermaid`) | ✅ Shipped | [cycle-16](cycle-16-mermaid-erd.md) |
+| 17 | Index advisor (`suggest_indexes` action, alias-safe) | ✅ Shipped (hackathon branch) | [cycle-17](cycle-17-index-advisor.md) |
+| 18 | Cloud-DB test harness: DSN parsing + auto-register CLI (Docker-free) | ✅ Shipped (hackathon branch) | [cycle-18](cycle-18-cloud-test-harness.md) |
+| 19 | PII masking at tool boundary (`mask_pii`, opt-in, two-layer) | ✅ Shipped (hackathon branch) | [cycle-19](cycle-19-pii-masking.md) |
+| 20 | Advisor v2: composite index suggestions + PK suppression | ✅ Shipped (hackathon branch) | [cycle-20](cycle-20-advisor-v2.md) |
+| 21 | Operator-enforced masking (`mask_pii` config, bypass-proof) | ✅ Shipped (hackathon branch) | [cycle-21](cycle-21-enforced-masking.md) |
+| 22 | Hardening: Luhn card precision + cloud cold-start retry | ✅ Shipped (hackathon branch) | [cycle-22](cycle-22-hardening.md) |
+| 23 | Release consolidation: CHANGELOG entries + PR to main | ✅ Shipped (hackathon branch) | [cycle-23](cycle-23-release-consolidation.md) |
+| 24 | Masking audit log (ring buffer, health-surfaced) | ✅ Shipped (hackathon branch) | [cycle-24](cycle-24-masking-audit.md) |
+| 25 | Durable audit sink: `-masking-audit-log` JSONL append trail | ✅ Shipped (hackathon branch) | [cycle-25](cycle-25-audit-sink.md) |
+| 26 | Docs surface + schema-contract guard (caught per-db mask_pii drift) | ✅ Shipped (hackathon branch) | [cycle-26](cycle-26-docs-contract.md) |
+| 27 | Result verbosity modes (`minimal`/`normal`/`full`, token compression) | ✅ Shipped (hackathon branch) | [cycle-27](cycle-27-verbosity.md) |
+| 28 | Per-database default verbosity (config-level, precedence-safe) | ✅ Shipped (hackathon branch) | [cycle-28](cycle-28-db-verbosity.md) |
+| 29 | Offline DDL risk analysis (`dry_run`, multi-engine pre-flight) | ✅ Shipped (hackathon branch) | [cycle-29](cycle-29-ddl-safety.md) |
+| 30 | Post-execution risk advisories (non-blocking warnings) | ✅ Shipped (hackathon branch) | [cycle-30](cycle-30-risk-advisories.md) |
+| 31 | Configurable risk warning threshold (`SetRiskWarnAt`) | ✅ Shipped (hackathon branch) | [cycle-31](cycle-31-risk-threshold.md) |
+| 32 | Pre-mutation snapshots + reverse-SQL rollback | ✅ Shipped (hackathon branch) | [cycle-32](cycle-32-snapshots.md) |
+| 33 | Agent-facing snapshot actions (`list_snapshots`/`rollback_snapshot`) | ✅ Shipped (hackathon branch) | [cycle-33](cycle-33-snapshot-actions.md) |
+| 34 | Snapshot audit context (originating statement) + docs surface | ✅ Shipped (hackathon branch) | [cycle-34](cycle-34-snapshot-context.md) |
+| 35 | Schema snapshots & drift detection (baseline + diff) | ✅ Shipped (hackathon branch) | [cycle-35](cycle-35-schema-drift.md) |
+| 36 | Agent-facing drift actions (`capture`/`check`/`list`) | ✅ Shipped (hackathon branch) | [cycle-36](cycle-36-drift-actions.md) |
+| 37 | Safe-migration workflow recipe + CI verification | ✅ Shipped (hackathon branch) | [cycle-37](cycle-37-migration-recipe.md) |
+| 38 | Release prep: package.json 1.12.0 + CHANGELOG cut | ✅ Shipped (hackathon branch) | [cycle-38](cycle-38-release-prep.md) |
+| 39 | Sensitive column discovery (`format=sensitive`) | ✅ Shipped (hackathon branch) | [cycle-39](cycle-39-sensitive-columns.md) |
+| 40 | Content-based PII detection (sampled, pattern-confirmed) | ✅ Shipped (hackathon branch) | [cycle-40](cycle-40-content-pii.md) |
+| 41 | Merged sensitive report (name + content sections in one payload) | ✅ Shipped (hackathon branch) | [cycle-41](cycle-41-merged-report.md) |
+| 42 | Operator surface: -risk-warn-at flag + docs coverage | ✅ Shipped (hackathon branch) | [cycle-42](cycle-42-operator-surface.md) |
+| 43 | Coverage audit & gap closure (usecase 83.3%) | ✅ Shipped (hackathon branch) | [cycle-43](cycle-43-coverage-audit.md) |
+| 44 | Tool-registry integration tests (per-db vs unified verified) | ✅ Shipped (hackathon branch) | [cycle-44](cycle-44-registry-tests.md) |
+| 45 | Declarative env defaults for operator flags | ✅ Shipped (hackathon branch) | [cycle-45](cycle-45-env-defaults.md) |
+| 46 | Auto-LIMIT injection (server-side bound, Oracle-safe) | ✅ Shipped (hackathon branch) | [cycle-46](cycle-46-auto-limit.md) |
+| 47 | Auto-LIMIT documentation (guardrails table + explainer) | ✅ Shipped (hackathon branch) | [cycle-47](cycle-47-auto-limit-docs.md) |
+| 48 | Query history ring + `list_query_history` action | ✅ Shipped (hackathon branch) | [cycle-48](cycle-48-query-history.md) |
+| 49 | Loop-continuity infrastructure (`LOOP_STATE.md`) | ✅ Shipped (hackathon branch) | — |
+| 50 | Durable query-history sink (JSONL, fail-fast config) | ✅ Shipped (hackathon branch) | [cycle-50](cycle-50-history-sink.md) |
+| 51 | History sink server wiring (-query-history-log + env) | ✅ Shipped (hackathon branch) | [cycle-51](cycle-51-history-wiring.md) |
+| 52 | PR #87 title/body refresh for full scope | ✅ Shipped (hackathon branch) | [cycle-52](cycle-52-pr-refresh.md) |
+| 53 | Session report (`docs/SESSION-REPORT.md`) | ✅ Shipped (hackathon branch) | [cycle-53](cycle-53-session-report.md) |
+| 54 | Oracle Auto-LIMIT via ROWNUM wrap (closes exclusion gap from 46) | ✅ Shipped (hackathon branch) | [cycle-54](cycle-54-oracle-autolimit.md) |
+| 55 | Engine-aware rewrite size estimates in dry-run risk reports | ✅ Shipped (hackathon branch) | [cycle-55](cycle-55-rewrite-size-estimates.md) |
+| 56 | Rewrite-size notes in post-execution risk advisories | ✅ Shipped (hackathon branch) | [cycle-56](cycle-56-postexec-rewrite-notes.md) |
+| 57 | Content-PII noise floor (>=5% match threshold) | ✅ Shipped (hackathon branch) | [cycle-57](cycle-57-content-pii-threshold.md) |
+| 58 | Per-category hit counts in ContentPIIFinding | ✅ Shipped (hackathon branch) | [cycle-58](cycle-58-pii-hit-counts.md) |
+| 59 | generate_schema tool (Go structs / TS types from live schema) | ✅ Shipped (hackathon branch) | [cycle-59](cycle-59-generate-schema.md) |
+| 60 | Query export formats (CSV RFC4180 / JSON) | ✅ Shipped (hackathon branch) | [cycle-60](cycle-60-query-export.md) |
+| 61 | Session observability (list_sessions / cancel_query) | ✅ Shipped (hackathon branch) | [cycle-61](cycle-61-session-observability.md) |
+| 62 | Lock-wait view (lock_waits) + README catch-up | ✅ Shipped (hackathon branch) | [cycle-62](cycle-62-lock-waits.md) |
+| 63 | Cross-database schema compare (schema format=compare) | ✅ Shipped (hackathon branch) | [cycle-63](cycle-63-schema-compare.md) |
+| 64 | Index fingerprints in schema compare | ✅ Shipped (hackathon branch) | [cycle-64](cycle-64-schema-compare-indexes.md) |
+| 65 | Constraint fingerprints (PK/FK) in schema compare | ✅ Shipped (hackathon branch) | [cycle-65](cycle-65-schema-compare-constraints.md) |
+| 66 | INSERT generation via query format=inserts | ✅ Shipped (hackathon branch) | [cycle-66](cycle-66-insert-generation.md) |
+| 67 | PR #87 description refresh (cycles 52-66) | ✅ Shipped (hackathon branch) | [cycle-67](cycle-67-pr-refresh.md) |
+| 68 | count_only row-count preview on query tool | ✅ Shipped (hackathon branch) | [cycle-68](cycle-68-count-only.md) |
+| 69 | Single-column statistical profile | ✅ Shipped (hackathon branch) | [cycle-69](cycle-69-column-profile.md) |
+| 70 | SESSION-REPORT refresh for cycles 52-69 | ✅ Shipped (hackathon branch) | [cycle-70](cycle-70-session-report.md) |
+| 71 | Cross-DB row-count compare (compare_data_counts) | ✅ Shipped (hackathon branch) | [cycle-71](cycle-71-row-count-compare.md) |
+| 72 | Sampled row-level diff (compare_samples) | ✅ Shipped (hackathon branch) | [cycle-72](cycle-72-sample-diff.md) |
+| 73 | Per-query timeout (timeout_ms param) | ✅ Shipped (hackathon branch) | [cycle-73](cycle-73-query-timeout.md) |
+| 74 | Continuity doc sync (SESSION-REPORT, LOOP_STATE) | ✅ Shipped (hackathon branch) | [cycle-74](cycle-74-doc-sync.md) |
+| 75 | Cross-table value search (filter_tables value=) | ✅ Shipped (hackathon branch) | [cycle-75](cycle-75-value-search.md) |
+| 76 | FK traversal for one row (describe related_key=) | ✅ Shipped (hackathon branch) | [cycle-76](cycle-76-related-rows.md) |
+| 77 | Query pagination (page/page_size + total) | ✅ Shipped (hackathon branch) | [cycle-77](cycle-77-query-pagination.md) |
+| 78 | Random sampling (sample_rows, engine-aware) | ✅ Shipped (hackathon branch) | [cycle-78](cycle-78-random-sample.md) |
+| 79 | Duplicate detection (describe duplicates_column=) | ✅ Shipped (hackathon branch) | [cycle-79](cycle-79-duplicates.md) |
+| 80 | View listing with definitions (schema format=views) | ✅ Shipped (hackathon branch) | [cycle-80](cycle-80-list-views.md) |
+| 81 | Atomic multi-statement scripts (execute script=) | ✅ Shipped (hackathon branch) | [cycle-81](cycle-81-scripts.md) |
+| 82 | Trigger listing (schema format=triggers) | ✅ Shipped (hackathon branch) | [cycle-82](cycle-82-triggers.md) |
+| 83 | Stored routine listing (schema format=routines) | ✅ Shipped (hackathon branch) | [cycle-83](cycle-83-routines.md) |
+| 84 | CSV bulk import (execute csv_data=) | ✅ Shipped (hackathon branch) | [cycle-84](cycle-84-csv-import.md) |
+| 85 | Custom type listing (schema format=types) | ✅ Shipped (hackathon branch) | [cycle-85](cycle-85-custom-types.md) |
+| 86 | Verbatim DDL dump (schema format=ddl, sqlite) | ✅ Shipped (hackathon branch) | [cycle-86](cycle-86-ddl-dump.md) |
+| 87 | Continuity doc sync (second pass) | ✅ Shipped (hackathon branch) | [cycle-87](cycle-87-doc-sync-2.md) |
+| 88 | Cross-database fan-out (query databases=) | ✅ Shipped (hackathon branch) | [cycle-88](cycle-88-query-across.md) |
+| 89 | View drift in schema compare | ✅ Shipped (hackathon branch) | [cycle-89](cycle-89-view-drift.md) |
+| 90 | Delivery routing tests (capability wiring) | ✅ Shipped (hackathon branch) | [cycle-90](cycle-90-routing-tests.md) |
+| 91 | Value-search ranking by hit count | ✅ Shipped (hackathon branch) | [cycle-91](cycle-91-ranked-search.md) |
+| 92 | Versioned migration runner (execute migrate_dir=) | ✅ Shipped (hackathon branch) | [cycle-92](cycle-92-migrations.md) |
+| 93 | FK integrity audit (schema format=orphans) | ✅ Shipped (hackathon branch) | [cycle-93](cycle-93-orphan-audit.md) |
+| 94 | Table size report (schema format=sizes) | ✅ Shipped (hackathon branch) | [cycle-94](cycle-94-table-sizes.md) |
+| 95 | Column profiling (describe profile=true) | ✅ Shipped (hackathon branch) | [cycle-95](cycle-95-table-profile.md) |
+| 96 | Cross-database table copy (execute copy_table=) | ✅ Shipped (hackathon branch) | [cycle-96](cycle-96-copy-table.md) |
+| 97 | Unused index detection (query unused_indexes=) | ✅ Shipped (hackathon branch) | [cycle-97](cycle-97-unused-indexes.md) |
+| 98 | Long-query triage (query long_queries=N) | ✅ Shipped (hackathon branch) | [cycle-98](cycle-98-long-queries.md) |
+| 99 | Post-copy verification (execute verify_copy=) | ✅ Shipped (hackathon branch) | [cycle-99](cycle-99-verify-copy.md) |
+| 100 | Database overview snapshot (schema format=overview) | ✅ Shipped (hackathon branch) | [cycle-100](cycle-100-overview.md) |
+| 101 | Combined PII audit (schema format=pii_audit) | ✅ Shipped (hackathon branch) | [cycle-101](cycle-101-pii-audit.md) |
+| 102 | Health trend history (health action=trend) | ✅ Shipped (hackathon branch) | [cycle-102](cycle-102-health-trend.md) |
+| 103 | Saved query bookmarks (query save/run/list) | ✅ Shipped (hackathon branch) | [cycle-103](cycle-103-saved-queries.md) |
+| 104 | Size baselines for growth diffs (schema format=baseline_*) | ✅ Shipped (hackathon branch) | [cycle-104](cycle-104-size-baselines.md) |
+| 105 | Markdown data dictionary (schema format=dictionary) | ✅ Shipped (hackathon branch) | [cycle-105](cycle-105-data-dictionary.md) |
+| 106 | Maintenance suggestions from engine stats (format=maintenance) | ✅ Shipped (hackathon branch) | [cycle-106](cycle-106-maintenance.md) |
+| 107 | FK-safe dependency order (format=dependency_order) | ✅ Shipped (hackathon branch) | [cycle-107](cycle-107-dependency-order.md) |
+| 108 | Sequence exhaustion audit (format=sequences) | ✅ Shipped (hackathon branch) | [cycle-108](cycle-108-sequences.md) |
+| 109 | Grants audit (format=grants) | ✅ Shipped (hackathon branch) | [cycle-109](cycle-109-grants-audit.md) |
+| 110 | Primary-key diff across databases (format=key_diff) | ✅ Shipped (hackathon branch) | [cycle-110](cycle-110-key-diff.md) |
+| 111 | Redundant-index detection (format=redundant_indexes) | ✅ Shipped (hackathon branch) | [cycle-111](cycle-111-redundant-indexes.md) |
+| 112 | Idle-in-transaction audit (action=long_transactions) | ✅ Shipped (hackathon branch) | [cycle-112](cycle-112-long-transactions.md) |
+| 113 | Missing-FK-index detection (format=fk_indexes) | ✅ Shipped (hackathon branch) | [cycle-113](cycle-113-fk-indexes.md) |
+| 114 | Replication status (action=replication_status) | ✅ Shipped (hackathon branch) | [cycle-114](cycle-114-replication-status.md) |
+| 115 | CHECK-constraint listing (format=checks) | ✅ Shipped (hackathon branch) | [cycle-115](cycle-115-check-constraints.md) |
+| 116 | No-primary-key audit (format=no_pk) | ✅ Shipped (hackathon branch) | [cycle-116](cycle-116-no-pk.md) |
+| 117 | Anonymized cross-database copy (mask_pii) | ✅ Shipped (hackathon branch) | [cycle-117](cycle-117-anonymized-copy.md) |
+| 118 | Column-type consistency audit (format=type_consistency) | ✅ Shipped (hackathon branch) | [cycle-118](cycle-118-type-consistency.md) |
+| 119 | Exact-duplicate index detection (redundant_indexes ext.) | ✅ Shipped (hackathon branch) | [cycle-119](cycle-119-duplicate-indexes.md) |
+| 120 | Connection saturation (action=connection_saturation) | ✅ Shipped (hackathon branch) | [cycle-120](cycle-120-connection-saturation.md) |
+| 121 | Timeout-guardrail audit (action=timeout_guardrails) | ✅ Shipped (hackathon branch) | [cycle-121](cycle-121-timeout-guardrails.md) |
+| 122 | FK referential-action audit (format=fk_rules) | ✅ Shipped (hackathon branch) | [cycle-122](cycle-122-fk-rules.md) |
+| 123 | Idle-session listing (action=idle_sessions) | ✅ Shipped (hackathon branch) | [cycle-123](cycle-123-idle-sessions.md) |
+| 124 | Temp-spill detection (action=temp_spills) | ✅ Shipped (hackathon branch) | [cycle-124](cycle-124-temp-spills.md) |
+| 125 | Sequential-scan workload audit (action=seq_scan_heavy) | ✅ Shipped (hackathon branch) | [cycle-125](cycle-125-seq-scans.md) |
+| 126 | Stale replication-slot audit (action=stale_slots) | ✅ Shipped (hackathon branch) | [cycle-126](cycle-126-stale-slots.md) |
+| 127 | Deadlock-counter audit (action=deadlock_counts) | ✅ Shipped (hackathon branch) | [cycle-127](cycle-127-deadlocks.md) |
+| 128 | Growth-rate projection in size baselines | ✅ Shipped (hackathon branch) | [cycle-128](cycle-128-growth-projection.md) |
+| 129 | Partition listing (format=partitions) | ✅ Shipped (hackathon branch) | [cycle-129](cycle-129-partitions.md) |
+| 130 | XID-wraparound risk audit (action=wraparound_risk) | ✅ Shipped (hackathon branch) | [cycle-130](cycle-130-wraparound.md) |
+| 131 | Deprecated-charset audit (action=charset_audit) | ✅ Shipped (hackathon branch) | [cycle-131](cycle-131-charsets.md) |
+| 132 | Extension listing (action=list_extensions) | ✅ Shipped (hackathon branch) | [cycle-132](cycle-132-extensions.md) |
+| 133 | Orphaned two-phase transactions (action=prepared_xacts) | ✅ Shipped (hackathon branch) | [cycle-133](cycle-133-prepared-xacts.md) |
+| 134 | WAL archiver health (action=wal_archive) | ✅ Shipped (hackathon branch) | [cycle-134](cycle-134-wal-archive.md) |
+| 135 | Autovacuum-disabled table audit (action=autovacuum_disabled) | ✅ Shipped (hackathon branch) | [cycle-135](cycle-135-autovacuum-off.md) |
+| 136 | Checkpoint pressure (action=checkpoint_pressure) | ✅ Shipped (hackathon branch) | [cycle-136](cycle-136-checkpoint.md) |
+| 137 | Invalid-index audit (action=invalid_indexes) | ✅ Shipped (hackathon branch) | [cycle-137](cycle-137-invalid-indexes.md) |
+| 138 | Role connection-limit audit (action=role_connection_limits) | ✅ Shipped (hackathon branch) | [cycle-138](cycle-138-role-limits.md) |
+| 139 | Foreign-table (FDW) discovery (action=foreign_tables) | ✅ Shipped (hackathon branch) | [cycle-139](cycle-139-fdw.md) |
+| 140 | Unlogged-table audit (action=unlogged_tables) | ✅ Shipped (hackathon branch) | [cycle-140](cycle-140-unlogged.md) |
+| 141 | MyISAM table audit (action=myisam_tables) | ✅ Shipped (hackathon branch) | [cycle-141](cycle-141-myisam.md) |
+| 142 | Unpopulated materialized-view audit (action=unpopulated_matviews) | ✅ Shipped (hackathon branch) | [cycle-142](cycle-142-matviews.md) |
+| 143 | Binary-log growth audit (action=binlog_growth) | ✅ Shipped (hackathon branch) | [cycle-143](cycle-143-binlogs.md) |
+| 144 | AUTO_INCREMENT headroom audit (action=auto_increment_headroom) | ✅ Shipped (hackathon branch) | [cycle-144](cycle-144-auto-increment.md) |
+| 145 | Slow-query-log observability audit (action=slow_log) | ✅ Shipped (hackathon branch) | [cycle-145](cycle-145-slow-log.md) |
+| 146 | MD5 password audit (action=password_auth) | ✅ Shipped (hackathon branch) | [cycle-146](cycle-146-password-auth.md) |
+| 147 | Required-INSERT-columns audit (schema action=required_columns) | ✅ Shipped (hackathon branch) | [cycle-147](cycle-147-insert-requirements.md) |
+| 148 | table_open_cache pressure audit (action=table_cache) | ✅ Shipped (hackathon branch) | [cycle-148](cycle-148-table-cache.md) |
+| 149 | Crash-durability audit (action=durability) | ✅ Shipped (hackathon branch) | [cycle-149](cycle-149-durability.md) |
+| 150 | Strict-mode audit (action=strict_mode) | ✅ Shipped (hackathon branch) | [cycle-150](cycle-150-sql-mode.md) |
+| 151 | Aborted-connections audit (action=aborted_connections) | ✅ Shipped (hackathon branch) | [cycle-151](cycle-151-aborted-connections.md) |
+| 152 | max_allowed_packet audit (action=max_packet) | ✅ Shipped (hackathon branch) | [cycle-152](cycle-152-max-packet.md) |
+| 153 | SQLite WAL-mode audit (action=wal_mode) | ✅ Shipped (hackathon branch) | [cycle-153](cycle-153-wal-mode.md) |
+| 154 | synchronous_commit audit (action=synchronous_commit) | ✅ Shipped (hackathon branch) | [cycle-154](cycle-154-sync-commit.md) |
+| 155 | SQLite busy_timeout audit (action=busy_timeout) | ✅ Shipped (hackathon branch) | [cycle-155](cycle-155-busy-timeout.md) |
+| 156 | track_io_timing audit (action=track_io_timing) | ✅ Shipped (hackathon branch) | [cycle-156](cycle-156-io-timing.md) |
+| 157 | wait_timeout audit (action=wait_timeout) | ✅ Shipped (hackathon branch) | [cycle-157](cycle-157-wait-timeout.md) |
+| 158 | innodb_buffer_pool_size sizing audit (action=buffer_pool) | ✅ Shipped (hackathon branch) | [cycle-158](cycle-158-buffer-pool.md) |
+| 159 | SQLite FK enforcement audit (action=fk_enforcement) | ✅ Shipped (hackathon branch) | [cycle-159](cycle-159-fk-enforcement.md) |
+| 160 | crash-safety audit, fsync/full_page_writes (action=crash_safety) | ✅ Shipped (hackathon branch) | [cycle-160](cycle-160-crash-safety.md) |
+| 161 | wal_level audit, replication/PITR capability (action=wal_level) | ✅ Shipped (hackathon branch) | [cycle-161](cycle-161-wal-level.md) |
+| 162 | shared_buffers sizing audit vs database size (action=shared_buffers) | ✅ Shipped (hackathon branch) | [cycle-162](cycle-162-shared-buffers.md) |
+| 163 | open_files_limit audit vs table cache (action=open_files_limit) | ✅ Shipped (hackathon branch) | [cycle-163](cycle-163-open-files-limit.md) |
+| 164 | binlog_format audit, row-based replication (action=binlog_format) | ✅ Shipped (hackathon branch) | [cycle-164](cycle-164-binlog-format.md) |
+| 165 | innodb_doublewrite audit, torn-page protection (action=doublewrite) | ✅ Shipped (hackathon branch) | [cycle-165](cycle-165-doublewrite.md) |
+| 166 | innodb_flush_method audit, page-cache bypass (action=flush_method) | ✅ Shipped (hackathon branch) | [cycle-166](cycle-166-flush-method.md) |
+| 167 | innodb_io_capacity audit, flush pacing vs modern storage (action=io_capacity) | ✅ Shipped (hackathon branch) | [cycle-167](cycle-167-io-capacity.md) |
+| 168 | wal_compression audit, checkpoint FPI compression (action=wal_compression) | ✅ Shipped (hackathon branch) | [cycle-168](cycle-168-wal-compression.md) |
+| 169 | redo-log sizing audit, checkpoint write amplification (action=redo_log) | ✅ Shipped (hackathon branch) | [cycle-169](cycle-169-redo-log.md) |
+| 170 | max_slot_wal_keep_size audit, WAL-retention safety net (action=slot_wal_cap) | ✅ Shipped (hackathon branch) | [cycle-170](cycle-170-slot-wal-cap.md) |
+| 171 | autovacuum cost-budget audit, spinning-disk throttle detection (action=autovacuum_throttle) | ✅ Shipped (hackathon branch) | [cycle-171](cycle-171-av-throttle.md) |
+| 172 | JIT compiler audit, OLTP compilation-overhead detection (action=jit) | ✅ Shipped (hackathon branch) | [cycle-172](cycle-172-jit.md) |
+| 173 | innodb_flush_neighbors audit, SSD-era page-coalescing detection (action=flush_neighbors) | ✅ Shipped (hackathon branch) | [cycle-173](cycle-173-flush-neighbors.md) |
+| 174 | binlog_row_image audit, replica write-amplification detection (action=binlog_row_image) | ✅ Shipped (hackathon branch) | [cycle-174](cycle-174-binlog-row-image.md) |
+| 175 | random_page_cost audit, spinning-disk planner cost model detection (action=random_page_cost) | ✅ Shipped (hackathon branch) | [cycle-175](cycle-175-random-page-cost.md) |
+| 176 | innodb_log_buffer_size audit, WAL-buffer overflow evidence via Innodb_log_waits (action=log_buffer_size) | ✅ Shipped (hackathon branch) | [cycle-176](cycle-176-log-buffer-size.md) |
+| 177 | effective_cache_size audit, planner cache assumption vs host RAM (action=effective_cache_size) | ✅ Shipped (hackathon branch) | [cycle-177](cycle-177-effective-cache-size.md) |
+| 178 | default_statistics_target audit, ANALYZE sampling depth for skewed/high-cardinality columns (action=default_statistics_target) | ✅ Shipped (hackathon branch) | [cycle-178](cycle-178-statistics-target.md) |
+| 179 | sync_binlog durability audit, binlog fsync disablement vs crash-loss exposure (action=sync_binlog) | ✅ Shipped (hackathon branch) | [cycle-179](cycle-179-sync-binlog.md) |
+| 180 | thread_cache_size churn audit, Threads_created vs Connections miss rate with scaled fix (action=thread_cache_size) | ✅ Shipped (hackathon branch) | [cycle-180](cycle-180-thread-cache.md) |
+| 181 | wal_sender_timeout audit, dead-standby reap window vs slot-pinned WAL growth (action=wal_sender_timeout) | ✅ Shipped (hackathon branch) | [cycle-181](cycle-181-wal-sender-timeout.md) |
+| 182 | max_wal_senders capacity audit, live senders+slots vs ceiling, failover attach risk (action=max_wal_senders) | ✅ Shipped (hackathon branch) | [cycle-182](cycle-182-wal-senders.md) |
+| 183 | back_log audit, TCP listen backlog vs connection-burst refusal before auth (action=back_log) | ✅ Shipped (hackathon branch) | [cycle-183](cycle-183-back-log.md) |
+| 184 | checkpoint_timeout audit, checkpoint storms vs crash-recovery replay trade-off (action=checkpoint_timeout) | ✅ Shipped (hackathon branch) | [cycle-184](cycle-184-checkpoint-timeout.md) |
+| 185 | ssl_min_protocol_version audit, deprecated TLS floors + ssl=off plaintext escalation (action=ssl_min_protocol_version) | ✅ Shipped (hackathon branch) | [cycle-185](cycle-185-ssl-min-protocol.md) |
+| 186 | temp_file_limit audit, unlimited per-session spill files vs disk-fill blast radius (action=temp_file_limit) | ✅ Shipped (hackathon branch) | [cycle-186](cycle-186-temp-file-limit.md) |
+| 187 | tcp_keepalives_idle audit, OS-default keepalive letting dead clients hold connection slots for hours (action=tcp_keepalives_idle) | ✅ Shipped (hackathon branch) | [cycle-187](cycle-187-tcp-keepalives.md) |
+| 188 | log_lock_waits audit, lock waits past deadlock_timeout never reaching logs for post-incident analysis (action=log_lock_waits) | ✅ Shipped (hackathon branch) | [cycle-188](cycle-188-log-lock-waits.md) |
+| 189 | log_checkpoints audit, checkpoint timing/buffer counts invisible on PG≤14 defaults so I/O stalls are undiagnosable (action=log_checkpoints) | ✅ Shipped (hackathon branch) | [cycle-189](cycle-189-log-checkpoints.md) |
+| 190 | track_counts audit, frozen pg_stat counters leaving autovacuum blind and diagnostics silently reading zeros (action=track_counts) | ✅ Shipped (hackathon branch) | [cycle-190](cycle-190-track-counts.md) |
+| 191 | maintenance_work_mem audit, 64MB default spilling VACUUM/CREATE INDEX/ANALYZE to temp disk (action=maintenance_work_mem) | ✅ Shipped (hackathon branch) | [cycle-191](cycle-191-maintenance-work-mem.md) |
+| 192 | autovacuum_naptime audit, raised pass cadence delaying cleanup so bloat accumulates between passes (action=autovacuum_naptime) | ✅ Shipped (hackathon branch) | [cycle-192](cycle-192-autovacuum-naptime.md) |
+| 193 | effective_io_concurrency audit, spinning-disk default serializing bitmap scans on SSD/NVMe storage (action=effective_io_concurrency) | ✅ Shipped (hackathon branch) | [cycle-193](cycle-193-effective-io-concurrency.md) |
+| 194 | replication-slot audit, stranded WAL retention on inactive slots plus exhausted max_replication_slots blocking new replicas (action=replication_slots) | ✅ Shipped (hackathon branch) | [cycle-194](cycle-194-replication-slots.md) |
+| 195 | MySQL slow-query-log audit, OFF switch or default 10s threshold leaving slow queries invisible to engine_slow_queries (action=slow_query_log) | ✅ Shipped (hackathon branch) | [cycle-195](cycle-195-slow-query-log.md) |
+| 196 | PostgreSQL timeout-guardrails audit, unlimited statement_timeout / idle_in_transaction_session_timeout letting runaway statements and forgotten transactions hold locks indefinitely (action=timeout_guards) | ✅ Shipped (hackathon branch) | [cycle-196](cycle-196-timeout-guards.md) |
+| 197 | Combined configuration health audit, one call runs every registered config audit and renders only findings plus an explicit clean summary — no more N round trips for "is this database configured sanely?" (action=health_audit) | ✅ Shipped (hackathon branch) | [cycle-197](cycle-197-health-audit.md) |
+| 198 | MySQL file-access surface audit (`local_infile` client-read primitive + `secure_file_priv` import/export scope) with exact remediation per finding (action=file_access) | ✅ Shipped (hackathon branch) | [cycle-198](cycle-198-file-access.md) |
+| 199 | PostgreSQL table-bloat audit (`pg_stat_user_tables` dead-tuple ratio vs noise floor, VACUUM guidance) via health_audit + performance action=bloat | ✅ Shipped (hackathon branch) | [cycle-199](cycle-199-table-bloat.md) |
+| 200 | PostgreSQL autovacuum_max_workers audit (`current_setting` probe, ≤3-worker escalation with ALTER SYSTEM remediation) via health_audit action=av_workers | ✅ Shipped (hackathon branch) | [cycle-200](cycle-200-av-workers.md) |
+| 201 | Connection saturation audit (`Threads_connected`/`pg_stat_activity` vs `max_connections`, ≥100% CRITICAL / ≥90% WARNING ladder) in health_audit registry | ✅ Shipped (hackathon branch) | [cycle-201](cycle-201-connection-saturation.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

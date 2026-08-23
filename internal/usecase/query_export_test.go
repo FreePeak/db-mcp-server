@@ -1,0 +1,231 @@
+package usecase
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"testing"
+)
+
+// TestExecuteQueryFormat_CSV proves cycle 60: format=csv returns RFC4180
+// output with header row, comma quoting, and no tabular decoration.
+func TestExecuteQueryFormat_CSV(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	must := func(q string) {
+		t.Helper()
+		if _, err := raw.Exec(q); err != nil {
+			t.Fatalf("exec failed: %v", err)
+		}
+	}
+	must(`CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, price REAL)`)
+	must(`INSERT INTO items (name, price) VALUES ('plain', 1.5)`)
+	must(`INSERT INTO items (name, price) VALUES ('has,comma "and" quote', 2)`)
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	out, err := uc.ExecuteQueryFormat(context.Background(), "db1", "SELECT id, name, price FROM items ORDER BY id", nil, "csv")
+	if err != nil {
+		t.Fatalf("export failed: %v", err)
+	}
+	want := "id,name,price\n1,plain,1.5\n2,\"has,comma \"\"and\"\" quote\",2\n"
+	if out != want {
+		t.Fatalf("csv mismatch:\ngot:  %q\nwant: %q", out, want)
+	}
+}
+
+// TestExecuteQueryFormat_JSON proves format=json emits an object per row.
+func TestExecuteQueryFormat_JSON(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO t (name) VALUES ('a'), ('b')`); err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	out, err := uc.ExecuteQueryFormat(context.Background(), "db1", "SELECT id, name FROM t ORDER BY id", nil, "json")
+	if err != nil {
+		t.Fatalf("export failed: %v", err)
+	}
+	for _, want := range []string{
+		`[{"id":1,"name":"a"},`,
+		`{"id":2,"name":"b"}]`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+func TestExecuteQueryFormat_Errors(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE t (id INTEGER)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	if _, err := uc.ExecuteQueryFormat(context.Background(), "db1", "SELECT id FROM t", nil, "xml"); err == nil {
+		t.Fatal("unknown format must error")
+	}
+	if _, err := uc.ExecuteQueryFormat(context.Background(), "db1", "SELECT id FROM t", nil, ""); err != nil {
+		t.Fatalf("empty format must default to csv, got: %v", err)
+	}
+}
+
+// TestExecuteQueryFormat_Inserts proves cycle 66: format=inserts renders
+// each row as an INSERT INTO statement for the queried table.
+func TestExecuteQueryFormat_Inserts(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	must := func(q string) {
+		t.Helper()
+		if _, err := raw.Exec(q); err != nil {
+			t.Fatalf("exec failed: %v", err)
+		}
+	}
+	must(`CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, price REAL)`)
+	must(`INSERT INTO items (name, price) VALUES ('plain', 1.5)`)
+	must(`INSERT INTO items (name, price) VALUES ('it''s "quoted"', NULL)`)
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	out, err := uc.ExecuteQueryFormat(context.Background(), "db1",
+		"SELECT id, name, price FROM items ORDER BY id", nil, "inserts")
+	if err != nil {
+		t.Fatalf("export failed: %v", err)
+	}
+	want := "INSERT INTO items (id, name, price) VALUES (1, 'plain', 1.5);\n" +
+		"INSERT INTO items (id, name, price) VALUES (2, 'it''s \"quoted\"', NULL);\n"
+	if out != want {
+		t.Fatalf("inserts mismatch:\ngot:  %q\nwant: %q", out, want)
+	}
+}
+
+func TestExecuteQueryFormat_InsertsErrors(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE t (id INTEGER)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	if _, err := uc.ExecuteQueryFormat(context.Background(), "db1", "SELECT 1", nil, "inserts"); err == nil {
+		t.Fatal("inserts without a FROM table must error")
+	}
+}
+
+// TestCountQueryRows proves cycle 68: count_only wraps the statement in
+// COUNT(*) so an agent can price a SELECT before fetching rows.
+func TestCountQueryRows(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	must := func(q string) {
+		t.Helper()
+		if _, err := raw.Exec(q); err != nil {
+			t.Fatalf("exec failed: %v", err)
+		}
+	}
+	must(`CREATE TABLE nums (n INTEGER)`)
+	for i := 1; i <= 7; i++ {
+		must(`INSERT INTO nums (n) VALUES (` + fmt.Sprint(i) + `)`)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	out, err := uc.CountQueryRows(context.Background(), "db1", "SELECT n FROM nums WHERE n > 2", nil)
+	if err != nil {
+		t.Fatalf("count failed: %v", err)
+	}
+	if !strings.Contains(out, "5") {
+		t.Fatalf("expected count 5 in:\n%s", out)
+	}
+
+	if _, err := uc.CountQueryRows(context.Background(), "db1", "DELETE FROM nums", nil); err == nil {
+		t.Fatal("non-SELECT must be rejected")
+	}
+}
+
+// TestExecuteQueryWithTimeout proves cycle 73: timeout_ms bounds runaway
+// queries (infinite recursive CTE) while normal queries pass through.
+func TestExecuteQueryWithTimeout(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE t (id INTEGER)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	if _, err := uc.ExecuteQueryWithTimeout(context.Background(), "db1",
+		`WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c) SELECT x FROM c`, nil, 50); err == nil {
+		t.Fatal("infinite query must hit the timeout")
+	} else if !strings.Contains(err.Error(), "context") && !strings.Contains(err.Error(), "deadline") {
+		t.Fatalf("expected deadline error, got: %v", err)
+	}
+
+	out, err := uc.ExecuteQueryWithTimeout(context.Background(), "db1", "SELECT COUNT(*) FROM t", nil, 5000)
+	if err != nil {
+		t.Fatalf("normal query failed under timeout: %v", err)
+	}
+	if !strings.Contains(out, "0") {
+		t.Fatalf("unexpected result:\n%s", out)
+	}
+}
+
+// TestExecuteQueryPage proves cycle 77: page/page_size window the result
+// and report the total matching row count in one call.
+func TestExecuteQueryPage(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE items (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	for i := 1; i <= 25; i++ {
+		if _, err := raw.Exec(`INSERT INTO items (id) VALUES (?)`, i); err != nil {
+			t.Fatalf("seed failed: %v", err)
+		}
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	out, total, err := uc.ExecuteQueryPage(context.Background(), "db1",
+		"SELECT id FROM items WHERE id <= 22", nil, 2, 10)
+	if err != nil {
+		t.Fatalf("page failed: %v", err)
+	}
+	if total != 22 {
+		t.Fatalf("total = %d, want 22", total)
+	}
+	for _, want := range []string{"11", "20"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	if _, _, err := uc.ExecuteQueryPage(context.Background(), "db1",
+		"SELECT id FROM items", nil, 0, -5); err != nil {
+		t.Fatalf("degenerate paging must not error: %v", err)
+	}
+}
+
+// TestExecuteQuerySample proves cycle 78: sample_rows returns exactly N
+// distinct rows using the engine's random ordering.
+func TestExecuteQuerySample(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	for i := 1; i <= 100; i++ {
+		if _, err := raw.Exec(`INSERT INTO t (id) VALUES (?)`, i); err != nil {
+			t.Fatalf("seed failed: %v", err)
+		}
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	out, err := uc.ExecuteQuerySample(context.Background(), "db1", "SELECT id FROM t", nil, 10)
+	if err != nil {
+		t.Fatalf("sample failed: %v", err)
+	}
+	if !strings.Contains(out, "Total rows: 10") {
+		t.Fatalf("expected exactly 10 sampled rows:\n%s", out)
+	}
+	if strings.Contains(out, "\n101\n") || strings.Contains(out, "\n0\n") {
+		t.Fatalf("out-of-range ids present:\n%s", out)
+	}
+
+	// Sample larger than the table returns everything available.
+	out, err = uc.ExecuteQuerySample(context.Background(), "db1", "SELECT id FROM t WHERE id <= 3", nil, 50)
+	if err != nil {
+		t.Fatalf("oversized sample failed: %v", err)
+	}
+	if !strings.Contains(out, "Total rows: 3") {
+		t.Fatalf("expected all 3 rows:\n%s", out)
+	}
+}

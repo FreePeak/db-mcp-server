@@ -47,6 +47,20 @@ func (uc *DatabaseUseCase) HealthCheck(ctx context.Context, dbID string) (map[st
 		for k, v := range hp.HealthStats() {
 			result[k] = v
 		}
+		// Trend bookkeeping: every check extends the rolling sample.
+		if open, ok2 := result["pool_open_connections"].(int); ok2 {
+			maxOpen := 0
+			if m, ok3 := result["pool_max_open"].(int); ok3 {
+				maxOpen = m
+			}
+			uc.RecordHealthSample(dbID, open, maxOpen)
+		}
+	}
+
+	// Governance visibility: recent PII redactions for this database.
+	if events := uc.GetMaskingAudit(dbID); len(events) > 0 {
+		result["masking_events_recent"] = len(events)
+		result["masking_events_last"] = events[len(events)-1]
 	}
 
 	dbType, typeErr := uc.repo.GetDatabaseType(dbID)

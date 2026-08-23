@@ -74,6 +74,16 @@ func main() {
 	lazyLoading := flag.Bool("lazy-loading", false, "Enable lazy loading: connections established on first use (recommended for 10+ databases)")
 	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
 	unifiedTools := flag.Bool("unified-tools", false, "Register unified tools with database parameter instead of per-database tools")
+	// Environment variables act as declarative defaults; explicit flags win.
+	maskingAuditDefault := os.Getenv("DB_MCP_MASKING_AUDIT_LOG")
+	riskWarnDefault := "high"
+	if v := os.Getenv("DB_MCP_RISK_WARN_AT"); v != "" {
+		riskWarnDefault = v
+	}
+	historyLogDefault := os.Getenv("DB_MCP_QUERY_HISTORY_LOG")
+	queryHistoryLog := flag.String("query-history-log", historyLogDefault, "JSONL file path for durable query-history events (append mode; env: DB_MCP_QUERY_HISTORY_LOG)")
+	maskingAuditLog := flag.String("masking-audit-log", maskingAuditDefault, "JSONL file path for durable PII-masking audit events (append mode; env: DB_MCP_MASKING_AUDIT_LOG)")
+	riskWarnAt := flag.String("risk-warn-at", riskWarnDefault, "Minimum post-execution advisory level (low, medium, high, critical; env: DB_MCP_RISK_WARN_AT)")
 	healthPort := flag.Int("health-port", 9093, "Port for the /health HTTP endpoint (0 to disable; only used in SSE mode)")
 	apiKey := flag.String("api-key", os.Getenv("DB_MCP_API_KEY"), "API key required to authenticate HTTP/SSE clients (Authorization: Bearer <key>); empty disables auth. Applied to the streamable HTTP transport; compose with mcp.APIKeyAuth in your own reverse proxy for the SSE transport.")
 	flag.Parse()
@@ -164,6 +174,31 @@ func main() {
 	// Set up Clean Architecture layers
 	dbRepo := repository.NewDatabaseRepository()
 	dbUseCase := usecase.NewDatabaseUseCase(dbRepo)
+	dbUseCase.SetRiskWarnAt(*riskWarnAt)
+	if *queryHistoryLog != "" {
+		if err := dbUseCase.EnableQueryHistoryFile(*queryHistoryLog); err != nil {
+			logger.Error("failed to open query history log: %v", err)
+		} else {
+			defer func() {
+				if cerr := dbUseCase.CloseQueryHistoryFile(); cerr != nil {
+					logger.Error("close query history log: %v", cerr)
+				}
+			}()
+			logger.Info("Query history trail: %s", *queryHistoryLog)
+		}
+	}
+	if *maskingAuditLog != "" {
+		if err := dbUseCase.EnableMaskingAuditFile(*maskingAuditLog); err != nil {
+			logger.Error("failed to open masking audit log: %v", err)
+		} else {
+			defer func() {
+				if cerr := dbUseCase.CloseMaskingAuditFile(); cerr != nil {
+					logger.Error("close masking audit log: %v", cerr)
+				}
+			}()
+			logger.Info("PII masking audit trail: %s", *maskingAuditLog)
+		}
+	}
 	toolRegistry := mcp.NewToolRegistry(mcpServer, *unifiedTools)
 
 	// Set the database use case in the tool registry

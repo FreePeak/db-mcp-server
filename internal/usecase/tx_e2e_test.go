@@ -15,7 +15,9 @@ import (
 // sqliteDB adapts a real *sql.DB to domain.Database for end-to-end
 // transaction tests against an in-memory SQLite database.
 type sqliteDB struct {
-	db *sql.DB
+	db        *sql.DB
+	maskPII   bool
+	verbosity string
 }
 
 // openSQLiteForTest opens a fresh in-memory SQLite database for tests.
@@ -36,14 +38,20 @@ func (s *sqliteDB) Exec(ctx context.Context, statement string, args ...interface
 	return s.db.ExecContext(ctx, statement, args...)
 }
 func (s *sqliteDB) Begin(ctx context.Context, opts *domain.TxOptions) (domain.Tx, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: opts.ReadOnly})
+	ro := false
+	if opts != nil {
+		ro = opts.ReadOnly
+	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: ro})
 	if err != nil {
 		return nil, err
 	}
 	return &sqliteTx{tx: tx}, nil
 }
-func (s *sqliteDB) IsReadOnly() bool { return false }
-func (s *sqliteDB) MaxRows() int     { return 0 }
+func (s *sqliteDB) IsReadOnly() bool  { return false }
+func (s *sqliteDB) MaxRows() int      { return 0 }
+func (s *sqliteDB) MaskPII() bool     { return s.maskPII }
+func (s *sqliteDB) Verbosity() string { return s.verbosity }
 
 type sqliteTx struct{ tx *sql.Tx }
 

@@ -135,14 +135,85 @@ type DatabaseUseCase struct {
 	// underlying transaction instead of stubbed no-ops.
 	txMu         sync.Mutex
 	transactions map[string]domain.Tx
+	// maskingAudit records PII redaction events for operator visibility.
+	maskingAudit *maskingAudit
+
+	// snapshots holds pre-mutation row captures for rollback.
+	snapshots *snapshotStore
+
+	// healthSamples keeps the last N health observations per database
+	// so trends (pool exhaustion chronic vs one-off) are visible.
+	healthMu      sync.Mutex
+	healthSamples map[string][]healthSample
+
+	// savedQueries holds named query bookmarks per database.
+	savedQueries *savedQueryStore
+
+	// sizeBaselines holds one captured row-count snapshot per database
+	// for growth comparison.
+	sizeBaselines *sizeBaselineStore
+
+	// schemaSnaps holds schema baselines for drift detection.
+	schemaSnaps *schemaSnapshotStore
+
+	// queryHist records executed statements for introspection.
+	queryHist *queryHistoryStore
+
+	// riskWarnMu guards riskWarnAt.
+	riskWarnMu sync.Mutex
+	// riskWarnAt is the minimum post-execution advisory level (default high).
+	riskWarnAt string
 }
 
 // NewDatabaseUseCase creates a new database use case
 func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 	return &DatabaseUseCase{
-		repo:         repo,
-		transactions: make(map[string]domain.Tx),
+		repo:          repo,
+		transactions:  make(map[string]domain.Tx),
+		maskingAudit:  newMaskingAudit(),
+		snapshots:     newSnapshotStore(),
+		schemaSnaps:   newSchemaSnapshotStore(),
+		queryHist:     newQueryHistoryStore(),
+		healthSamples: make(map[string][]healthSample),
+		savedQueries:  newSavedQueryStore(),
+		sizeBaselines: newSizeBaselineStore(),
+		riskWarnAt:    "high",
 	}
+}
+
+// SetRiskWarnAt configures the minimum post-execution advisory level
+// (low|medium|high|critical). Invalid values fall back to the default high.
+func (uc *DatabaseUseCase) SetRiskWarnAt(level string) {
+	valid := map[string]bool{"low": true, "medium": true, "high": true, "critical": true}
+	uc.riskWarnMu.Lock()
+	defer uc.riskWarnMu.Unlock()
+	if !valid[level] {
+		level = "high"
+	}
+	uc.riskWarnAt = level
+}
+
+func (uc *DatabaseUseCase) currentRiskWarnAt() string {
+	uc.riskWarnMu.Lock()
+	defer uc.riskWarnMu.Unlock()
+	return uc.riskWarnAt
+}
+
+// GetMaskingAudit returns a snapshot of recent PII-redaction events for the
+// given database, oldest first. Bounded by maskingAuditCapacity.
+func (uc *DatabaseUseCase) GetMaskingAudit(dbID string) []MaskingAuditEvent {
+	return uc.maskingAudit.snapshot(dbID)
+}
+
+// EnableMaskingAuditFile persists every subsequent redaction event to path
+// as JSON Lines (append mode) so audit trails survive process restarts.
+func (uc *DatabaseUseCase) EnableMaskingAuditFile(path string) error {
+	return uc.maskingAudit.enableFile(path)
+}
+
+// CloseMaskingAuditFile flushes and closes the durable sink, if configured.
+func (uc *DatabaseUseCase) CloseMaskingAuditFile() error {
+	return uc.maskingAudit.closeFile()
 }
 
 func (uc *DatabaseUseCase) storeTx(id string, tx domain.Tx) {
@@ -271,7 +342,9 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 	}
 
 	// Execute query
-	rows, err := db.Query(ctx, query, params...)
+	start := time.Now()
+	rows, err := db.Query(ctx, uc.autoLimitedQuery(dbID, query, db), params...)
+	uc.recordQueryHistory(dbID, query, start, err)
 	if err != nil {
 		return "", fmt.Errorf("query execution failed: %w", err)
 	}
@@ -281,70 +354,87 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 		}
 	}()
 
-	return formatQueryResults(rows, db.MaxRows())
+	// Server-level masking config applies even on the legacy path so
+	// clients cannot bypass governance by omitting the parameter.
+	out, masked, rerr := renderQueryResults(rows, db.MaxRows(), db.MaskPII(), VerbosityFull)
+	if rerr != nil {
+		return "", rerr
+	}
+	uc.maskingAudit.record(dbID, query, masked)
+	return out, nil
+}
+
+// ExecuteQueryVerbosity executes a query with explicit result verbosity and
+// no PII masking — the minimal-effort path for write confirmations/polling.
+func (uc *DatabaseUseCase) ExecuteQueryVerbosity(ctx context.Context, dbID, query string, params []interface{}, verbosity ResultVerbosity) (string, error) {
+	return uc.ExecuteQueryMasked(ctx, dbID, query, params, false, verbosity)
+}
+
+// ExecuteQueryMasked executes a query with optional PII masking and result
+// verbosity control. Server-level MaskPII configuration always forces
+// masking on; the per-request flag can only add masking, never remove it.
+func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool, verbosity ResultVerbosity) (string, error) {
+	db, err := uc.repo.GetDatabase(dbID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get database: %w", err)
+	}
+
+	if db.IsReadOnly() && IsWriteStatement(query) {
+		return "", fmt.Errorf("database %q is configured as read-only; write statements are not allowed via queries", dbID)
+	}
+
+	rows, err := db.Query(ctx, uc.autoLimitedQuery(dbID, query, db), params...)
+	if err != nil {
+		return "", fmt.Errorf("query execution failed: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			logger.Error("error closing rows: %v", closeErr)
+		}
+	}()
+
+	effective := verbosity
+	if effective == VerbosityFull {
+		if vp, ok := db.(interface{ Verbosity() string }); ok {
+			switch ResultVerbosity(vp.Verbosity()) {
+			case VerbosityNormal, VerbosityMinimal:
+				effective = ResultVerbosity(vp.Verbosity())
+			}
+		}
+	}
+	out, masked, err2 := renderQueryResults(rows, db.MaxRows(), mask || db.MaskPII(), effective)
+	if err2 == nil {
+		uc.maskingAudit.record(dbID, query, masked)
+	}
+	return out, err2
 }
 
 // formatQueryResults renders query results as text, stopping after maxRows
 // rows when maxRows > 0 so large result sets cannot flood the client's
 // context window. The caller owns closing rows.
 func formatQueryResults(rows domain.Rows, maxRows int) (string, error) {
-	columns, err := rows.Columns()
+	out, _, err := renderQueryResults(rows, maxRows, false, VerbosityFull)
+	return out, err
+}
+
+// autoLimitedQuery injects a top-level bound when max_rows is configured,
+// letting the engine stop early instead of materializing unbounded results.
+// LIMIT-dialect engines get an appended LIMIT; Oracle gets a ROWNUM wrap
+// (all versions, WITH-clause safe). Introspection failures leave the
+// statement untouched.
+func (uc *DatabaseUseCase) autoLimitedQuery(dbID, query string, db domain.Database) string {
+	maxRows := db.MaxRows()
+	if maxRows <= 0 {
+		return query
+	}
+	dbType, err := uc.repo.GetDatabaseType(dbID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get column names: %w", err)
+		return query
 	}
-
-	var resultText strings.Builder
-	resultText.WriteString("Results:\n\n")
-	resultText.WriteString(strings.Join(columns, "\t") + "\n")
-	resultText.WriteString(strings.Repeat("-", 80) + "\n")
-
-	// Prepare for scanning
-	values := make([]interface{}, len(columns))
-	valuePtrs := make([]interface{}, len(columns))
-	for i := range columns {
-		valuePtrs[i] = &values[i]
+	if strings.EqualFold(dbType, "oracle") {
+		return applyOracleRowLimit(query, maxRows)
 	}
-
-	rowCount := 0
-	truncated := false
-	for rows.Next() {
-		if maxRows > 0 && rowCount >= maxRows {
-			truncated = true
-			break
-		}
-		rowCount++
-		if scanErr := rows.Scan(valuePtrs...); scanErr != nil {
-			return "", fmt.Errorf("failed to scan row: %w", scanErr)
-		}
-
-		// Convert to strings and print
-		var rowText []string
-		for i := range columns {
-			val := values[i]
-			if val == nil {
-				rowText = append(rowText, "NULL")
-			} else {
-				switch v := val.(type) {
-				case []byte:
-					rowText = append(rowText, string(v))
-				default:
-					rowText = append(rowText, fmt.Sprintf("%v", v))
-				}
-			}
-		}
-		resultText.WriteString(strings.Join(rowText, "\t") + "\n")
-	}
-	if err = rows.Err(); err != nil {
-		return "", fmt.Errorf("error reading rows: %w", err)
-	}
-
-	if truncated {
-		resultText.WriteString(fmt.Sprintf("\nTruncated: showing first %d rows (max_rows=%d). Refine the query with LIMIT or tighter filters to see more.", rowCount, maxRows))
-		resultText.WriteString(fmt.Sprintf("\nTotal rows shown: %d", rowCount))
-	} else {
-		resultText.WriteString(fmt.Sprintf("\nTotal rows: %d", rowCount))
-	}
-	return resultText.String(), nil
+	return applyAutoLimit(query, maxRows)
 }
 
 // ExecuteStatement executes a SQL statement (INSERT, UPDATE, DELETE)
@@ -361,8 +451,20 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 		return "", fmt.Errorf("database %q is configured as read-only; write statements are not allowed", dbID)
 	}
 
+	// Pre-mutation safety net: capture affected rows before a DELETE/UPDATE
+	// runs so the mutation can be reversed. Best-effort — introspection
+	// failures must never block execution.
+	snapshotID := ""
+	if mutKindRe.MatchString(strings.TrimSpace(stripSQLLiterals(statement))) {
+		if sid, snapErr := uc.captureMutationSnapshot(ctx, db, dbID, statement); snapErr == nil {
+			snapshotID = sid
+		}
+	}
+
 	// Execute statement
+	startExec := time.Now()
 	result, err := db.Exec(ctx, statement, params...)
+	uc.recordQueryHistory(dbID, statement, startExec, err)
 	if err != nil {
 		return "", fmt.Errorf("statement execution failed: %w", err)
 	}
@@ -379,7 +481,35 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 		lastInsertID = 0
 	}
 
-	return fmt.Sprintf("Statement executed successfully.\nRows affected: %d\nLast insert ID: %d", rowsAffected, lastInsertID), nil
+	out := fmt.Sprintf("Statement executed successfully.\nRows affected: %d\nLast insert ID: %d", rowsAffected, lastInsertID)
+	if snapshotID != "" {
+		out += fmt.Sprintf("\nSnapshot: %s (revert with RollbackSnapshot)", snapshotID)
+	}
+
+	// Non-blocking post-execution advisory: high/critical statements get an
+	// explicit notice so the agent (and any human reviewing the transcript)
+	// sees what just happened. Execution itself is never blocked here.
+	if notice := uc.postExecutionRiskNotice(ctx, dbID, statement); notice != "" {
+		out += notice
+	}
+	return out, nil
+}
+
+// postExecutionRiskNotice renders the advisory appended after a successful
+// execution: the static risk classification upgraded with live rewrite-size
+// estimates for column-type changes. Returns "" when the statement's risk
+// is below the configured warn threshold or analysis is unavailable.
+func (uc *DatabaseUseCase) postExecutionRiskNotice(ctx context.Context, dbID, statement string) string {
+	risk := AnalyzeStatementRisk(statement)
+	if riskOrder[strings.ToLower(risk.Risk)] < riskOrder[uc.currentRiskWarnAt()] {
+		return ""
+	}
+	uc.enrichWithRewriteSizes(ctx, dbID, stripSQLLiterals(statement), &risk)
+	out := "\n⚠ Risk notice: this statement was " + strings.ToUpper(risk.Risk[:1]) + risk.Risk[1:] + " risk"
+	for _, n := range risk.Notes {
+		out += "\n- " + n
+	}
+	return out
 }
 
 // ExecuteTransaction executes operations in a transaction. Actions:

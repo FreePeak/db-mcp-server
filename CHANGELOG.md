@@ -1,5 +1,29 @@
 # Changelog
 
+## [v1.12.0] - 2026-08-22
+
+### Added
+- `max_rows` per-database configuration option (all engines): truncates query results with an explicit `[Truncated]` notice to protect agent context windows from large result sets
+- **Engine-level read-only enforcement** (PostgreSQL/TimescaleDB and MySQL): when `read_only: true`, connections are opened with server-side write rejection (`default_transaction_read_only=on` / `transaction_read_only=1`), so guardrails hold even if application-layer checks are bypassed. SQLite already enforces via `mode=ro`; Oracle relies on the application-layer classifier plus least-privilege users.
+- New `explain_<db_id>` tool (unified mode: `explain`): shows the engine's execution plan for a statement without executing it — `EXPLAIN` (PostgreSQL/TimescaleDB), `EXPLAIN ANALYZE` opt-in (MySQL), `EXPLAIN QUERY PLAN` (SQLite), two-step `EXPLAIN PLAN FOR` + `DBMS_XPLAN.DISPLAY` (Oracle)
+- New `describe_<db_id>` tool (unified mode: `describe`): per-table metadata inspection — columns, indexes, and row estimates via engine-appropriate catalog queries, with identifier validation against catalog-query injection
+- `describe_<db_id>` also surfaces constraints (PRIMARY KEY / FOREIGN KEY / UNIQUE) from engine constraint catalogs, best-effort so introspection gaps never fail the describe; foreign keys resolve to their referenced table and column (`author_id -> authors(id)`)
+- New `health_<db_id>` tool (unified mode: `health`): connectivity probe with ping latency, Go `database/sql` pool pressure (open/in-use/idle/wait count and duration), and best-effort engine indicators — PostgreSQL buffer-cache hit ratio, MySQL InnoDB buffer efficiency
+- **PII masking for query results**: opt-in per query (`mask_pii: true` on `query_*` tools) or operator-enforced per database (`"mask_pii": true` in connection config — agents cannot opt out). Two-layer redaction: column-name heuristics (`email`, `phone`, `ssn`, `card_number`, `iban`, …) plus content patterns (emails, SSNs, credit cards with Luhn checksum validation, phones, IPv4, long numeric identifiers), rendered as `[EMAIL]` / `[PHONE]` / `[CREDIT_CARD]` markers
+- **Result verbosity control** (`verbosity` on `query_*` tools): `normal` caps each cell at 500 chars with explicit `…(+N chars)` markers (rows and structure intact — 60-80% context savings on wide TEXT/JSON columns); `minimal` returns row count plus a first-row preview only (~90% savings — ideal for write confirmations, COUNT queries, polling); `full` (default) is unchanged legacy behavior
+- `performance_<db_id>` gains `suggest_indexes` action (unified mode supported): parses a SQL query's JOIN/WHERE/ORDER BY/GROUP BY columns, diffs against live index catalogs (`pg_indexes` / `SHOW INDEX` / `sqlite_master`), skips primary-key columns via constraint catalogs, groups multi-column WHERE filters into composite suggestions, and emits alias-safe `CREATE INDEX` DDL labelled heuristic with an EXPLAIN caveat
+
+### Changed
+- `performance_<db_id>` tool now returns real data instead of placeholder text: tracked query metrics (count/avg/max/min per normalized statement), recorded slow queries with errors, static SQL issue suggestions (select-star, cartesian joins, missing WHERE, etc.), and history reset — wired to the query-tracking analyzer that already instruments every `query_*` execution
+- `performance_<db_id>` gains `engine_slow_queries` action: top statements by execution time from the database's own catalogs — `pg_stat_statements` (PostgreSQL/TimescaleDB) and `performance_schema` digests (MySQL) — with actionable degradation notes when extensions or grants are missing
+- `schema_<db_id>` accepts `format=mermaid`: renders the database's foreign-key relationships as a Mermaid `erDiagram`, giving agents an at-a-glance entity-relationship map without describing every table
+
+### Fixed
+- **Read-only bypass (security)**: write statements (`INSERT`/`UPDATE`/`DELETE`/DDL/data-modifying CTEs/stacked statements) executed through the `query_*` tool no longer bypass the per-database `read_only: true` guard; statement classification strips comments and string literals and defaults to deny for unrecognized leading keywords
+- **Transactions were stubbed**: the `transaction_*` tools' `begin` action silently committed immediately, while `execute`, `commit`, and `rollback` returned success without doing anything. All four actions now operate on a real stored transaction keyed by the returned `transactionId`; unknown IDs fail with a clear error instead of faking success
+
+## [Unreleased]
+
 ## [v1.9.0] - 2026-04-11
 
 ### Added
@@ -31,25 +55,6 @@
 ### Added
 - Per-database query timeout configuration (`query_timeout`) (#31)
 - Multi-arch Docker images (amd64/x86) (#27)
-
-## [Unreleased]
-
-### Added
-- `max_rows` per-database configuration option (all engines): truncates query results with an explicit `[Truncated]` notice to protect agent context windows from large result sets
-- **Engine-level read-only enforcement** (PostgreSQL/TimescaleDB and MySQL): when `read_only: true`, connections are opened with server-side write rejection (`default_transaction_read_only=on` / `transaction_read_only=1`), so guardrails hold even if application-layer checks are bypassed. SQLite already enforces via `mode=ro`; Oracle relies on the application-layer classifier plus least-privilege users.
-- New `explain_<db_id>` tool (unified mode: `explain`): shows the engine's execution plan for a statement without executing it — `EXPLAIN` (PostgreSQL/TimescaleDB), `EXPLAIN ANALYZE` opt-in (MySQL), `EXPLAIN QUERY PLAN` (SQLite), two-step `EXPLAIN PLAN FOR` + `DBMS_XPLAN.DISPLAY` (Oracle)
-- New `describe_<db_id>` tool (unified mode: `describe`): per-table metadata inspection — columns, indexes, and row estimates via engine-appropriate catalog queries, with identifier validation against catalog-query injection
-- `describe_<db_id>` also surfaces constraints (PRIMARY KEY / FOREIGN KEY / UNIQUE) from engine constraint catalogs, best-effort so introspection gaps never fail the describe; foreign keys resolve to their referenced table and column (`author_id -> authors(id)`)
-- New `health_<db_id>` tool (unified mode: `health`): connectivity probe with ping latency, Go `database/sql` pool pressure (open/in-use/idle/wait count and duration), and best-effort engine indicators — PostgreSQL buffer-cache hit ratio, MySQL InnoDB buffer efficiency
-
-### Changed
-- `performance_<db_id>` tool now returns real data instead of placeholder text: tracked query metrics (count/avg/max/min per normalized statement), recorded slow queries with errors, static SQL issue suggestions (select-star, cartesian joins, missing WHERE, etc.), and history reset — wired to the query-tracking analyzer that already instruments every `query_*` execution
-- `performance_<db_id>` gains `engine_slow_queries` action: top statements by execution time from the database's own catalogs — `pg_stat_statements` (PostgreSQL/TimescaleDB) and `performance_schema` digests (MySQL) — with actionable degradation notes when extensions or grants are missing
-- `schema_<db_id>` accepts `format=mermaid`: renders the database's foreign-key relationships as a Mermaid `erDiagram`, giving agents an at-a-glance entity-relationship map without describing every table
-
-### Fixed
-- **Read-only bypass (security)**: write statements (`INSERT`/`UPDATE`/`DELETE`/DDL/data-modifying CTEs/stacked statements) executed through the `query_*` tool no longer bypass the per-database `read_only: true` guard; statement classification strips comments and string literals and defaults to deny for unrecognized leading keywords
-- **Transactions were stubbed**: the `transaction_*` tools' `begin` action silently committed immediately, while `execute`, `commit`, and `rollback` returned success without doing anything. All four actions now operate on a real stored transaction keyed by the returned `transactionId`; unknown IDs fail with a clear error instead of faking success
 
 ## [v1.6.1] - 2025-04-01
 

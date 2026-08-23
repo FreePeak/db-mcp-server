@@ -30,6 +30,7 @@ func (g *genericSQLDB) Begin(ctx context.Context, opts *domain.TxOptions) (domai
 }
 func (g *genericSQLDB) IsReadOnly() bool { return false }
 func (g *genericSQLDB) MaxRows() int     { return 0 }
+func (g *genericSQLDB) MaskPII() bool    { return false }
 
 // TestEngineSlowQueries_Live exercises the engine_slow_queries action
 // against the compose stack. Requires docker-compose.test.yml; skips when

@@ -30,3 +30,4 @@ logs/
 .vscode/
 
 .kilocode/.worktrees/
+.test-cloud-db.json

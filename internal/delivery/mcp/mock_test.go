@@ -83,3 +83,6 @@ func (m *MockDatabaseUseCase) HealthCheck(_ context.Context, _ string) (map[stri
 func (m *MockDatabaseUseCase) RelationshipGraph(_ context.Context, _ string) (string, error) {
 	return "", nil
 }
+func (m *MockDatabaseUseCase) GenerateSchemaCode(_ context.Context, _, _ string) (string, error) {
+	return "", nil
+}

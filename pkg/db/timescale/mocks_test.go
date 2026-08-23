@@ -200,6 +200,9 @@ func (m *MockDB) IsReadOnly() bool {
 }
 
 // MaxRows implements db.Database.MaxRows.
+func (m *MockDB) MaskPII() bool     { return false }
+func (m *MockDB) Verbosity() string { return "" }
+
 func (m *MockDB) MaxRows() int {
 	return 0
 }

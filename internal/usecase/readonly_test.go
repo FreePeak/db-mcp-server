@@ -14,6 +14,7 @@ type fakeDB struct {
 	execCalls   int
 	queryCalls  int
 	maxRows     int
+	maskPII     bool
 	queryResult domain.Rows
 	beginCalls  int
 	beginTx     domain.Tx
@@ -44,6 +45,7 @@ func (f *fakeDB) Begin(ctx context.Context, opts *domain.TxOptions) (domain.Tx, 
 }
 func (f *fakeDB) IsReadOnly() bool { return f.readOnly }
 func (f *fakeDB) MaxRows() int     { return f.maxRows }
+func (f *fakeDB) MaskPII() bool    { return f.maskPII }
 
 type fakeRepo struct {
 	db     domain.Database

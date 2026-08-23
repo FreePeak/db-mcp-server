@@ -109,6 +109,24 @@ func (a *DatabaseAdapter) MaxRows() int {
 	return 0
 }
 
+// MaskPII reports whether server-side PII masking is enforced for this
+// database; defaults to false when the engine driver lacks the capability.
+func (a *DatabaseAdapter) MaskPII() bool {
+	if r, ok := a.db.(interface{ MaskPII() bool }); ok {
+		return r.MaskPII()
+	}
+	return false
+}
+
+// Verbosity returns the per-database default result verbosity; empty when
+// the engine driver lacks the capability.
+func (a *DatabaseAdapter) Verbosity() string {
+	if r, ok := a.db.(interface{ Verbosity() string }); ok {
+		return r.Verbosity()
+	}
+	return ""
+}
+
 // Ping probes liveness of the underlying connection pool.
 func (a *DatabaseAdapter) Ping(ctx context.Context) error {
 	return a.db.Ping(ctx)

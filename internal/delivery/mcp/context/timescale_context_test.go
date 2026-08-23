@@ -199,3 +199,6 @@ func TestTimescaleDBContextProvider(t *testing.T) {
 		mockUseCase.AssertExpectations(t)
 	})
 }
+func (m *MockDatabaseUseCase) GenerateSchemaCode(_ context.Context, _, _ string) (string, error) {
+	return "", nil
+}
