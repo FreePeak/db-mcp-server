@@ -25,6 +25,7 @@ var configAuditors = []auditEntry{
 	{"auto_increment", (*DatabaseUseCase).AuditAutoIncrement},
 	{"autovacuum_naptime", (*DatabaseUseCase).AuditAutovacuumNaptime},
 	{"av_throttle", (*DatabaseUseCase).AuditAVThrottle},
+	{"av_workers", (*DatabaseUseCase).AuditAVWorkers},
 	{"back_log", (*DatabaseUseCase).AuditBackLog},
 	{"binlogs", (*DatabaseUseCase).AuditBinaryLogs},
 	{"binlog_format", (*DatabaseUseCase).AuditBinlogFormat},
