@@ -171,6 +171,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 155 | SQLite busy_timeout audit (action=busy_timeout) | ✅ Shipped (hackathon branch) | [cycle-155](cycle-155-busy-timeout.md) |
 | 156 | track_io_timing audit (action=track_io_timing) | ✅ Shipped (hackathon branch) | [cycle-156](cycle-156-io-timing.md) |
 | 157 | wait_timeout audit (action=wait_timeout) | ✅ Shipped (hackathon branch) | [cycle-157](cycle-157-wait-timeout.md) |
+| 158 | innodb_buffer_pool_size sizing audit (action=buffer_pool) | ✅ Shipped (hackathon branch) | [cycle-158](cycle-158-buffer-pool.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
