@@ -259,6 +259,12 @@ type indexUsageUseCase interface {
 	ListUnusedIndexes(ctx context.Context, dbID string, minScans int) (string, error)
 }
 
+// overviewUseCase is implemented by use cases that render a one-call
+// database shape snapshot.
+type overviewUseCase interface {
+	DatabaseOverview(ctx context.Context, dbID string) (string, error)
+}
+
 // copyVerifyUseCase is implemented by use cases that reconcile row
 // counts between databases after a copy.
 type copyVerifyUseCase interface {
@@ -1641,7 +1647,7 @@ func (t *SchemaTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Table name; required only for format=compare_samples"),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), or "sizes" (row counts and disk size per table)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), "sizes" (row counts and disk size per table), or "overview" (one-call shape snapshot: tables/columns/indexes/FK edges/rows plus PII-name suspects)`),
 		),
 	)
 }
@@ -1659,7 +1665,7 @@ func (t *SchemaTool) CreateUnifiedTool(name string, dbList []string) interface{}
 			tools.Description("Table name; required only for format=compare_samples"),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), or "sizes" (row counts and disk size per table)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), "sizes" (row counts and disk size per table), or "overview" (one-call shape snapshot: tables/columns/indexes/FK edges/rows plus PII-name suspects)`),
 		),
 	)
 }
@@ -1713,6 +1719,16 @@ func (t *SchemaTool) HandleRequest(ctx context.Context, request server.ToolCallR
 			return nil, fmt.Errorf("sample comparison is not supported by this provider")
 		}
 		out, err := dc.CompareTableSamples(ctx, dbID, compareWith, table, limit)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "overview":
+		ouc, can := useCase.(overviewUseCase)
+		if !can {
+			return nil, fmt.Errorf("database overview is not supported by this provider")
+		}
+		out, err := ouc.DatabaseOverview(ctx, dbID)
 		if err != nil {
 			return nil, err
 		}
