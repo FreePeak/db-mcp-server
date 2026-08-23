@@ -169,6 +169,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 153 | SQLite WAL-mode audit (action=wal_mode) | ✅ Shipped (hackathon branch) | [cycle-153](cycle-153-wal-mode.md) |
 | 154 | synchronous_commit audit (action=synchronous_commit) | ✅ Shipped (hackathon branch) | [cycle-154](cycle-154-sync-commit.md) |
 | 155 | SQLite busy_timeout audit (action=busy_timeout) | ✅ Shipped (hackathon branch) | [cycle-155](cycle-155-busy-timeout.md) |
+| 156 | track_io_timing audit (action=track_io_timing) | ✅ Shipped (hackathon branch) | [cycle-156](cycle-156-io-timing.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
