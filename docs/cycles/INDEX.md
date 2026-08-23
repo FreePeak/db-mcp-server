@@ -203,6 +203,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 187 | tcp_keepalives_idle audit, OS-default keepalive letting dead clients hold connection slots for hours (action=tcp_keepalives_idle) | ✅ Shipped (hackathon branch) | [cycle-187](cycle-187-tcp-keepalives.md) |
 | 188 | log_lock_waits audit, lock waits past deadlock_timeout never reaching logs for post-incident analysis (action=log_lock_waits) | ✅ Shipped (hackathon branch) | [cycle-188](cycle-188-log-lock-waits.md) |
 | 189 | log_checkpoints audit, checkpoint timing/buffer counts invisible on PG≤14 defaults so I/O stalls are undiagnosable (action=log_checkpoints) | ✅ Shipped (hackathon branch) | [cycle-189](cycle-189-log-checkpoints.md) |
+| 190 | track_counts audit, frozen pg_stat counters leaving autovacuum blind and diagnostics silently reading zeros (action=track_counts) | ✅ Shipped (hackathon branch) | [cycle-190](cycle-190-track-counts.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
