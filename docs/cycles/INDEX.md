@@ -205,6 +205,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 189 | log_checkpoints audit, checkpoint timing/buffer counts invisible on PG≤14 defaults so I/O stalls are undiagnosable (action=log_checkpoints) | ✅ Shipped (hackathon branch) | [cycle-189](cycle-189-log-checkpoints.md) |
 | 190 | track_counts audit, frozen pg_stat counters leaving autovacuum blind and diagnostics silently reading zeros (action=track_counts) | ✅ Shipped (hackathon branch) | [cycle-190](cycle-190-track-counts.md) |
 | 191 | maintenance_work_mem audit, 64MB default spilling VACUUM/CREATE INDEX/ANALYZE to temp disk (action=maintenance_work_mem) | ✅ Shipped (hackathon branch) | [cycle-191](cycle-191-maintenance-work-mem.md) |
+| 192 | autovacuum_naptime audit, raised pass cadence delaying cleanup so bloat accumulates between passes (action=autovacuum_naptime) | ✅ Shipped (hackathon branch) | [cycle-192](cycle-192-autovacuum-naptime.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
