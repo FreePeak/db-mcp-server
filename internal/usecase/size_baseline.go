@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Size baselines: capture per-table row counts once, compare later to
@@ -14,7 +15,8 @@ import (
 // overwrites.
 
 type sizeBaseline struct {
-	counts map[string]int64
+	counts     map[string]int64
+	capturedAt time.Time
 }
 
 type sizeBaselineStore struct {
@@ -65,7 +67,7 @@ func (uc *DatabaseUseCase) CaptureSizeBaseline(ctx context.Context, dbID string)
 		return "", err
 	}
 	uc.sizeBaselines.mu.Lock()
-	uc.sizeBaselines.baselines[dbID] = sizeBaseline{counts: counts}
+	uc.sizeBaselines.baselines[dbID] = sizeBaseline{counts: counts, capturedAt: time.Now()}
 	uc.sizeBaselines.mu.Unlock()
 	return fmt.Sprintf("Baseline captured: %d table(s) on %s.", len(counts), dbID), nil
 }
@@ -90,6 +92,7 @@ func (uc *DatabaseUseCase) CompareSizeBaseline(ctx context.Context, dbID string)
 	}
 	sort.Strings(names)
 
+	elapsed := time.Since(base.capturedAt)
 	var b strings.Builder
 	changed := 0
 	for _, n := range names {
@@ -109,12 +112,28 @@ func (uc *DatabaseUseCase) CompareSizeBaseline(ctx context.Context, dbID string)
 		if d < 0 {
 			sign = ""
 		}
-		fmt.Fprintf(&b, "- %s: %+d (%d -> %d)\n", sign, d, before, cur)
+		fmt.Fprintf(&b, "- %s: %+d (%d -> %d)%s\n", sign, d, before, cur, growthRate(d, elapsed))
 		changed++
 	}
 	if changed == 0 {
 		return fmt.Sprintf("No changes since baseline (%d table(s)) on %s.", len(names), dbID), nil
 	}
-	out := fmt.Sprintf("Size delta vs baseline for %s:\n%s", dbID, b.String())
+	out := baselineHeader(dbID, len(base.counts), elapsed) + "\n" + b.String()
 	return strings.TrimRight(out, "\n"), nil
+}
+
+// growthRate projects a positive multi-day delta as rows/day; sub-day
+// windows and shrinkage stay unprojected rather than inventing noise.
+func growthRate(delta int64, elapsed time.Duration) string {
+	days := int(elapsed.Hours() / 24)
+	if days < 1 || delta <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (+%d/day)", delta/int64(days))
+}
+
+// baselineHeader renders the compare report's opening line with the
+// baseline age so stale baselines are obvious.
+func baselineHeader(dbID string, tableCount int, elapsed time.Duration) string {
+	return fmt.Sprintf("Size delta vs baseline for %s (captured %d day(s) ago, %d table(s)):", dbID, int(elapsed.Hours()/24), tableCount)
 }
