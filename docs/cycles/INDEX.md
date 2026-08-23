@@ -180,6 +180,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 164 | binlog_format audit, row-based replication (action=binlog_format) | ✅ Shipped (hackathon branch) | [cycle-164](cycle-164-binlog-format.md) |
 | 165 | innodb_doublewrite audit, torn-page protection (action=doublewrite) | ✅ Shipped (hackathon branch) | [cycle-165](cycle-165-doublewrite.md) |
 | 166 | innodb_flush_method audit, page-cache bypass (action=flush_method) | ✅ Shipped (hackathon branch) | [cycle-166](cycle-166-flush-method.md) |
+| 167 | innodb_io_capacity audit, flush pacing vs modern storage (action=io_capacity) | ✅ Shipped (hackathon branch) | [cycle-167](cycle-167-io-capacity.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
