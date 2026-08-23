@@ -151,6 +151,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 135 | Autovacuum-disabled table audit (action=autovacuum_disabled) | ✅ Shipped (hackathon branch) | [cycle-135](cycle-135-autovacuum-off.md) |
 | 136 | Checkpoint pressure (action=checkpoint_pressure) | ✅ Shipped (hackathon branch) | [cycle-136](cycle-136-checkpoint.md) |
 | 137 | Invalid-index audit (action=invalid_indexes) | ✅ Shipped (hackathon branch) | [cycle-137](cycle-137-invalid-indexes.md) |
+| 138 | Role connection-limit audit (action=role_connection_limits) | ✅ Shipped (hackathon branch) | [cycle-138](cycle-138-role-limits.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
