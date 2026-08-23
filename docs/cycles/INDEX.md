@@ -132,6 +132,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 116 | No-primary-key audit (format=no_pk) | ✅ Shipped (hackathon branch) | [cycle-116](cycle-116-no-pk.md) |
 | 117 | Anonymized cross-database copy (mask_pii) | ✅ Shipped (hackathon branch) | [cycle-117](cycle-117-anonymized-copy.md) |
 | 118 | Column-type consistency audit (format=type_consistency) | ✅ Shipped (hackathon branch) | [cycle-118](cycle-118-type-consistency.md) |
+| 119 | Exact-duplicate index detection (redundant_indexes ext.) | ✅ Shipped (hackathon branch) | [cycle-119](cycle-119-duplicate-indexes.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

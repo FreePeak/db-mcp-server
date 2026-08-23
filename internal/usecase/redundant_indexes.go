@@ -51,8 +51,23 @@ func coversPrefix(narrow, wide []string) bool {
 	return true
 }
 
+// sameColumns reports whether two column lists are element-wise equal.
+func sameColumns(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // FindRedundantIndexes renders every non-unique index whose columns are
-// a prefix of a wider sibling on the same table.
+// a prefix of a wider sibling on the same table, plus exact duplicate
+// pairs (identical column lists reported once, later index as the drop
+// candidate).
 func (uc *DatabaseUseCase) FindRedundantIndexes(ctx context.Context, dbID string) (string, error) {
 	info, err := uc.GetDatabaseInfo(dbID)
 	if err != nil {
@@ -63,7 +78,10 @@ func (uc *DatabaseUseCase) FindRedundantIndexes(ctx context.Context, dbID string
 		return "", fmt.Errorf("no table listing available for %q", dbID)
 	}
 
-	type pair struct{ narrow, wide, table string }
+	type pair struct {
+		narrow, wide, table string
+		duplicate           bool // identical column lists vs prefix-covered
+	}
 	var redundant []pair
 	scanned := 0
 	for _, tr := range tablesRaw {
@@ -114,6 +132,17 @@ func (uc *DatabaseUseCase) FindRedundantIndexes(ctx context.Context, dbID string
 					})
 					break // first covering index is enough evidence
 				}
+				if !b.unique && j > i && sameColumns(a.cols, b.cols) {
+					// Exact duplicate: report once (j > i) with the later
+					// index as the drop candidate.
+					redundant = append(redundant, pair{
+						narrow:    b.name,
+						wide:      a.name,
+						table:     tableName,
+						duplicate: true,
+					})
+					break // reported once per duplicate pair
+				}
 			}
 		}
 	}
@@ -125,13 +154,17 @@ func (uc *DatabaseUseCase) FindRedundantIndexes(ctx context.Context, dbID string
 	})
 
 	if len(redundant) == 0 {
-		return fmt.Sprintf("No redundant indexes across %d scanned index(es): no covered prefixes.", scanned), nil
+		return fmt.Sprintf("No redundant indexes across %d scanned index(es): no covered prefixes or duplicates.", scanned), nil
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d redundant index(es) across %d scanned:\n", len(redundant), scanned)
 	for _, p := range redundant {
-		fmt.Fprintf(&b, "- %s.%s: covered by %s — candidate for DROP INDEX %s\n",
-			p.table, p.narrow, p.wide, p.narrow)
+		relation := "covered by"
+		if p.duplicate {
+			relation = "exact duplicate of"
+		}
+		fmt.Fprintf(&b, "- %s.%s: %s %s — candidate for DROP INDEX %s\n",
+			p.table, p.narrow, relation, p.wide, p.narrow)
 	}
 	b.WriteString("Verify with real query patterns before dropping.\n")
 	return strings.TrimRight(b.String(), "\n"), nil

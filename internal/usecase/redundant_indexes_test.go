@@ -49,3 +49,28 @@ func TestFindRedundantIndexes(t *testing.T) {
 		t.Fatalf("clean state wrong (%v):\n%s", err, out2)
 	}
 }
+
+// TestRedundantIndexes_IdenticalDuplicates proves cycle 119: two
+// non-unique indexes with identical column lists are reported exactly
+// once as duplicates.
+func TestRedundantIndexes_IdenticalDuplicates(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	must := func(q string) {
+		t.Helper()
+		if _, err := raw.Exec(q); err != nil {
+			t.Fatalf("exec failed: %v", err)
+		}
+	}
+	must(`CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)`)
+	must(`CREATE INDEX idx_email_a ON users (email)`)
+	must(`CREATE INDEX idx_email_b ON users (email)`)
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	out, err := uc.FindRedundantIndexes(context.Background(), "db1")
+	if err != nil {
+		t.Fatalf("find failed: %v", err)
+	}
+	if !strings.Contains(out, "duplicate") || !(strings.Count(out, "- users.idx_email") == 1) {
+		t.Fatalf("identical duplicates not reported once:\n%s", out)
+	}
+}
