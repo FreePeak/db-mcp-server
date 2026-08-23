@@ -146,6 +146,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 130 | XID-wraparound risk audit (action=wraparound_risk) | ✅ Shipped (hackathon branch) | [cycle-130](cycle-130-wraparound.md) |
 | 131 | Deprecated-charset audit (action=charset_audit) | ✅ Shipped (hackathon branch) | [cycle-131](cycle-131-charsets.md) |
 | 132 | Extension listing (action=list_extensions) | ✅ Shipped (hackathon branch) | [cycle-132](cycle-132-extensions.md) |
+| 133 | Orphaned two-phase transactions (action=prepared_xacts) | ✅ Shipped (hackathon branch) | [cycle-133](cycle-133-prepared-xacts.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
