@@ -179,6 +179,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 163 | open_files_limit audit vs table cache (action=open_files_limit) | ✅ Shipped (hackathon branch) | [cycle-163](cycle-163-open-files-limit.md) |
 | 164 | binlog_format audit, row-based replication (action=binlog_format) | ✅ Shipped (hackathon branch) | [cycle-164](cycle-164-binlog-format.md) |
 | 165 | innodb_doublewrite audit, torn-page protection (action=doublewrite) | ✅ Shipped (hackathon branch) | [cycle-165](cycle-165-doublewrite.md) |
+| 166 | innodb_flush_method audit, page-cache bypass (action=flush_method) | ✅ Shipped (hackathon branch) | [cycle-166](cycle-166-flush-method.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
