@@ -129,6 +129,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 113 | Missing-FK-index detection (format=fk_indexes) | ✅ Shipped (hackathon branch) | [cycle-113](cycle-113-fk-indexes.md) |
 | 114 | Replication status (action=replication_status) | ✅ Shipped (hackathon branch) | [cycle-114](cycle-114-replication-status.md) |
 | 115 | CHECK-constraint listing (format=checks) | ✅ Shipped (hackathon branch) | [cycle-115](cycle-115-check-constraints.md) |
+| 116 | No-primary-key audit (format=no_pk) | ✅ Shipped (hackathon branch) | [cycle-116](cycle-116-no-pk.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
