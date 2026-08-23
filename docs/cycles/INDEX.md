@@ -196,6 +196,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 180 | thread_cache_size churn audit, Threads_created vs Connections miss rate with scaled fix (action=thread_cache_size) | ✅ Shipped (hackathon branch) | [cycle-180](cycle-180-thread-cache.md) |
 | 181 | wal_sender_timeout audit, dead-standby reap window vs slot-pinned WAL growth (action=wal_sender_timeout) | ✅ Shipped (hackathon branch) | [cycle-181](cycle-181-wal-sender-timeout.md) |
 | 182 | max_wal_senders capacity audit, live senders+slots vs ceiling, failover attach risk (action=max_wal_senders) | ✅ Shipped (hackathon branch) | [cycle-182](cycle-182-wal-senders.md) |
+| 183 | back_log audit, TCP listen backlog vs connection-burst refusal before auth (action=back_log) | ✅ Shipped (hackathon branch) | [cycle-183](cycle-183-back-log.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
