@@ -198,6 +198,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 182 | max_wal_senders capacity audit, live senders+slots vs ceiling, failover attach risk (action=max_wal_senders) | ✅ Shipped (hackathon branch) | [cycle-182](cycle-182-wal-senders.md) |
 | 183 | back_log audit, TCP listen backlog vs connection-burst refusal before auth (action=back_log) | ✅ Shipped (hackathon branch) | [cycle-183](cycle-183-back-log.md) |
 | 184 | checkpoint_timeout audit, checkpoint storms vs crash-recovery replay trade-off (action=checkpoint_timeout) | ✅ Shipped (hackathon branch) | [cycle-184](cycle-184-checkpoint-timeout.md) |
+| 185 | ssl_min_protocol_version audit, deprecated TLS floors + ssl=off plaintext escalation (action=ssl_min_protocol_version) | ✅ Shipped (hackathon branch) | [cycle-185](cycle-185-ssl-min-protocol.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
