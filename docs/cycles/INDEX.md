@@ -154,6 +154,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 138 | Role connection-limit audit (action=role_connection_limits) | ✅ Shipped (hackathon branch) | [cycle-138](cycle-138-role-limits.md) |
 | 139 | Foreign-table (FDW) discovery (action=foreign_tables) | ✅ Shipped (hackathon branch) | [cycle-139](cycle-139-fdw.md) |
 | 140 | Unlogged-table audit (action=unlogged_tables) | ✅ Shipped (hackathon branch) | [cycle-140](cycle-140-unlogged.md) |
+| 141 | MyISAM table audit (action=myisam_tables) | ✅ Shipped (hackathon branch) | [cycle-141](cycle-141-myisam.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
