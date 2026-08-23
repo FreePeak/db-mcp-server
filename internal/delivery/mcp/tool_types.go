@@ -285,6 +285,12 @@ type indexUsageUseCase interface {
 	ListUnusedIndexes(ctx context.Context, dbID string, minScans int) (string, error)
 }
 
+// dataDictionaryUseCase is implemented by use cases that render the
+// schema as a Markdown data dictionary.
+type dataDictionaryUseCase interface {
+	DataDictionary(ctx context.Context, dbID string) (string, error)
+}
+
 // sizeBaselineUseCase is implemented by use cases that keep a captured
 // row-count snapshot per database for growth comparison.
 type sizeBaselineUseCase interface {
@@ -1746,7 +1752,7 @@ func (t *SchemaTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Table name; required only for format=compare_samples"),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), "sizes" (row counts and disk size per table), "baseline_capture" / "baseline_compare" (record row counts now, diff later for growth), "overview" (one-call shape snapshot: tables/columns/indexes/FK edges/rows plus PII-name suspects), or "pii_audit" (merged name+content PII report; optional sample_rows, default 50)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), "dictionary" (whole schema as a Markdown data dictionary), "sizes" (row counts and disk size per table), "baseline_capture" / "baseline_compare" (record row counts now, diff later for growth), "overview" (one-call shape snapshot: tables/columns/indexes/FK edges/rows plus PII-name suspects), or "pii_audit" (merged name+content PII report; optional sample_rows, default 50)`),
 		),
 	)
 }
@@ -1764,7 +1770,7 @@ func (t *SchemaTool) CreateUnifiedTool(name string, dbList []string) interface{}
 			tools.Description("Table name; required only for format=compare_samples"),
 		),
 		tools.WithString("format",
-			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), "sizes" (row counts and disk size per table), "baseline_capture" / "baseline_compare" (record row counts now, diff later for growth), "overview" (one-call shape snapshot: tables/columns/indexes/FK edges/rows plus PII-name suspects), or "pii_audit" (merged name+content PII report; optional sample_rows, default 50)`),
+			tools.Description(`Output format: "list" (default, table listing), "mermaid" (ER diagram of foreign-key relationships), "sensitive" (PII-suspect column report), "compare" (structural diff vs compare_with database), or "compare_data_counts" (per-table row counts vs compare_with; requires compare_with), "compare_samples" (row-level diff of one table vs compare_with; requires compare_with + table), "views" (views with their SQL definitions), "triggers" (triggers with target tables and bodies), "routines" (stored functions/procedures), "types" (user-defined enum/composite types), "ddl" (verbatim CREATE statements; sqlite only), "orphans" (count child rows violating each foreign key), "dictionary" (whole schema as a Markdown data dictionary), "sizes" (row counts and disk size per table), "baseline_capture" / "baseline_compare" (record row counts now, diff later for growth), "overview" (one-call shape snapshot: tables/columns/indexes/FK edges/rows plus PII-name suspects), or "pii_audit" (merged name+content PII report; optional sample_rows, default 50)`),
 		),
 	)
 }
@@ -1818,6 +1824,16 @@ func (t *SchemaTool) HandleRequest(ctx context.Context, request server.ToolCallR
 			return nil, fmt.Errorf("sample comparison is not supported by this provider")
 		}
 		out, err := dc.CompareTableSamples(ctx, dbID, compareWith, table, limit)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
+	case format == "dictionary":
+		dic, can := useCase.(dataDictionaryUseCase)
+		if !can {
+			return nil, fmt.Errorf("data dictionary is not supported by this provider")
+		}
+		out, err := dic.DataDictionary(ctx, dbID)
 		if err != nil {
 			return nil, err
 		}
