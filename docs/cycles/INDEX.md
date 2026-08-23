@@ -144,6 +144,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 128 | Growth-rate projection in size baselines | ✅ Shipped (hackathon branch) | [cycle-128](cycle-128-growth-projection.md) |
 | 129 | Partition listing (format=partitions) | ✅ Shipped (hackathon branch) | [cycle-129](cycle-129-partitions.md) |
 | 130 | XID-wraparound risk audit (action=wraparound_risk) | ✅ Shipped (hackathon branch) | [cycle-130](cycle-130-wraparound.md) |
+| 131 | Deprecated-charset audit (action=charset_audit) | ✅ Shipped (hackathon branch) | [cycle-131](cycle-131-charsets.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
