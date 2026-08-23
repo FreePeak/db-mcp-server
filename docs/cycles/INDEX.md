@@ -135,6 +135,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 119 | Exact-duplicate index detection (redundant_indexes ext.) | ✅ Shipped (hackathon branch) | [cycle-119](cycle-119-duplicate-indexes.md) |
 | 120 | Connection saturation (action=connection_saturation) | ✅ Shipped (hackathon branch) | [cycle-120](cycle-120-connection-saturation.md) |
 | 121 | Timeout-guardrail audit (action=timeout_guardrails) | ✅ Shipped (hackathon branch) | [cycle-121](cycle-121-timeout-guardrails.md) |
+| 122 | FK referential-action audit (format=fk_rules) | ✅ Shipped (hackathon branch) | [cycle-122](cycle-122-fk-rules.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
