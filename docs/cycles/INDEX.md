@@ -138,6 +138,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 122 | FK referential-action audit (format=fk_rules) | ✅ Shipped (hackathon branch) | [cycle-122](cycle-122-fk-rules.md) |
 | 123 | Idle-session listing (action=idle_sessions) | ✅ Shipped (hackathon branch) | [cycle-123](cycle-123-idle-sessions.md) |
 | 124 | Temp-spill detection (action=temp_spills) | ✅ Shipped (hackathon branch) | [cycle-124](cycle-124-temp-spills.md) |
+| 125 | Sequential-scan workload audit (action=seq_scan_heavy) | ✅ Shipped (hackathon branch) | [cycle-125](cycle-125-seq-scans.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
