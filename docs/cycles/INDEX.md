@@ -186,6 +186,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 170 | max_slot_wal_keep_size audit, WAL-retention safety net (action=slot_wal_cap) | ✅ Shipped (hackathon branch) | [cycle-170](cycle-170-slot-wal-cap.md) |
 | 171 | autovacuum cost-budget audit, spinning-disk throttle detection (action=autovacuum_throttle) | ✅ Shipped (hackathon branch) | [cycle-171](cycle-171-av-throttle.md) |
 | 172 | JIT compiler audit, OLTP compilation-overhead detection (action=jit) | ✅ Shipped (hackathon branch) | [cycle-172](cycle-172-jit.md) |
+| 173 | innodb_flush_neighbors audit, SSD-era page-coalescing detection (action=flush_neighbors) | ✅ Shipped (hackathon branch) | [cycle-173](cycle-173-flush-neighbors.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
