@@ -184,6 +184,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 168 | wal_compression audit, checkpoint FPI compression (action=wal_compression) | ✅ Shipped (hackathon branch) | [cycle-168](cycle-168-wal-compression.md) |
 | 169 | redo-log sizing audit, checkpoint write amplification (action=redo_log) | ✅ Shipped (hackathon branch) | [cycle-169](cycle-169-redo-log.md) |
 | 170 | max_slot_wal_keep_size audit, WAL-retention safety net (action=slot_wal_cap) | ✅ Shipped (hackathon branch) | [cycle-170](cycle-170-slot-wal-cap.md) |
+| 171 | autovacuum cost-budget audit, spinning-disk throttle detection (action=autovacuum_throttle) | ✅ Shipped (hackathon branch) | [cycle-171](cycle-171-av-throttle.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
