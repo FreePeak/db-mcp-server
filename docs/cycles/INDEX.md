@@ -155,6 +155,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 139 | Foreign-table (FDW) discovery (action=foreign_tables) | ✅ Shipped (hackathon branch) | [cycle-139](cycle-139-fdw.md) |
 | 140 | Unlogged-table audit (action=unlogged_tables) | ✅ Shipped (hackathon branch) | [cycle-140](cycle-140-unlogged.md) |
 | 141 | MyISAM table audit (action=myisam_tables) | ✅ Shipped (hackathon branch) | [cycle-141](cycle-141-myisam.md) |
+| 142 | Unpopulated materialized-view audit (action=unpopulated_matviews) | ✅ Shipped (hackathon branch) | [cycle-142](cycle-142-matviews.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
