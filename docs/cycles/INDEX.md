@@ -125,6 +125,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 109 | Grants audit (format=grants) | ✅ Shipped (hackathon branch) | [cycle-109](cycle-109-grants-audit.md) |
 | 110 | Primary-key diff across databases (format=key_diff) | ✅ Shipped (hackathon branch) | [cycle-110](cycle-110-key-diff.md) |
 | 111 | Redundant-index detection (format=redundant_indexes) | ✅ Shipped (hackathon branch) | [cycle-111](cycle-111-redundant-indexes.md) |
+| 112 | Idle-in-transaction audit (action=long_transactions) | ✅ Shipped (hackathon branch) | [cycle-112](cycle-112-long-transactions.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

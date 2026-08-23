@@ -483,6 +483,7 @@ type rowCountPreviewUseCase interface {
 type sessionObservabilityUseCase interface {
 	ListActiveSessions(ctx context.Context, dbID string) (string, error)
 	ListBlockingWaits(ctx context.Context, dbID string) (string, error)
+	ListLongTransactions(ctx context.Context, dbID string, minAgeSecs int) (string, error)
 	CancelQuery(ctx context.Context, dbID string, sessionID int64) (string, error)
 }
 
@@ -1277,7 +1278,7 @@ func (t *PerformanceTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -1288,6 +1289,9 @@ func (t *PerformanceTool) CreateTool(name string, dbID string) interface{} {
 		),
 		tools.WithNumber("threshold",
 			tools.Description("Slow query threshold in milliseconds (required for setThreshold)"),
+		),
+		tools.WithNumber("min_age_secs",
+			tools.Description("Minimum transaction age in seconds for long_transactions (default 60)"),
 		),
 	)
 }
@@ -1302,7 +1306,7 @@ func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
+			tools.Description("Action (getSlowQueries, suggest_indexes, analyzeQuery, setThreshold, list_sessions, lock_waits, long_transactions, cancel_query; query required for suggest_indexes, session_id for cancel_query)"),
 			tools.Required(),
 		),
 		tools.WithString("query",
@@ -1313,6 +1317,9 @@ func (t *PerformanceTool) CreateUnifiedTool(name string, dbList []string) interf
 		),
 		tools.WithNumber("threshold",
 			tools.Description("Slow query threshold in milliseconds (required for setThreshold)"),
+		),
+		tools.WithNumber("min_age_secs",
+			tools.Description("Minimum transaction age in seconds for long_transactions (default 60)"),
 		),
 	)
 }
@@ -1358,6 +1365,18 @@ func (t *PerformanceTool) HandleRequest(ctx context.Context, request server.Tool
 	case "list_sessions":
 		if s, can := useCase.(sessionObservabilityUseCase); can {
 			out, err := s.ListActiveSessions(ctx, dbID)
+			if err != nil {
+				return nil, err
+			}
+			return createTextResponse(out), nil
+		}
+	case "long_transactions":
+		if s, can := useCase.(sessionObservabilityUseCase); can {
+			minAge := 60
+			if v, ok := request.Parameters["min_age_secs"].(float64); ok && v > 0 {
+				minAge = int(v)
+			}
+			out, err := s.ListLongTransactions(ctx, dbID, minAge)
 			if err != nil {
 				return nil, err
 			}
