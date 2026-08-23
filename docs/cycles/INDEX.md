@@ -108,6 +108,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 92 | Versioned migration runner (execute migrate_dir=) | ✅ Shipped (hackathon branch) | [cycle-92](cycle-92-migrations.md) |
 | 93 | FK integrity audit (schema format=orphans) | ✅ Shipped (hackathon branch) | [cycle-93](cycle-93-orphan-audit.md) |
 | 94 | Table size report (schema format=sizes) | ✅ Shipped (hackathon branch) | [cycle-94](cycle-94-table-sizes.md) |
+| 95 | Column profiling (describe profile=true) | ✅ Shipped (hackathon branch) | [cycle-95](cycle-95-table-profile.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

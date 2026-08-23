@@ -229,6 +229,12 @@ type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
 }
 
+// tableProfileUseCase is implemented by use cases that profile every
+// column of one table (nulls, distinct, range).
+type tableProfileUseCase interface {
+	ProfileTable(ctx context.Context, dbID, table string) (string, error)
+}
+
 // tableSizeUseCase is implemented by use cases that report per-table
 // row counts and disk sizes.
 type tableSizeUseCase interface {
@@ -655,6 +661,20 @@ func (t *ExecuteTool) HandleRequest(ctx context.Context, request server.ToolCall
 	// If dbID is not provided, extract it from the tool name
 	if dbID == "" {
 		dbID = extractDatabaseIDFromName(request.Name)
+	}
+
+	// Column profiling: nulls/distinct/range per column in one call.
+	if prof, ok := request.Parameters["profile"].(bool); ok && prof {
+		puc, can := useCase.(tableProfileUseCase)
+		if !can {
+			return nil, fmt.Errorf("profiling is not supported by this provider")
+		}
+		table, _ := request.Parameters["table"].(string) //nolint:errcheck // validated by usecase
+		out, err := puc.ProfileTable(ctx, dbID, table)
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
 	}
 
 	// Migration runner: apply pending .sql files from a directory.
@@ -1245,6 +1265,9 @@ func (t *DescribeTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithString("related_key",
 			tools.Description("Primary-key value: follow this row's foreign keys to parents and list referencing children"),
 		),
+		tools.WithBoolean("profile",
+			tools.Description("Profile the table: per-column rows, NULL count, distinct count, and min/max"),
+		),
 		tools.WithString("duplicates_column",
 			tools.Description("Report duplicated values in this column with counts and an example PK per group"),
 		),
@@ -1269,6 +1292,9 @@ func (t *DescribeTool) CreateUnifiedTool(name string, dbList []string) interface
 		),
 		tools.WithString("related_key",
 			tools.Description("Primary-key value: follow this row's foreign keys to parents and list referencing children"),
+		),
+		tools.WithBoolean("profile",
+			tools.Description("Profile the table: per-column rows, NULL count, distinct count, and min/max"),
 		),
 		tools.WithString("duplicates_column",
 			tools.Description("Report duplicated values in this column with counts and an example PK per group"),
