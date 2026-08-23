@@ -166,6 +166,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 150 | Strict-mode audit (action=strict_mode) | ✅ Shipped (hackathon branch) | [cycle-150](cycle-150-sql-mode.md) |
 | 151 | Aborted-connections audit (action=aborted_connections) | ✅ Shipped (hackathon branch) | [cycle-151](cycle-151-aborted-connections.md) |
 | 152 | max_allowed_packet audit (action=max_packet) | ✅ Shipped (hackathon branch) | [cycle-152](cycle-152-max-packet.md) |
+| 153 | SQLite WAL-mode audit (action=wal_mode) | ✅ Shipped (hackathon branch) | [cycle-153](cycle-153-wal-mode.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
