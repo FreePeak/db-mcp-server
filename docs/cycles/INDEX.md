@@ -150,6 +150,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 134 | WAL archiver health (action=wal_archive) | ✅ Shipped (hackathon branch) | [cycle-134](cycle-134-wal-archive.md) |
 | 135 | Autovacuum-disabled table audit (action=autovacuum_disabled) | ✅ Shipped (hackathon branch) | [cycle-135](cycle-135-autovacuum-off.md) |
 | 136 | Checkpoint pressure (action=checkpoint_pressure) | ✅ Shipped (hackathon branch) | [cycle-136](cycle-136-checkpoint.md) |
+| 137 | Invalid-index audit (action=invalid_indexes) | ✅ Shipped (hackathon branch) | [cycle-137](cycle-137-invalid-indexes.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
