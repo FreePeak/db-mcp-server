@@ -119,6 +119,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 103 | Saved query bookmarks (query save/run/list) | ✅ Shipped (hackathon branch) | [cycle-103](cycle-103-saved-queries.md) |
 | 104 | Size baselines for growth diffs (schema format=baseline_*) | ✅ Shipped (hackathon branch) | [cycle-104](cycle-104-size-baselines.md) |
 | 105 | Markdown data dictionary (schema format=dictionary) | ✅ Shipped (hackathon branch) | [cycle-105](cycle-105-data-dictionary.md) |
+| 106 | Maintenance suggestions from engine stats (format=maintenance) | ✅ Shipped (hackathon branch) | [cycle-106](cycle-106-maintenance.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

@@ -5,13 +5,24 @@
 
 ## Current State
 
-- **NEXT_CYCLE:** 106
+- **NEXT_CYCLE:** 107
 - **Branch:** `hackathon` (worktree `.worktrees/hackathon`)
 - **Remote:** `origin/hackathon` — push after EVERY cycle
 - **PR:** #87 → `main` (CI green; merge = npm/docker release of v1.12.0)
 - **Registry:** `docs/cycles/INDEX.md` — single source of truth, update per cycle
 - **Full narrative:** `docs/SESSION-REPORT.md` — everything from this session
 - **Completed:** cycles 01–86
+
+## Hard Lessons
+
+- **Cycle 106 (abandoned):** wrote RelatedRows + views tests that
+  duplicated ALREADY-SHIPPED features (related_key on describe,
+  format=views/triggers/routines/ddl/types all exist). Context
+  compression loses feature-surface memory. Before any RED test:
+  `grep -n "<capability>" internal/delivery/mcp/tool_types.go` AND
+  `ls internal/usecase/*.go` — if either hits, pick another target.
+- **Never Write over an existing file** without `git status` — it
+  silently clobbers shipped code (caught only because tests passed).
 
 ## Per-Cycle Protocol (mandatory)
 
