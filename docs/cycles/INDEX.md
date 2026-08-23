@@ -133,6 +133,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 117 | Anonymized cross-database copy (mask_pii) | ✅ Shipped (hackathon branch) | [cycle-117](cycle-117-anonymized-copy.md) |
 | 118 | Column-type consistency audit (format=type_consistency) | ✅ Shipped (hackathon branch) | [cycle-118](cycle-118-type-consistency.md) |
 | 119 | Exact-duplicate index detection (redundant_indexes ext.) | ✅ Shipped (hackathon branch) | [cycle-119](cycle-119-duplicate-indexes.md) |
+| 120 | Connection saturation (action=connection_saturation) | ✅ Shipped (hackathon branch) | [cycle-120](cycle-120-connection-saturation.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
