@@ -29,6 +29,7 @@ var configAuditors = []auditEntry{
 	{"binlogs", (*DatabaseUseCase).AuditBinaryLogs},
 	{"binlog_format", (*DatabaseUseCase).AuditBinlogFormat},
 	{"binlog_row_image", (*DatabaseUseCase).AuditBinlogRowImage},
+	{"bloat", (*DatabaseUseCase).CheckTableBloat},
 	{"buffer_pool", (*DatabaseUseCase).AuditBufferPool},
 	{"busy_timeout", (*DatabaseUseCase).AuditBusyTimeout},
 	{"charsets", (*DatabaseUseCase).AuditCharsets},
