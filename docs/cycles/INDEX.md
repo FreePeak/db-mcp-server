@@ -137,6 +137,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 121 | Timeout-guardrail audit (action=timeout_guardrails) | ✅ Shipped (hackathon branch) | [cycle-121](cycle-121-timeout-guardrails.md) |
 | 122 | FK referential-action audit (format=fk_rules) | ✅ Shipped (hackathon branch) | [cycle-122](cycle-122-fk-rules.md) |
 | 123 | Idle-session listing (action=idle_sessions) | ✅ Shipped (hackathon branch) | [cycle-123](cycle-123-idle-sessions.md) |
+| 124 | Temp-spill detection (action=temp_spills) | ✅ Shipped (hackathon branch) | [cycle-124](cycle-124-temp-spills.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
