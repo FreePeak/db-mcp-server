@@ -111,6 +111,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 95 | Column profiling (describe profile=true) | ✅ Shipped (hackathon branch) | [cycle-95](cycle-95-table-profile.md) |
 | 96 | Cross-database table copy (execute copy_table=) | ✅ Shipped (hackathon branch) | [cycle-96](cycle-96-copy-table.md) |
 | 97 | Unused index detection (query unused_indexes=) | ✅ Shipped (hackathon branch) | [cycle-97](cycle-97-unused-indexes.md) |
+| 98 | Long-query triage (query long_queries=N) | ✅ Shipped (hackathon branch) | [cycle-98](cycle-98-long-queries.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

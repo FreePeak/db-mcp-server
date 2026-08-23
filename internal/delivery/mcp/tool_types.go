@@ -160,6 +160,9 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithNumber("timeout_ms",
 			tools.Description("Cancel the query if it exceeds this many milliseconds"),
 		),
+		tools.WithNumber("long_queries",
+			tools.Description("List queries running longer than this many seconds (activity catalog; Postgres/MySQL)"),
+		),
 		tools.WithBoolean("unused_indexes",
 			tools.Description("List indexes the engine has barely scanned (write-tax candidates; Postgres/MySQL)"),
 		),
@@ -213,6 +216,9 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 		tools.WithNumber("timeout_ms",
 			tools.Description("Cancel the query if it exceeds this many milliseconds"),
 		),
+		tools.WithNumber("long_queries",
+			tools.Description("List queries running longer than this many seconds (activity catalog; Postgres/MySQL)"),
+		),
 		tools.WithBoolean("unused_indexes",
 			tools.Description("List indexes the engine has barely scanned (write-tax candidates; Postgres/MySQL)"),
 		),
@@ -239,6 +245,12 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 // providers compatible.
 type queryExportUseCase interface {
 	ExecuteQueryFormat(ctx context.Context, dbID, query string, params []interface{}, format string) (string, error)
+}
+
+// longQueryUseCase is implemented by use cases that list engine
+// queries over an age threshold.
+type longQueryUseCase interface {
+	ListLongQueries(ctx context.Context, dbID string, minSeconds int) (string, error)
 }
 
 // indexUsageUseCase is implemented by use cases that report engine
@@ -448,6 +460,19 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 				return createTextResponse(result), nil
 			}
 		}
+	}
+
+	// Long-query triage: active queries over an age threshold.
+	if secs, ok := request.Parameters["long_queries"].(float64); ok && secs > 0 {
+		luc, can := useCase.(longQueryUseCase)
+		if !can {
+			return nil, fmt.Errorf("long-query reporting is not supported by this provider")
+		}
+		out, err := luc.ListLongQueries(ctx, dbID, int(secs))
+		if err != nil {
+			return nil, err
+		}
+		return createTextResponse(out), nil
 	}
 
 	// Unused index detection: write-tax candidates from usage stats.
