@@ -193,6 +193,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 177 | effective_cache_size audit, planner cache assumption vs host RAM (action=effective_cache_size) | ✅ Shipped (hackathon branch) | [cycle-177](cycle-177-effective-cache-size.md) |
 | 178 | default_statistics_target audit, ANALYZE sampling depth for skewed/high-cardinality columns (action=default_statistics_target) | ✅ Shipped (hackathon branch) | [cycle-178](cycle-178-statistics-target.md) |
 | 179 | sync_binlog durability audit, binlog fsync disablement vs crash-loss exposure (action=sync_binlog) | ✅ Shipped (hackathon branch) | [cycle-179](cycle-179-sync-binlog.md) |
+| 180 | thread_cache_size churn audit, Threads_created vs Connections miss rate with scaled fix (action=thread_cache_size) | ✅ Shipped (hackathon branch) | [cycle-180](cycle-180-thread-cache.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
