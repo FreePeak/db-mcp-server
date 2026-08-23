@@ -161,6 +161,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 145 | Slow-query-log observability audit (action=slow_log) | ✅ Shipped (hackathon branch) | [cycle-145](cycle-145-slow-log.md) |
 | 146 | MD5 password audit (action=password_auth) | ✅ Shipped (hackathon branch) | [cycle-146](cycle-146-password-auth.md) |
 | 147 | Required-INSERT-columns audit (schema action=required_columns) | ✅ Shipped (hackathon branch) | [cycle-147](cycle-147-insert-requirements.md) |
+| 148 | table_open_cache pressure audit (action=table_cache) | ✅ Shipped (hackathon branch) | [cycle-148](cycle-148-table-cache.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
