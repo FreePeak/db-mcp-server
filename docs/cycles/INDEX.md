@@ -140,6 +140,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 124 | Temp-spill detection (action=temp_spills) | ✅ Shipped (hackathon branch) | [cycle-124](cycle-124-temp-spills.md) |
 | 125 | Sequential-scan workload audit (action=seq_scan_heavy) | ✅ Shipped (hackathon branch) | [cycle-125](cycle-125-seq-scans.md) |
 | 126 | Stale replication-slot audit (action=stale_slots) | ✅ Shipped (hackathon branch) | [cycle-126](cycle-126-stale-slots.md) |
+| 127 | Deadlock-counter audit (action=deadlock_counts) | ✅ Shipped (hackathon branch) | [cycle-127](cycle-127-deadlocks.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
