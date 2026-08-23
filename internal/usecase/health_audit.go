@@ -35,6 +35,7 @@ var configAuditors = []auditEntry{
 	{"busy_timeout", (*DatabaseUseCase).AuditBusyTimeout},
 	{"charsets", (*DatabaseUseCase).AuditCharsets},
 	{"checkpoint_timeout", (*DatabaseUseCase).AuditCheckpointTimeout},
+	{"connection_saturation", (*DatabaseUseCase).CheckConnectionSaturation},
 	{"crash_safety", (*DatabaseUseCase).AuditCrashSafety},
 	{"doublewrite", (*DatabaseUseCase).AuditDoublewrite},
 	{"durability", (*DatabaseUseCase).AuditDurability},

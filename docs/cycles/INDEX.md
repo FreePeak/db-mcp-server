@@ -214,6 +214,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 198 | MySQL file-access surface audit (`local_infile` client-read primitive + `secure_file_priv` import/export scope) with exact remediation per finding (action=file_access) | ✅ Shipped (hackathon branch) | [cycle-198](cycle-198-file-access.md) |
 | 199 | PostgreSQL table-bloat audit (`pg_stat_user_tables` dead-tuple ratio vs noise floor, VACUUM guidance) via health_audit + performance action=bloat | ✅ Shipped (hackathon branch) | [cycle-199](cycle-199-table-bloat.md) |
 | 200 | PostgreSQL autovacuum_max_workers audit (`current_setting` probe, ≤3-worker escalation with ALTER SYSTEM remediation) via health_audit action=av_workers | ✅ Shipped (hackathon branch) | [cycle-200](cycle-200-av-workers.md) |
+| 201 | Connection saturation audit (`Threads_connected`/`pg_stat_activity` vs `max_connections`, ≥100% CRITICAL / ≥90% WARNING ladder) in health_audit registry | ✅ Shipped (hackathon branch) | [cycle-201](cycle-201-connection-saturation.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
