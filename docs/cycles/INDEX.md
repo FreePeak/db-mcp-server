@@ -202,6 +202,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 186 | temp_file_limit audit, unlimited per-session spill files vs disk-fill blast radius (action=temp_file_limit) | ✅ Shipped (hackathon branch) | [cycle-186](cycle-186-temp-file-limit.md) |
 | 187 | tcp_keepalives_idle audit, OS-default keepalive letting dead clients hold connection slots for hours (action=tcp_keepalives_idle) | ✅ Shipped (hackathon branch) | [cycle-187](cycle-187-tcp-keepalives.md) |
 | 188 | log_lock_waits audit, lock waits past deadlock_timeout never reaching logs for post-incident analysis (action=log_lock_waits) | ✅ Shipped (hackathon branch) | [cycle-188](cycle-188-log-lock-waits.md) |
+| 189 | log_checkpoints audit, checkpoint timing/buffer counts invisible on PG≤14 defaults so I/O stalls are undiagnosable (action=log_checkpoints) | ✅ Shipped (hackathon branch) | [cycle-189](cycle-189-log-checkpoints.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
