@@ -160,6 +160,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 144 | AUTO_INCREMENT headroom audit (action=auto_increment_headroom) | ✅ Shipped (hackathon branch) | [cycle-144](cycle-144-auto-increment.md) |
 | 145 | Slow-query-log observability audit (action=slow_log) | ✅ Shipped (hackathon branch) | [cycle-145](cycle-145-slow-log.md) |
 | 146 | MD5 password audit (action=password_auth) | ✅ Shipped (hackathon branch) | [cycle-146](cycle-146-password-auth.md) |
+| 147 | Required-INSERT-columns audit (schema action=required_columns) | ✅ Shipped (hackathon branch) | [cycle-147](cycle-147-insert-requirements.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
