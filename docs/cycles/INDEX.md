@@ -158,6 +158,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 142 | Unpopulated materialized-view audit (action=unpopulated_matviews) | ✅ Shipped (hackathon branch) | [cycle-142](cycle-142-matviews.md) |
 | 143 | Binary-log growth audit (action=binlog_growth) | ✅ Shipped (hackathon branch) | [cycle-143](cycle-143-binlogs.md) |
 | 144 | AUTO_INCREMENT headroom audit (action=auto_increment_headroom) | ✅ Shipped (hackathon branch) | [cycle-144](cycle-144-auto-increment.md) |
+| 145 | Slow-query-log observability audit (action=slow_log) | ✅ Shipped (hackathon branch) | [cycle-145](cycle-145-slow-log.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
