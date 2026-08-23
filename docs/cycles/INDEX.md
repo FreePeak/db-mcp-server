@@ -157,6 +157,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 141 | MyISAM table audit (action=myisam_tables) | ✅ Shipped (hackathon branch) | [cycle-141](cycle-141-myisam.md) |
 | 142 | Unpopulated materialized-view audit (action=unpopulated_matviews) | ✅ Shipped (hackathon branch) | [cycle-142](cycle-142-matviews.md) |
 | 143 | Binary-log growth audit (action=binlog_growth) | ✅ Shipped (hackathon branch) | [cycle-143](cycle-143-binlogs.md) |
+| 144 | AUTO_INCREMENT headroom audit (action=auto_increment_headroom) | ✅ Shipped (hackathon branch) | [cycle-144](cycle-144-auto-increment.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
