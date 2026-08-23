@@ -200,6 +200,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 184 | checkpoint_timeout audit, checkpoint storms vs crash-recovery replay trade-off (action=checkpoint_timeout) | ✅ Shipped (hackathon branch) | [cycle-184](cycle-184-checkpoint-timeout.md) |
 | 185 | ssl_min_protocol_version audit, deprecated TLS floors + ssl=off plaintext escalation (action=ssl_min_protocol_version) | ✅ Shipped (hackathon branch) | [cycle-185](cycle-185-ssl-min-protocol.md) |
 | 186 | temp_file_limit audit, unlimited per-session spill files vs disk-fill blast radius (action=temp_file_limit) | ✅ Shipped (hackathon branch) | [cycle-186](cycle-186-temp-file-limit.md) |
+| 187 | tcp_keepalives_idle audit, OS-default keepalive letting dead clients hold connection slots for hours (action=tcp_keepalives_idle) | ✅ Shipped (hackathon branch) | [cycle-187](cycle-187-tcp-keepalives.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
