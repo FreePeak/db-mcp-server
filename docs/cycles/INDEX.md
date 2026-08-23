@@ -173,6 +173,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 157 | wait_timeout audit (action=wait_timeout) | ✅ Shipped (hackathon branch) | [cycle-157](cycle-157-wait-timeout.md) |
 | 158 | innodb_buffer_pool_size sizing audit (action=buffer_pool) | ✅ Shipped (hackathon branch) | [cycle-158](cycle-158-buffer-pool.md) |
 | 159 | SQLite FK enforcement audit (action=fk_enforcement) | ✅ Shipped (hackathon branch) | [cycle-159](cycle-159-fk-enforcement.md) |
+| 160 | crash-safety audit, fsync/full_page_writes (action=crash_safety) | ✅ Shipped (hackathon branch) | [cycle-160](cycle-160-crash-safety.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
