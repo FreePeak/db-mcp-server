@@ -183,6 +183,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 167 | innodb_io_capacity audit, flush pacing vs modern storage (action=io_capacity) | ✅ Shipped (hackathon branch) | [cycle-167](cycle-167-io-capacity.md) |
 | 168 | wal_compression audit, checkpoint FPI compression (action=wal_compression) | ✅ Shipped (hackathon branch) | [cycle-168](cycle-168-wal-compression.md) |
 | 169 | redo-log sizing audit, checkpoint write amplification (action=redo_log) | ✅ Shipped (hackathon branch) | [cycle-169](cycle-169-redo-log.md) |
+| 170 | max_slot_wal_keep_size audit, WAL-retention safety net (action=slot_wal_cap) | ✅ Shipped (hackathon branch) | [cycle-170](cycle-170-slot-wal-cap.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
