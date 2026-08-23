@@ -121,6 +121,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 105 | Markdown data dictionary (schema format=dictionary) | ✅ Shipped (hackathon branch) | [cycle-105](cycle-105-data-dictionary.md) |
 | 106 | Maintenance suggestions from engine stats (format=maintenance) | ✅ Shipped (hackathon branch) | [cycle-106](cycle-106-maintenance.md) |
 | 107 | FK-safe dependency order (format=dependency_order) | ✅ Shipped (hackathon branch) | [cycle-107](cycle-107-dependency-order.md) |
+| 108 | Sequence exhaustion audit (format=sequences) | ✅ Shipped (hackathon branch) | [cycle-108](cycle-108-sequences.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
