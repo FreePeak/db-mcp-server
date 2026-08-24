@@ -45,6 +45,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 29 | UNUSED observation window (pg stats_reset) + README currency for index_health | ✅ Shipped | [cycle-29](cycle-29-reset-window.md) |
 | 30 | Unified `db_health` action with connection-pressure findings | ✅ Shipped | [cycle-30](cycle-30-db-health.md) |
 | 31 | Live-engine validation: PK-noise fix + TestDbHealth_Live against real PostgreSQL | ✅ Shipped | [cycle-31](cycle-31-live-validation.md) |
+| 32 | Live MySQL validation: sys.schema_unused_indexes column fix + TestDbHealth_LiveMySQL | ✅ Shipped | [cycle-32](cycle-32-mysql-live-validation.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

@@ -96,7 +96,9 @@ func (uc *DatabaseUseCase) usageFindings(ctx context.Context, dbID, dbType strin
 		}
 	case "mysql":
 		candidates = []string{
-			"SELECT table_name, index_name FROM sys.schema_unused_indexes",
+			// sys.schema_unused_indexes exposes object_name (the table) and
+			// index_name — validated against MySQL 9.x (cycle 32).
+			"SELECT object_name AS table_name, index_name FROM sys.schema_unused_indexes WHERE object_schema = DATABASE()",
 			"SELECT table_name AS table_name, engine AS engine, data_free AS data_free FROM information_schema.tables WHERE data_free > 16777216 ORDER BY data_free DESC LIMIT 20",
 		}
 	default:

@@ -126,3 +126,34 @@ func TestDbHealth_Live(t *testing.T) {
 		t.Errorf("orders_pkey is constraint-backed and must not be flagged UNUSED:\n%s", out)
 	}
 }
+
+// TestDbHealth_LiveMySQL exercises db_health against real MySQL 9.x,
+// locking in cycle 32's catalog fixes: sys.schema_unused_indexes column
+// names (object_name/index_name) and PRIMARY-key filtering. Skips when
+// unreachable; requires docker-compose.test.yml or any MySQL on 13306
+// seeded with the orders scenario.
+func TestDbHealth_LiveMySQL(t *testing.T) {
+	g := openLive(t, "mysql", "user1:password1@tcp(localhost:13306)/db1?parseTime=true")
+	_, _ = g.db.Exec(`CREATE TABLE IF NOT EXISTS orders (id INT PRIMARY KEY AUTO_INCREMENT, customer_id INT, region VARCHAR(50), total REAL)`)
+	_, _ = g.db.Exec(`CREATE INDEX idx_orders_customer ON orders (customer_id)`)
+	_, _ = g.db.Exec(`CREATE INDEX idx_orders_customer_copy ON orders (customer_id)`)
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: g, dbType: "mysql"})
+	out, err := uc.DbHealth(context.Background(), "mysql1")
+	if err != nil {
+		t.Fatalf("db_health failed: %v", err)
+	}
+
+	if !strings.Contains(out, "DUPLICATE on orders") {
+		t.Errorf("expected duplicate-index finding from SHOW INDEX parsing, got:\n%s", out)
+	}
+	// The duplicate pair has zero reads on a fresh server, so at least one
+	// UNUSED finding should surface with correct table attribution.
+	if strings.Contains(out, "UNUSED on db1:") {
+		t.Errorf("object_schema leaked into table attribution:\n%s", out)
+	}
+	// PRIMARY backs AUTO_INCREMENT; never DROP advice for it.
+	if strings.Contains(out, "DROP INDEX `PRIMARY`") {
+		t.Errorf("PRIMARY index must never receive DROP advice:\n%s", out)
+	}
+}
