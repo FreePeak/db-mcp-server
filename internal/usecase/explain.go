@@ -77,6 +77,12 @@ func (uc *DatabaseUseCase) ExecuteExplain(ctx context.Context, dbID, statement s
 	if err != nil {
 		return "", fmt.Errorf("explain failed: %w", err)
 	}
+	// Close the loop from plan to fix (backlog #9): when the advisor finds
+	// uncovered columns for this statement's predicates, point at concrete
+	// DDL right under the plan. Advisory only; failures never mask the plan.
+	if advice, aerr := uc.SuggestIndexes(ctx, dbID, statement); aerr == nil && strings.Contains(advice, "CREATE INDEX") {
+		result += "\n\n--- Index suggestions (heuristic) ---\n" + advice
+	}
 	logger.Info("EXPLAIN executed on %s (%s): analyzed=%v", dbID, dbType, analyze)
 	return result, nil
 }

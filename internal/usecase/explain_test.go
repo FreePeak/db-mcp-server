@@ -76,3 +76,37 @@ func TestExecuteExplain_EndToEnd(t *testing.T) {
 		t.Fatalf("expected SQLite plan output, got:\n%s", out)
 	}
 }
+
+// TestExecuteExplain_AppendsIndexSuggestions locks in backlog #9's
+// loop-closing wiring: a plan whose statement filters on an uncovered
+// column carries concrete CREATE INDEX advice under the plan, while a
+// fully covered statement's plan stays clean.
+func TestExecuteExplain_AppendsIndexSuggestions(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	for _, s := range []string{
+		`CREATE TABLE orders_live (id INTEGER PRIMARY KEY, customer_id INTEGER, region TEXT)`,
+		`CREATE INDEX idx_orders_live_customer ON orders_live (customer_id)`,
+	} {
+		if _, err := raw.Exec(s); err != nil {
+			t.Fatalf("seed failed: %v", err)
+		}
+	}
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	out, err := uc.ExecuteExplain(context.Background(), "sqlite1", "SELECT * FROM orders_live WHERE region = 'r1'", false)
+	if err != nil {
+		t.Fatalf("explain failed: %v", err)
+	}
+	if !strings.Contains(out, "Index suggestions") || !strings.Contains(out, "CREATE INDEX") {
+		t.Errorf("uncovered predicate column should surface index advice under the plan, got:\n%s", out)
+	}
+
+	out, err = uc.ExecuteExplain(context.Background(), "sqlite1", "SELECT * FROM orders_live WHERE customer_id = 7", false)
+	if err != nil {
+		t.Fatalf("explain failed: %v", err)
+	}
+	if strings.Contains(out, "CREATE INDEX") {
+		t.Errorf("covered predicate column should not produce advice, got:\n%s", out)
+	}
+}

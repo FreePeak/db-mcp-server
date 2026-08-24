@@ -51,6 +51,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 35 | Column masking scoping doc — name-based v1 needs no SQL parsing | ✅ Shipped | [cycle-35](cycle-35-masking-scoping.md) |
 | 36 | Column masking core: name-based rules wired into ExecuteQuery (Masking Cycle A) | ✅ Shipped | [cycle-36](cycle-36-masking-core.md) |
 | 37 | Masking hardening: fail-closed validation, partial strategy, masked-cell counts (Cycle B) | ✅ Shipped | [cycle-37](cycle-37-masking-hardening.md) |
+| 38 | Explain output carries index suggestions — closes backlog #9 loop | ✅ Shipped | [cycle-38](cycle-38-explain-advice-wiring.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -71,6 +72,6 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 6. FK referenced-table detail — done (cycle 15); multi-table relationship graph remains
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing
 8. Workload-driven tuning — shipped (cycles 19, 23: weighted by executions, per-statement composites); duration-weighted ranking is the possible refinement
-9. Wire suggest_indexes into explain/slow-query output so plan analysis points at concrete fixes (close the Postgres MCP Pro loop)
+9. Wire suggest_indexes into explain/slow-query output — done for explain (cycle 38); slow-queries per-statement advice deferred (multiplies catalog reads; interactive path covered)
 10. Guardrail visibility + env timeout override — shipped (cycle 21); remaining: document QUERY_TIMEOUT_SECONDS in README config section
 11. Column masking / SELECT-target resolution — needs real SQL parsing or catalog help; scope as multi-cycle effort first
