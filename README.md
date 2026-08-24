@@ -113,7 +113,7 @@ Protect agent sessions against runaway queries and accidental writes:
 |---------|-------|--------|
 | `"read_only": true` | per database | Blocks write statements (`INSERT`, `UPDATE`, `DELETE`, DDL, data-modifying CTEs, stacked writes) through **both** query and execute tools, **and** enforces rejection at the database engine itself on PostgreSQL/TimescaleDB (`default_transaction_read_only=on`) and MySQL (`transaction_read_only=1`); SQLite opens `mode=ro`. Classification strips comments and string literals and defaults to deny for unrecognized statements. |
 | `"max_rows": 1000` | per database | Truncates result sets at N rows and appends an explicit `[Truncated]` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. |
-| `"query_timeout": 30` | per database | Cancels queries that exceed the timeout in seconds. |
+| `"query_timeout": 30` | per database | Cancels statements that exceed the timeout in seconds; enforced at the repository layer for every tool (queries, statements, transactions, explain, schema inspection). Unset defaults to 30s; `-1` disables. Env-only deployments can set `QUERY_TIMEOUT_SECONDS` to fill connections without an explicit value (JSON keeps precedence). |
 
 > **Defense in depth**: read-only is enforced in three layers — application classifier, engine session defaults, and (recommended) least-privilege database users. Oracle currently relies on the classifier plus user privileges.
 
@@ -505,7 +505,7 @@ For each connected database, DB MCP Server automatically generates these special
 
 | Tool Name | Description |
 |-----------|-------------|
-| `performance_<db_id>` | Analyze query performance and get optimization suggestions |
+| `performance_<db_id>` | Analyze query performance via actions: `stats` / `slow_queries` (in-process tracker), `engine_slow_queries` (pg_stat_statements / MySQL digest tables), `suggest` (static SQL lint), `suggest_indexes` (heuristic CREATE INDEX advice for one statement, equality-first composites, verify with EXPLAIN), `workload_suggestions` (same analysis across the top-N expensive workload statements, annotated with per-statement coverage), `reset` |
 | `explain_<db_id>` | Show the execution plan for a SQL statement without running it; `analyze: true` executes with timing/buffer stats (PostgreSQL/MySQL). Writes stay blocked on read-only databases |
 | `describe_<db_id>` | Inspect one table's columns, indexes, and row estimate via engine catalog queries |
 | `health_<db_id>` | Report connectivity, ping latency, connection-pool state, and engine stats (PostgreSQL buffer-cache hit ratio, MySQL InnoDB buffer efficiency) |
