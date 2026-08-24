@@ -62,6 +62,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 46 | Slow-query index advice + MySQL digest backtick fix (backlog #9 done) | ✅ Shipped | [cycle-46](cycle-46-slow-query-advice.md) |
 | 47 | Oracle init scripts connect to TESTDB — fresh-volume reproducibility verified | ✅ Shipped | [cycle-47](cycle-47-oracle-init-fix.md) |
 | 48 | CI green: digest-table grant for live advice tests | ✅ Shipped | [cycle-48](cycle-48-ci-grant-fix.md) |
+| 49 | Token benchmark re-verification + README drift fix (backlog #2 done) | ✅ Shipped | [cycle-49](cycle-49-token-benchmark-reverify.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -75,7 +76,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 ## Standing Backlog (fed by each cycle)
 
 1. Oracle engine-level read-only — fully done (cycle 44: fail-closed privilege audit + native oracle-free image)
-2. Token-efficiency benchmark: unified vs per-db vs DBHub claim — re-measurable via scripts/token-benchmark.sh (cycle 43)
+2. Token-efficiency benchmark — fully done (cycle 43 harness + cycle 49 re-verification: unified ~1.25–1.6k tok flat vs per-db ~800/db, 80% saving at 10 DBs)
 3. Merge PR #85 → tag release — done (merged 2026-08-22 with green CI; tagged v1.10.0/v1.11.0; CHANGELOG backfilled in cycle 45)
 4. Hypothetical-index tuning depth — fully done (cycles 17–18 composites + 19/23/40 workload-driven analysis + 42 constraint-aware coverage)
 5. Column masking / governance features (Bytebase differentiator) — fully done (cycles 35 scoping + 36 core + 37 hardening + 39 live validation)

@@ -561,7 +561,7 @@ For these clients, launch the server with the `--unified-tools` flag to register
 ./bin/server -t stdio -c config.json --unified-tools
 ```
 
-**Context-window cost (measured, `TestToolTokenBenchmark`):** unified mode costs ~1.1–1.3k tokens **regardless of how many databases are connected**, while per-database mode costs ~800 tokens per database (7 tools each) — 10 connected databases ≈ 8k tokens, a 6.3x difference. With one database only, per-database naming is slightly cheaper; unified wins from two databases onward and scales flat thereafter. Re-measure the real wire payload yourself with `scripts/token-benchmark.sh`; methodology and results in [docs/benchmark-token-efficiency.md](docs/benchmark-token-efficiency.md).
+**Context-window cost (measured, `TestToolTokenBenchmark`, re-verified 2026-08 via `scripts/token-benchmark.sh`):** unified mode costs ~1.25–1.6k tokens **regardless of how many databases are connected**, while per-database mode costs ~800 tokens per database (7 tools each) — 10 connected databases ≈ 8k tokens, an 80% wire-payload saving with unified. With one database only, per-database naming is slightly cheaper; unified wins from two databases onward and scales flat thereafter. Re-measure the real wire payload yourself with `scripts/token-benchmark.sh`; methodology and results in [docs/benchmark-token-efficiency.md](docs/benchmark-token-efficiency.md).
 ```
 
 In unified mode, each tool accepts a required `database` parameter that names
