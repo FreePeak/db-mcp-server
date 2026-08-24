@@ -4,6 +4,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/FreePeak/db-mcp-server/internal/domain"
 	"github.com/FreePeak/db-mcp-server/pkg/dbtools"
@@ -62,18 +63,39 @@ type DatabaseAdapter struct {
 	}
 }
 
+// timeout applies the database's configured statement timeout so a runaway
+// query cannot hold its connection indefinitely. Engines whose drivers
+// support cancellation (PostgreSQL, MySQL) propagate it server-side; others
+// are still bounded at this layer.
+func (a *DatabaseAdapter) timeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	var secs int
+	if t, ok := a.db.(interface{ QueryTimeout() int }); ok {
+		secs = t.QueryTimeout()
+	}
+	if secs <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, time.Duration(secs)*time.Second)
+}
+
 // Query executes a query on the database
 func (a *DatabaseAdapter) Query(ctx context.Context, query string, args ...interface{}) (domain.Rows, error) {
-	rows, err := a.db.Query(ctx, query, args...)
+	tctx, cancel := a.timeout(ctx)
+	rows, err := a.db.Query(tctx, query, args...)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-	return &RowsAdapter{rows: rows}, nil
+	// The result set outlives this call, so cancellation travels with the
+	// rows and fires when they are closed.
+	return &RowsAdapter{rows: rows, cancel: cancel}, nil
 }
 
 // Exec executes a statement on the database
 func (a *DatabaseAdapter) Exec(ctx context.Context, statement string, args ...interface{}) (domain.Result, error) {
-	result, err := a.db.Exec(ctx, statement, args...)
+	tctx, cancel := a.timeout(ctx)
+	defer cancel()
+	result, err := a.db.Exec(tctx, statement, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -86,8 +108,10 @@ func (a *DatabaseAdapter) Begin(ctx context.Context, opts *domain.TxOptions) (do
 	if opts != nil {
 		txOpts.ReadOnly = opts.ReadOnly
 	}
+	tctx, cancel := a.timeout(ctx)
+	defer cancel() // only BeginTx consumes this context; later tx ops carry their own
 
-	tx, err := a.db.BeginTx(ctx, txOpts)
+	tx, err := a.db.BeginTx(tctx, txOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -128,12 +152,17 @@ func (a *DatabaseAdapter) HealthStats() map[string]interface{} {
 
 // RowsAdapter adapts sql.Rows to domain.Rows
 type RowsAdapter struct {
-	rows *sql.Rows
+	rows   *sql.Rows
+	cancel context.CancelFunc // set when a statement timeout wraps the query context
 }
 
 // Close closes the rows
 func (a *RowsAdapter) Close() error {
-	return a.rows.Close()
+	err := a.rows.Close()
+	if a.cancel != nil {
+		a.cancel()
+	}
+	return err
 }
 
 // Columns returns the column names
