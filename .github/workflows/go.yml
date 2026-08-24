@@ -90,6 +90,20 @@ jobs:
           --health-retries=10
           --health-start-period=60s
 
+      timescaledb:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: timescale_user
+          POSTGRES_PASSWORD: timescale_password
+          POSTGRES_DB: timescale_test
+        ports:
+          - 15435:5432
+        options: >-
+          --health-cmd="pg_isready -U timescale_user -d timescale_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
     - name: Set up Go
       uses: actions/setup-go@v5
@@ -199,6 +213,7 @@ jobs:
       run: |
         echo "Running catalog/live-engine regression tests against service containers..."
         go test -v -count=1 ./internal/usecase/ -run '_Live'
+        go test -v -count=1 ./internal/delivery/mcp/ -run 'TestTimescaleReadOnly_Live'
 
     - name: Run Connection Pooling Tests
       env:
