@@ -65,6 +65,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 49 | Token benchmark re-verification + README drift fix (backlog #2 done) | ✅ Shipped | [cycle-49](cycle-49-token-benchmark-reverify.md) |
 | 50 | Verification depth: full suite under -race + whole-repo dead-code sweep clean | ✅ Shipped | [cycle-50](cycle-50-verification-depth.md) |
 | 51 | Planner-validated index suggestions via hypopg (`validate_suggestions`) | ✅ Shipped | [cycle-51](cycle-51-hypopg-validation.md) |
+| 52 | Oracle statement statistics (v$sqlarea) + digest-ranking test hardening | ✅ Shipped | [cycle-52](cycle-52-oracle-statement-stats.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

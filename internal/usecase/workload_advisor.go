@@ -169,6 +169,9 @@ func workloadQueries(dbType string, limit int) []string {
 	case "mysql":
 		return []string{fmt.Sprintf(
 			"SELECT DIGEST_TEXT AS query, COUNT_STAR AS executions, SUM_TIMER_WAIT/1000000 AS total_ms FROM performance_schema.events_statements_summary_by_digest WHERE DIGEST_TEXT LIKE 'SELECT%%' ORDER BY SUM_TIMER_WAIT DESC LIMIT %d", limit)}
+	case "oracle":
+		return []string{fmt.Sprintf(
+			`SELECT sql_text AS query, executions AS executions, ROUND(elapsed_time/1000) AS total_ms FROM v$sqlarea WHERE executions > 0 ORDER BY elapsed_time DESC FETCH FIRST %d ROWS ONLY`, limit)}
 	default:
 		return nil
 	}

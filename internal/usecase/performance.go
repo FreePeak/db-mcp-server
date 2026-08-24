@@ -89,6 +89,13 @@ ROUND(AVG_TIMER_WAIT/1e9, 2) AS mean_ms, ROUND(SUM_TIMER_WAIT/1e9, 2) AS total_m
 FROM performance_schema.events_statements_summary_by_digest
 WHERE SCHEMA_NAME = DATABASE()
 ORDER BY SUM_TIMER_WAIT DESC LIMIT %d`, limit)
+	case "oracle":
+		header = "Top statements by total execution time (v$sqlarea):\n\n"
+		sqlText = fmt.Sprintf(`SELECT sql_text AS query, executions, ROUND(elapsed_time/1000) AS total_ms
+FROM v$sqlarea
+WHERE executions > 0
+ORDER BY elapsed_time DESC
+FETCH FIRST %d ROWS ONLY`, limit)
 	default:
 		return fmt.Sprintf("engine-level statement statistics are not supported on %q; they are available on PostgreSQL (pg_stat_statements) and MySQL (performance_schema)", dbType), nil
 	}
@@ -101,6 +108,8 @@ ORDER BY SUM_TIMER_WAIT DESC LIMIT %d`, limit)
 			note += "\nReading statement digests requires SELECT on performance_schema.events_statements_summary_by_digest."
 		case "postgres", "timescale", "timescaledb":
 			note += "\npg_stat_statements must also be loaded via shared_preload_libraries for tracking."
+		case "oracle":
+			note += "\nReading statement statistics requires SELECT on V_$SQLAREA (see scripts/oracle-init/03-grant-statement-stats.sql)."
 		}
 		return note, nil
 	}
@@ -125,7 +134,8 @@ func (uc *DatabaseUseCase) appendSlowQueryAdvice(ctx context.Context, dbID strin
 	for _, s := range stmts {
 		low := strings.ToLower(s.sql)
 		if strings.Contains(low, "performance_schema") || strings.Contains(low, "information_schema") ||
-			strings.Contains(low, "pg_catalog") {
+			strings.Contains(low, "pg_catalog") || strings.Contains(low, "v$sqlarea") ||
+			strings.Contains(low, "v_$sqlarea") {
 			continue // never advise indexes on system catalogs, incl. our own metadata reads
 		}
 		if a := extractIndexAdvice(s.sql); len(a) > 0 {

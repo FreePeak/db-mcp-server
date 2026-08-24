@@ -8,6 +8,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
+	_ "github.com/sijms/go-ora/v2"
 
 	"github.com/FreePeak/db-mcp-server/internal/domain"
 )
@@ -187,9 +188,23 @@ func TestDbHealth_LiveMySQL(t *testing.T) {
 func TestEngineSlowQueries_IndexAdvice_Live(t *testing.T) {
 	g := openLive(t, "mysql", "user1:password1@tcp(localhost:13306)/db1?parseTime=true")
 	_, _ = g.db.Exec(`CREATE TABLE IF NOT EXISTS slow46 (id INT PRIMARY KEY AUTO_INCREMENT, tenant_id INT)`)
-	// Warm the digest table with an unindexed-filter statement.
+	if _, err := g.db.Exec(`INSERT INTO slow46 (tenant_id)
+WITH RECURSIVE seq AS (SELECT 1 AS i UNION ALL SELECT i+1 FROM seq WHERE i < 300)
+SELECT i%7 FROM seq`); err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+	// Own the top digest slots: events_statements_summary_by_digest is
+	// cumulative since server start, so cheap executions cannot compete
+	// with DDL history other tests seeded (hundreds of ms accumulated).
+	// SLEEP runs per matching row — ~43 rows × 5ms ≈ 215ms per call,
+	// so two calls dominate deterministically regardless of history.
+	// Two traps this test fell into first: the filter must match seeded
+	// rows (an impossible WHERE lets the optimizer skip everything),
+	// and real scan-based cost is unpredictable across engines/versions
+	// (a three-way self-join ran anywhere between 0.01s and 184s).
+	target := `SELECT SLEEP(0.005) FROM slow46 WHERE tenant_id = 3`
 	for i := 0; i < 2; i++ {
-		if _, err := g.db.Exec(`SELECT id FROM slow46 WHERE tenant_id = 42`); err != nil {
+		if _, err := g.db.Exec(target); err != nil {
 			t.Fatalf("warmup failed: %v", err)
 		}
 	}
@@ -237,5 +252,29 @@ func TestValidateIndexSuggestions_Live(t *testing.T) {
 	var idx int
 	if err := g.db.QueryRow(`SELECT count(*) FROM pg_indexes WHERE tablename='hypo46' AND indexname NOT LIKE 'hypo46_pkey%'`).Scan(&idx); err != nil || idx != 0 {
 		t.Errorf("hypothetical indexes leaked into the catalog: n=%d err=%v", idx, err)
+	}
+}
+
+// TestEngineSlowQueries_Oracle_Live exercises engine_slow_queries against
+// real Oracle via v$sqlarea (cycle 52): with the V_$SQLAREA grant applied
+// it must return actual statement rows; without it the action degrades to
+// an actionable grant hint. Skips when unreachable.
+func TestEngineSlowQueries_Oracle_Live(t *testing.T) {
+	g := openLive(t, "oracle", "oracle://testuser:testpass@localhost:1521/TESTDB")
+	_, _ = g.db.Exec(`CREATE TABLE hypo52 (id NUMBER(10) PRIMARY KEY, tenant_id NUMBER(10))`)
+	if _, err := g.db.Exec(`INSERT INTO hypo52 SELECT ROWNUM, MOD(ROWNUM,10) FROM dual CONNECT BY LEVEL <= 100`); err == nil {
+		_, _ = g.db.Exec(`COMMIT`)
+	}
+	for i := 0; i < 5; i++ {
+		_, _ = g.db.Exec(`SELECT COUNT(*) FROM hypo52 WHERE tenant_id = 7`)
+	}
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: g, dbType: "oracle"})
+	out, err := uc.AnalyzePerformance(context.Background(), "orcl1", "engine_slow_queries", "", 10, 0)
+	if err != nil {
+		t.Fatalf("engine_slow_queries must not error even when v$sqlarea is unreadable: %v", err)
+	}
+	if !strings.Contains(out, "v$sqlarea") && !strings.Contains(out, "V$SQLAREA") {
+		t.Fatalf("expected header or hint mentioning v$sqlarea, got:\n%s", out)
 	}
 }

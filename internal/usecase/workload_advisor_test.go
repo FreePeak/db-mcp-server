@@ -123,3 +123,13 @@ func TestExtractIndexAdvice_NoTables(t *testing.T) {
 		}
 	}
 }
+
+// TestWorkloadQueries_Oracle locks in cycle 52's Oracle statement-stats
+// catalog query shape: FETCH FIRST pagination and millisecond conversion
+// from v$sqlarea's microsecond elapsed_time.
+func TestWorkloadQueries_Oracle(t *testing.T) {
+	q := workloadQueries("oracle", 5)
+	if len(q) != 1 || !strings.Contains(q[0], "v$sqlarea") || !strings.Contains(q[0], "FETCH FIRST 5 ROWS ONLY") {
+		t.Fatalf("unexpected oracle catalog query: %v", q)
+	}
+}
