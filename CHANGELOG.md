@@ -1,14 +1,18 @@
 # Changelog
 ## [Unreleased]
+## [v1.12.0] - 2026-08-25
 ### Added
 - Engine-level read-only enforcement for Oracle via fail-closed privilege auditing (`read_only` databases refuse credentials holding write privileges; completes the four-engine guarantee started in v1.10.0)
-- Performance analysis actions: engine-level slow queries (`pg_stat_statements` / MySQL performance_schema digests), `index_health` (duplicate/redundant/unused/invalid indexes, table bloat), and unified `db_health` with connection-pressure findings
-- Index advisor: `suggest_indexes` with composite synthesis (equality-first, sort appended), join/alias resolution, constraint-aware coverage (PK/UNIQUE columns count as covered), and workload-driven suggestions weighted by execution count then total engine time
-- Index suggestions appended to `explain` output
-- Statement timeout enforcement: per-database `query_timeout`, env-only deployments covered by `QUERY_TIMEOUT_SECONDS`
+- Performance analysis actions: engine-level slow queries (`pg_stat_statements` / MySQL performance_schema digests / Oracle `v$sqlarea`), `index_health` (duplicate/redundant/unused/invalid indexes, table bloat/fragmentation), and unified `db_health` with connection-pressure findings
+- Index advisor: `suggest_indexes` with composite synthesis (equality-first, sort appended), join/alias resolution, constraint-aware coverage (PK/UNIQUE columns count as covered), and workload-driven suggestions weighted by execution count then total engine time (duration-ranked when engines report time)
+- Planner-validated index suggestions on PostgreSQL via hypopg (`validate_suggestions`): hypothetical indexes + EXPLAIN verdicts replace manual verification
+- Index suggestions appended to `explain` output and the slow-queries view
+- Statement timeout enforcement: per-database `query_timeout`, env-only deployments covered by `QUERY_TIMEOUT_SECONDS`; timeout/guardrail visibility in db_health
+- JSONL audit trail: `DB_MCP_AUDIT_LOG` records every executed statement (op, database, statement capped at 10k chars, duration, error) including rejected read-only attempts
 - Name-based column masking: `fixed_string`/`null`/`partial` strategies, fail-closed config validation, masked-cell counts in results
 - Foreign-key referenced-table resolution in describe output; database-wide Mermaid ERD via performance tool `format=mermaid`
-- Live-engine regression tests in CI; repeatable harnesses: `scripts/live-db-setup.sh`, `scripts/smoke.sh`, `scripts/token-benchmark.sh`
+- README environment-variables reference; token-efficiency benchmark re-measured via wire-payload harness (`scripts/token-benchmark.sh`)
+- Live-engine regression tests in CI; repeatable harnesses: `scripts/live-db-setup.sh`, `scripts/smoke.sh`
 
 ### Fixed
 - MySQL `[]byte` driver cells are decoded before partial masking (found by live validation)
