@@ -2,6 +2,7 @@
 ## [Unreleased]
 ### Added
 - TimescaleDB discovery tool: `timescaledb_list_hypertables_<db_id>` (and unified `timescaledb_list_hypertables`) listing hypertables with time column and dimensions; auto-detected via the `timescaledb` extension at startup
+- Lazy-loading-safe TimescaleDB registration: with `--lazy-loading` the tools register on PostgreSQL config type alone (no startup connection); handlers verify the `timescaledb` extension at call time and degrade with actionable guidance when it is absent or unverifiable
 ### Fixed
 - Read-only safety for the wired TimescaleDB tools: `list_hypertables`, `time_series_query`, and `analyze_time_series` executed their SELECTs through the write-classified statement path and failed on `"read_only": true` databases; they now use the query path
 - README TimescaleDB section advertised seven tools when only two were registered; it now documents the three wired tools and states that write-policy operations remain SQL-only

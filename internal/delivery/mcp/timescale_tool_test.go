@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/FreePeak/cortex/pkg/server"
@@ -77,10 +78,14 @@ func TestHandleListHypertables(t *testing.T) {
 
 	// Set up expectations
 	mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
+	// The runtime extension guard runs before the catalog read.
+	mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.MatchedBy(func(q string) bool {
+		return strings.Contains(q, "pg_extension")
+	}), mock.Anything).Return(`[{"n": 1}]`, nil)
 	// Listing is a pure SELECT and must go through ExecuteQuery so it stays
 	// available on read_only databases (ExecuteStatement is blocked there).
-	mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.MatchedBy(func(_ string) bool {
-		return true // Any SQL that contains the relevant query
+	mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.MatchedBy(func(q string) bool {
+		return !strings.Contains(q, "pg_extension")
 	}), mock.Anything).Return(`[{"table_name":"metrics","schema_name":"public","time_column":"time"}]`, nil)
 
 	// Create the tool
@@ -108,6 +113,36 @@ func TestHandleListHypertables(t *testing.T) {
 
 	// Verify mock expectations
 	mockUseCase.AssertExpectations(t)
+}
+
+// TestEnsureTimescaleExtension_Absent locks in lazy-loading's call-time
+// guard: when the extension probe returns zero rows the caller gets
+// actionable guidance instead of a raw catalog error.
+func TestEnsureTimescaleExtension_Absent(t *testing.T) {
+	mockUseCase := new(MockDatabaseUseCase)
+	mockUseCase.On("ExecuteQuery", mock.Anything, "plain_pg", mock.AnythingOfType("string"), mock.Anything).
+		Return(`[{"n":0}]`, nil)
+
+	err := ensureTimescaleExtension(context.Background(), "plain_pg", mockUseCase)
+	if err == nil {
+		t.Fatal("expected error for database without timescaledb")
+	}
+	if !strings.Contains(err.Error(), "CREATE EXTENSION timescaledb") {
+		t.Errorf("expected actionable guidance, got: %v", err)
+	}
+}
+
+// TestEnsureTimescaleExtension_QueryError covers the fail-closed path:
+// a failed probe must abort the operation rather than assume absence.
+func TestEnsureTimescaleExtension_QueryError(t *testing.T) {
+	mockUseCase := new(MockDatabaseUseCase)
+	mockUseCase.On("ExecuteQuery", mock.Anything, "broken_pg", mock.AnythingOfType("string"), mock.Anything).
+		Return("", context.DeadlineExceeded)
+
+	err := ensureTimescaleExtension(context.Background(), "broken_pg", mockUseCase)
+	if err == nil || !strings.Contains(err.Error(), "cannot verify") {
+		t.Fatalf("expected verification failure, got: %v", err)
+	}
 }
 
 func TestHandleListHypertablesNonPostgresDB(t *testing.T) {

@@ -690,16 +690,35 @@ func (t *TimescaleDBTool) handleCreateHypertable(ctx context.Context, request se
 	}, nil
 }
 
-// handleListHypertables handles the list_hypertables operation
+// ensureTimescaleExtension verifies the timescaledb extension is present
+// before an operation runs. Lazy-loading mode registers these tools on
+// PostgreSQL config type alone — probing pg_extension at startup would
+// force a connection, defeating lazy loading — so a plain-PostgreSQL
+// database surfaces here at call time; degrade with actionable guidance
+// rather than a raw catalog error.
+func ensureTimescaleExtension(ctx context.Context, dbID string, useCase UseCaseProvider) error {
+	res, err := useCase.ExecuteQuery(ctx, dbID, "SELECT count(*) AS n FROM pg_extension WHERE extname = 'timescaledb'", nil)
+	if err != nil {
+		return fmt.Errorf("cannot verify timescaledb extension on %q: %w", dbID, err)
+	}
+	if !strings.Contains(res, " 1") {
+		return fmt.Errorf("the timescaledb extension is not installed on %q; enable it with CREATE EXTENSION timescaledb before using TimescaleDB tools", dbID)
+	}
+	return nil
+}
+
+// handleListHypertables handles the list_hypertables operation.
 func (t *TimescaleDBTool) handleListHypertables(ctx context.Context, _ server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// Check if the database is PostgreSQL (TimescaleDB requires PostgreSQL)
 	dbType, err := useCase.GetDatabaseType(dbID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database type: %w", err)
 	}
-
-	if !strings.Contains(strings.ToLower(dbType), "postgres") {
+	if !strings.EqualFold(dbType, "postgres") && !strings.EqualFold(dbType, "timescale") && !strings.EqualFold(dbType, "timescaledb") {
 		return nil, fmt.Errorf("TimescaleDB operations are only supported on PostgreSQL databases")
+	}
+	if err := ensureTimescaleExtension(ctx, dbID, useCase); err != nil {
+		return nil, err
 	}
 
 	// Build the SQL query to list hypertables
@@ -1254,6 +1273,9 @@ func (t *TimescaleDBTool) handleGetRetentionPolicy(ctx context.Context, request 
 
 // handleTimeSeriesQuery handles the time_series_query operation
 func (t *TimescaleDBTool) handleTimeSeriesQuery(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	if err := ensureTimescaleExtension(ctx, dbID, useCase); err != nil {
+		return nil, err
+	}
 	// Extract required parameters
 	targetTable, ok := request.Parameters["target_table"].(string)
 	if !ok || targetTable == "" {
@@ -1403,6 +1425,9 @@ func (t *TimescaleDBTool) handleTimeSeriesQuery(ctx context.Context, request ser
 
 // handleTimeSeriesAnalyze handles the analyze_time_series operation
 func (t *TimescaleDBTool) handleTimeSeriesAnalyze(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	if err := ensureTimescaleExtension(ctx, dbID, useCase); err != nil {
+		return nil, err
+	}
 	// Extract required parameters
 	targetTable, ok := request.Parameters["target_table"].(string)
 	if !ok || targetTable == "" {

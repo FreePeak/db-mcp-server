@@ -58,6 +58,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 42 | Constraint-aware index coverage — PK/UNIQUE columns count as covered (backlog #4 done) | ✅ Shipped | [cycle-42](cycle-42-constraint-aware-coverage.md) |
 | 43 | Token-benchmark wire-payload harness + refreshed numbers (backlog #2 hardening) | ✅ Shipped | [cycle-43](cycle-43-token-benchmark-harness.md) |
 | 55 | TimescaleDB truth gap: wire `list_hypertables`, read-only-safe SELECT paths, README precision | ✅ Shipped | [cycle-55](cycle-55-timescale-truth-gap.md) |
+| 56 | Lazy-loading-safe TimescaleDB registration + runtime extension guard | ✅ Shipped | [cycle-56](cycle-56-timescale-lazy-loading.md) |
 | 44 | Oracle engine-level read-only via fail-closed privilege audit (backlog #1 done) | ✅ Shipped | [cycle-44](cycle-44-oracle-readonly.md) |
 | 45 | Release readiness: CHANGELOG backfill v1.10/v1.11 + stale backlog sweep (#3/#5 done) | ✅ Shipped | [cycle-45](cycle-45-release-readiness.md) |
 | 46 | Slow-query index advice + MySQL digest backtick fix (backlog #9 done) | ✅ Shipped | [cycle-46](cycle-46-slow-query-advice.md) |

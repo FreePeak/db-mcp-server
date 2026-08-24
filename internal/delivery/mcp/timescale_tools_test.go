@@ -109,8 +109,15 @@ func TestTimeSeriesQueryTool(t *testing.T) {
 
 		// Set up expectations for the mock. Pure SELECTs must go through
 		// ExecuteQuery so the tool stays available on read_only databases.
-		mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.AnythingOfType("string"), mock.Anything).
-			Return(sampleResult, nil).Once()
+		// The runtime extension guard runs first (lazy-loading support);
+		// it must see the extension present for the query to proceed.
+		mockUseCase.On("ExecuteQuery", mock.Anything, "test_db",
+			mock.MatchedBy(func(q string) bool { return strings.Contains(q, "pg_extension") }),
+			mock.Anything).Return(`[{"n": 1}]`, nil)
+
+		mockUseCase.On("ExecuteQuery", mock.Anything, "test_db",
+			mock.MatchedBy(func(q string) bool { return !strings.Contains(q, "pg_extension") }),
+			mock.Anything).Return(sampleResult, nil).Once()
 
 		// Create a request with time_series_query operation
 		request := server.ToolCallRequest{
@@ -153,8 +160,15 @@ func TestTimeSeriesQueryTool(t *testing.T) {
 
 		// Set up expectations for the mock. Pure SELECTs must go through
 		// ExecuteQuery so the tool stays available on read_only databases.
-		mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.AnythingOfType("string"), mock.Anything).
-			Return(sampleResult, nil).Once()
+		// The runtime extension guard runs first (lazy-loading support);
+		// it must see the extension present for the query to proceed.
+		mockUseCase.On("ExecuteQuery", mock.Anything, "test_db",
+			mock.MatchedBy(func(q string) bool { return strings.Contains(q, "pg_extension") }),
+			mock.Anything).Return(`[{"n": 1}]`, nil)
+
+		mockUseCase.On("ExecuteQuery", mock.Anything, "test_db",
+			mock.MatchedBy(func(q string) bool { return !strings.Contains(q, "pg_extension") }),
+			mock.Anything).Return(sampleResult, nil).Once()
 
 		// Create a request with time_series_query operation
 		request := server.ToolCallRequest{
