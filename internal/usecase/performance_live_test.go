@@ -178,3 +178,27 @@ func TestDbHealth_LiveMySQL(t *testing.T) {
 		t.Errorf("PRIMARY index must never receive DROP advice:\n%s", out)
 	}
 }
+
+// TestEngineSlowQueries_IndexAdvice_Live locks in backlog #9's second
+// half: the slow-queries view appends bounded index suggestions derived
+// from the same statements it ranked (latency-ranked, unlike the
+// total-time-ranked workload_suggestions action). Requires the MySQL
+// container on 13306; skips when unreachable.
+func TestEngineSlowQueries_IndexAdvice_Live(t *testing.T) {
+	g := openLive(t, "mysql", "user1:password1@tcp(localhost:13306)/db1?parseTime=true")
+	_, _ = g.db.Exec(`CREATE TABLE IF NOT EXISTS slow46 (id INT PRIMARY KEY AUTO_INCREMENT, tenant_id INT)`)
+	// Warm the digest table with an unindexed-filter statement.
+	for i := 0; i < 2; i++ {
+		if _, err := g.db.Exec(`SELECT id FROM slow46 WHERE tenant_id = 42`); err != nil {
+			t.Fatalf("warmup failed: %v", err)
+		}
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: g, dbType: "mysql"})
+	out, err := uc.AnalyzePerformance(context.Background(), "mysql1", "engine_slow_queries", "", 5, 0)
+	if err != nil {
+		t.Fatalf("engine_slow_queries failed: %v", err)
+	}
+	if !strings.Contains(out, "Index suggestions") || !strings.Contains(out, "idx_slow46_tenant_id") {
+		t.Fatalf("expected bounded index advice appended to slow-queries output:\n%s", out)
+	}
+}

@@ -50,8 +50,11 @@ seed_my() {
     "$my" -h 127.0.0.1 -P 13306 -u root << 'SQL'
 CREATE USER IF NOT EXISTS 'user1'@'localhost' IDENTIFIED BY 'password1';
 CREATE USER IF NOT EXISTS 'user1'@'127.0.0.1' IDENTIFIED BY 'password1';
+-- Tests connect over TCP from the host, which MySQL sees as '%'.
+CREATE USER IF NOT EXISTS 'user1'@'%' IDENTIFIED BY 'password1';
 GRANT ALL PRIVILEGES ON *.* TO 'user1'@'localhost';
 GRANT ALL PRIVILEGES ON *.* TO 'user1'@'127.0.0.1';
+GRANT ALL PRIVILEGES ON *.* TO 'user1'@'%';
 FLUSH PRIVILEGES;
 SQL
     "$my" -h 127.0.0.1 -P 13306 -u user1 -ppassword1 << 'SQL'

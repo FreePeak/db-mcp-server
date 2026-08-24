@@ -102,7 +102,43 @@ ORDER BY SUM_TIMER_WAIT DESC LIMIT %d`, limit)
 		}
 		return note, nil
 	}
-	return header + out, nil
+	return uc.appendSlowQueryAdvice(ctx, dbID, header+out, limit), nil
+}
+
+// appendSlowQueryAdvice closes backlog #9's second half: the slow-queries
+// view appends bounded index suggestions derived from the same statements
+// it ranked. Unlike workload_suggestions (total-time-ranked, aggregate
+// impact) this is latency-ranked — per-call pain — so the two views can
+// legitimately surface different statements. Catalog-read cost stays
+// bounded: statement texts come from the workloadStatements path already
+// used by the workload advisor, and per-table index reads are limited to
+// the distinct tables among the top few statements.
+func (uc *DatabaseUseCase) appendSlowQueryAdvice(ctx context.Context, dbID string, out string, limit int) string {
+	dbType, err := uc.repo.GetDatabaseType(dbID)
+	if err != nil {
+		return out // advice is best-effort; never mask the slow-query view
+	}
+	stmts := uc.workloadStatements(ctx, dbID, strings.ToLower(dbType), 5)
+	var entries []statementAdvice
+	for _, s := range stmts {
+		low := strings.ToLower(s.sql)
+		if strings.Contains(low, "performance_schema") || strings.Contains(low, "information_schema") ||
+			strings.Contains(low, "pg_catalog") {
+			continue // never advise indexes on system catalogs, incl. our own metadata reads
+		}
+		if a := extractIndexAdvice(s.sql); len(a) > 0 {
+			w := s.executions
+			if w <= 0 {
+				w = 1
+			}
+			entries = append(entries, statementAdvice{advice: a, weight: w})
+		}
+	}
+	if len(entries) == 0 {
+		return out
+	}
+	header := "\nIndex suggestions for these statements (heuristic — verify with EXPLAIN before creating):\n\n"
+	return out + uc.emitIndexSuggestions(ctx, dbID, strings.ToLower(dbType), entries, header, true, "execution(s)")
 }
 
 func formatQueryMetrics(analyzer *dbtools.PerformanceAnalyzer) string {

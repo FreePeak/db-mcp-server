@@ -225,3 +225,18 @@ func TestSuggestIndexes_ConstraintBackedColumns(t *testing.T) {
 		t.Errorf("PK column must count as covered, got:\n%s", out)
 	}
 }
+
+// TestExtractIndexAdvice_MySQLDigestBackticks locks in the digest
+// normalization: MySQL statement digests quote identifiers in backticks,
+// which previously made every workload/slow-query statement invisible to
+// the advisor.
+func TestExtractIndexAdvice_MySQLDigestBackticks(t *testing.T) {
+	advice := extractIndexAdvice("SELECT `id` FROM `slow46` WHERE `tenant_id` = ?")
+	a, ok := advice["slow46"]
+	if !ok {
+		t.Fatalf("expected table slow46 from backticked digest, got %v", advice)
+	}
+	if len(a.eq) != 1 || a.eq[0] != "tenant_id" {
+		t.Errorf("expected equality column tenant_id, got %v", a.eq)
+	}
+}

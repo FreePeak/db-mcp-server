@@ -51,6 +51,10 @@ func (t *tableAdvice) add(class, col string) {
 // grouped by predicate class. Returns an empty map when no tables appear.
 func extractIndexAdvice(query string) map[string]*tableAdvice {
 	advice := map[string]*tableAdvice{}
+	// MySQL statement digests quote identifiers in backticks
+	// (`orders`.`customer_id`); strip them so the token-based matchers see
+	// plain identifiers. Harmless for engines that never emit backticks.
+	query = strings.ReplaceAll(query, "`", "")
 	tables := extractQueryTables(query)
 	if len(tables) == 0 {
 		return advice // DML without FROM/JOIN offers no index surface

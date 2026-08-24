@@ -59,6 +59,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 43 | Token-benchmark wire-payload harness + refreshed numbers (backlog #2 hardening) | ✅ Shipped | [cycle-43](cycle-43-token-benchmark-harness.md) |
 | 44 | Oracle engine-level read-only via fail-closed privilege audit (backlog #1 done) | ✅ Shipped | [cycle-44](cycle-44-oracle-readonly.md) |
 | 45 | Release readiness: CHANGELOG backfill v1.10/v1.11 + stale backlog sweep (#3/#5 done) | ✅ Shipped | [cycle-45](cycle-45-release-readiness.md) |
+| 46 | Slow-query index advice + MySQL digest backtick fix (backlog #9 done) | ✅ Shipped | [cycle-46](cycle-46-slow-query-advice.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -79,6 +80,6 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 6. FK referenced-table detail — fully done (cycle 15 + database-wide Mermaid relationship graph via performance tool format=mermaid)
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing
 8. Workload-driven tuning — fully done (cycles 19, 23, 40: execution weighting → composites → duration-weighted ranking)
-9. Wire suggest_indexes into explain/slow-query output — done for explain (cycle 38); slow-queries per-statement advice deferred (multiplies catalog reads; interactive path covered)
+9. Wire suggest_indexes into explain/slow-query output — fully done (cycle 38 explain + cycle 46 slow-queries with bounded catalog reads)
 10. Guardrail visibility + env timeout override — fully done (cycle 21 + cycle 41 README environment-variables section)
 11. Column masking / SELECT-target resolution — needs real SQL parsing or catalog help; scope as multi-cycle effort first
