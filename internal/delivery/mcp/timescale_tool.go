@@ -805,19 +805,15 @@ func (t *TimescaleDBTool) handleListHypertables(ctx context.Context, _ server.To
 		return nil, err
 	}
 
-	// Build the SQL query to list hypertables
+	// Build the SQL query to list hypertables. The public information view
+	// (not _timescaledb_catalog) is stable across TimescaleDB releases — the
+	// old catalog query broke when dimension.column_type changed from text
+	// to an OID.
 	sql := `
-		SELECT h.table_name, h.schema_name, d.column_name as time_column,
-			count(d.id) as num_dimensions,
-			(
-				SELECT column_name FROM _timescaledb_catalog.dimension 
-				WHERE hypertable_id = h.id AND column_type != 'TIMESTAMP' 
-				AND column_type != 'TIMESTAMPTZ' 
-				LIMIT 1
-			) as space_column
-		FROM _timescaledb_catalog.hypertable h
-		JOIN _timescaledb_catalog.dimension d ON h.id = d.hypertable_id
-		GROUP BY h.id, h.table_name, h.schema_name
+		SELECT hypertable_name, hypertable_schema, primary_dimension AS time_column,
+			num_dimensions, num_chunks, compression_enabled, owner
+		FROM timescaledb_information.hypertables
+		ORDER BY hypertable_schema, hypertable_name
 	`
 
 	// Execute the query (ExecuteQuery, not ExecuteStatement: listing is a
@@ -1122,12 +1118,14 @@ func (t *TimescaleDBTool) handleGetCompressionSettings(ctx context.Context, requ
 	// previous json.Unmarshal never worked because query results are not
 	// JSON.
 	sql := fmt.Sprintf(`
-		SELECT cs.segmentby, cs.orderby,
+		SELECT cs.attname AS column_name,
+			cs.segmentby_column_index, cs.orderby_column_index,
 			j.schedule_interval AS compression_interval
 		FROM timescaledb_information.compression_settings cs
 		LEFT JOIN timescaledb_information.jobs j
 			ON j.hypertable_name = cs.hypertable_name AND j.proc_name = 'policy_compression'
 		WHERE cs.hypertable_name = '%s'
+		ORDER BY cs.segmentby_column_index NULLS LAST, cs.orderby_column_index NULLS LAST
 	`, targetTable)
 
 	result, err := useCase.ExecuteQuery(ctx, dbID, sql, nil)
@@ -1254,18 +1252,15 @@ func (t *TimescaleDBTool) handleGetRetentionPolicy(ctx context.Context, request 
 	if err := ensureTimescaleExtension(ctx, dbID, useCase); err != nil {
 		return nil, err
 	}
-	// Build the SQL query to get retention policy details
+	// Build the SQL query to get retention policy details. schedule_interval
+	// lives on the jobs view; job_stats no longer carries it.
 	sql := fmt.Sprintf(`
-		SELECT 
+		SELECT
 			'%s' as hypertable_name,
-			js.schedule_interval as retention_interval,
+			j.schedule_interval as retention_interval,
 			CASE WHEN j.job_id IS NOT NULL THEN true ELSE false END as retention_enabled
-		FROM 
-			timescaledb_information.jobs j
-		JOIN 
-			timescaledb_information.job_stats js ON j.job_id = js.job_id
-		WHERE 
-			j.hypertable_name = '%s' AND j.proc_name = 'policy_retention'
+		FROM timescaledb_information.jobs j
+		WHERE j.hypertable_name = '%s' AND j.proc_name = 'policy_retention'
 	`, targetTable, targetTable)
 
 	// ExecuteQuery rather than ExecuteStatement: this is a pure SELECT and
@@ -1662,10 +1657,15 @@ func (t *TimescaleDBTool) handleListContinuousAggregates(ctx context.Context, _ 
 		return nil, err
 	}
 
-	// Build the SQL query to list continuous aggregates
+	// Build the SQL query to list continuous aggregates. The information
+	// view's columns changed across TimescaleDB releases (source_table /
+	// bucket_interval are gone); these are the current stable names.
 	sql := `
-		SELECT view_name, source_table, time_column, bucket_interval, aggregations, where_condition, with_data, refresh_policy, refresh_interval
+		SELECT hypertable_name, view_schema, view_name, view_owner,
+			materialized_only, compression_enabled,
+			materialization_hypertable_name AS storage_table
 		FROM timescaledb_information.continuous_aggregates
+		ORDER BY hypertable_name, view_name
 	`
 
 	// ExecuteQuery rather than ExecuteStatement: this is a pure SELECT and
@@ -1703,22 +1703,21 @@ func (t *TimescaleDBTool) handleGetContinuousAggregateInfo(ctx context.Context, 
 		return nil, err
 	}
 
-	// Build the SQL query to get continuous aggregate information
+	// Build the SQL query to get continuous aggregate information. The
+	// information view's columns changed across TimescaleDB releases; these
+	// are the current stable names (source_table/bucket_interval are gone).
 	sql := fmt.Sprintf(`
 		SELECT
+			hypertable_name,
+			view_schema,
 			view_name,
-			source_table,
-			time_column,
-			bucket_interval,
-			aggregations,
-			where_condition,
-			with_data,
-			refresh_policy,
-			refresh_interval
-		FROM
-			timescaledb_information.continuous_aggregates
-		WHERE
-			view_name = '%s'
+			view_owner,
+			materialized_only,
+			compression_enabled,
+			materialization_hypertable_name AS storage_table,
+			view_definition
+		FROM timescaledb_information.continuous_aggregates
+		WHERE view_name = '%s'
 	`, viewName)
 
 	// ExecuteQuery rather than ExecuteStatement: this is a pure SELECT and
