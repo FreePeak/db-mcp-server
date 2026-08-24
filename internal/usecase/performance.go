@@ -109,7 +109,7 @@ FETCH FIRST %d ROWS ONLY`, limit)
 		case "postgres", "timescale", "timescaledb":
 			note += "\npg_stat_statements must also be loaded via shared_preload_libraries for tracking."
 		case "oracle":
-			note += "\nReading statement statistics requires SELECT on V_$SQLAREA (see scripts/oracle-init/03-grant-statement-stats.sql)."
+			note += "\nReading statement statistics requires SELECT on V$SQLAREA (GRANT SELECT ON SYS.V_$SQLAREA TO <user>; see scripts/oracle-init/03-grant-statement-stats.sql)."
 		}
 		return note, nil
 	}

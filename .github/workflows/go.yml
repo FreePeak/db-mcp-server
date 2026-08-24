@@ -138,6 +138,10 @@ jobs:
           echo "Error: Oracle container not found"
           exit 1
         fi
+        docker exec $ORACLE_CONTAINER sqlplus -s "sys/oracle@localhost:1521/TESTDB AS SYSDBA" <<EOF
+        GRANT SELECT ON SYS.V_"$"SQLAREA TO testuser;
+        EXIT;
+        EOF
         docker exec $ORACLE_CONTAINER sqlplus -s testuser/testpass@TESTDB <<EOF
         CREATE TABLE test_users (
             id NUMBER(10) PRIMARY KEY,

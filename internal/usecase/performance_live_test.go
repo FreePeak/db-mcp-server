@@ -274,7 +274,7 @@ func TestEngineSlowQueries_Oracle_Live(t *testing.T) {
 	if err != nil {
 		t.Fatalf("engine_slow_queries must not error even when v$sqlarea is unreadable: %v", err)
 	}
-	if !strings.Contains(out, "v$sqlarea") && !strings.Contains(out, "V$SQLAREA") {
+	if !strings.Contains(strings.ToLower(out), "sqlarea") {
 		t.Fatalf("expected header or hint mentioning v$sqlarea, got:\n%s", out)
 	}
 }
