@@ -42,6 +42,8 @@ func (uc *DatabaseUseCase) AnalyzePerformance(ctx context.Context, dbID, action,
 		return uc.WorkloadIndexSuggestions(ctx, dbID, limit)
 	case "index_health":
 		return uc.IndexHealth(ctx, dbID)
+	case "db_health":
+		return uc.DbHealth(ctx, dbID)
 	case "suggest":
 		if strings.TrimSpace(query) == "" {
 			return "", fmt.Errorf("query parameter is required for suggest action")
