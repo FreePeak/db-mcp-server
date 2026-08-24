@@ -35,6 +35,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 19 | Workload-driven index suggestions (`workload_suggestions`) | ✅ Shipped | [cycle-19](cycle-19-workload-indexes.md) |
 | 20 | Statement timeout enforcement (DBHub/PMP Pro time-cap parity) | ✅ Shipped | [cycle-20](cycle-20-query-timeout.md) |
 | 21 | Guardrail visibility in health + env timeout override | ✅ Shipped | [cycle-21](cycle-21-guardrail-visibility.md) |
+| 22 | Documentation currency: timeout semantics + performance actions in README | ✅ Shipped | main (this cycle) |
 
 ## Competitive Baseline (researched 2026-08)
 
