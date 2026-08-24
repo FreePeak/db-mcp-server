@@ -52,6 +52,7 @@ jobs:
           MYSQL_PASSWORD: password1
         ports:
           - 3306:3306
+          - 13306:3306
         options: >-
           --health-cmd="mysqladmin ping -h localhost -u root -ppassword"
           --health-interval=10s
@@ -66,6 +67,7 @@ jobs:
           POSTGRES_DB: db1
         ports:
           - 5432:5432
+          - 15432:5432
         options: >-
           --health-cmd="pg_isready -U user1 -d db1"
           --health-interval=10s
@@ -162,6 +164,34 @@ jobs:
         go test -v -race -coverprofile=coverage.txt -covermode=atomic ./pkg/db -run TestOracle
         go test -v -race ./pkg/dbtools -run TestOracleIntegration
         go test -v -race ./pkg/db -run TestRegressionAllDatabases
+
+    - name: Seed live-engine scenario
+      run: |
+        echo "Seeding orders scenario for live-engine tests..."
+        PG_CONTAINER=$(docker ps -q --filter ancestor=postgres:15)
+        docker exec $PG_CONTAINER psql -U user1 -d db1 -v ON_ERROR_STOP=1 <<'SQL'
+        CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, customer_id INT, region TEXT, total REAL);
+        CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders (customer_id);
+        CREATE INDEX IF NOT EXISTS idx_orders_customer_copy ON orders (customer_id);
+        CREATE INDEX IF NOT EXISTS idx_orders_cust_region ON orders (customer_id, region);
+        UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'idx_orders_customer_copy'::regclass;
+        INSERT INTO orders (customer_id, region, total) SELECT i%100, 'r'||(i%5), i*1.0 FROM generate_series(1,2000) i;
+        SQL
+        MY_CONTAINER=$(docker ps -q --filter ancestor=mysql:8.0)
+        # Tolerate re-runs: duplicate-index errors mean already-seeded.
+        docker exec $MY_CONTAINER mysql -uuser1 -ppassword1 db1 -e "
+        SET SESSION cte_max_recursion_depth = 5000;
+        CREATE TABLE IF NOT EXISTS orders (id INT PRIMARY KEY AUTO_INCREMENT, customer_id INT, region VARCHAR(50), total REAL);
+        CREATE INDEX idx_orders_customer ON orders (customer_id);
+        CREATE INDEX idx_orders_customer_copy ON orders (customer_id);
+        INSERT INTO orders (customer_id, region, total)
+        WITH RECURSIVE seq AS (SELECT 1 AS i UNION ALL SELECT i+1 FROM seq WHERE i < 2000)
+        SELECT i%100, CONCAT('r', i%5), i*1.0 FROM seq;" || echo "mysql seed skipped (already present?)"
+
+    - name: Run Live-Engine Regression Tests
+      run: |
+        echo "Running catalog/live-engine regression tests against service containers..."
+        go test -v -count=1 ./internal/usecase/ -run '_Live'
 
     - name: Run Connection Pooling Tests
       env:
