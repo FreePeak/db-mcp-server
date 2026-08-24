@@ -53,26 +53,43 @@ func TestMatchMaskingRules(t *testing.T) {
 }
 
 // TestApplyMaskStrategy locks in the strategy behaviors: fixed_string
-// replaces any value including NULL, null renders as NULL, unknown
-// strategies pass through untouched.
+// replaces any value including NULL, null renders as NULL, partial keeps
+// its trailing keep_last characters (fully masking shorter values), and
+// unknown strategies pass through untouched with applied=false so the
+// caller does not count them as masked.
 func TestApplyMaskStrategy(t *testing.T) {
 	fixed := &db.MaskingRule{Strategy: "fixed_string", Value: "***MASKED***"}
-	if got := applyMaskStrategy(fixed, "alice@example.com"); got != "***MASKED***" {
-		t.Errorf("fixed_string must replace value, got %v", got)
+	if got, applied := applyMaskStrategy(fixed, "alice@example.com"); !applied || got != "***MASKED***" {
+		t.Errorf("fixed_string must replace value, got %v applied=%v", got, applied)
 	}
-	if got := applyMaskStrategy(fixed, nil); got != "***MASKED***" {
-		t.Errorf("fixed_string must replace even nil cells, got %v", got)
+	if got, applied := applyMaskStrategy(fixed, nil); !applied || got != "***MASKED***" {
+		t.Errorf("fixed_string must replace even nil cells, got %v applied=%v", got, applied)
 	}
 
 	nulls := &db.MaskingRule{Strategy: "null"}
-	if got := applyMaskStrategy(nulls, 42); got != nil {
-		t.Errorf("null strategy must blank cells, got %v", got)
+	if got, applied := applyMaskStrategy(nulls, 42); !applied || got != nil {
+		t.Errorf("null strategy must blank cells, got %v applied=%v", got, applied)
+	}
+
+	partial := &db.MaskingRule{Strategy: "partial", KeepLast: 4}
+	if got, _ := applyMaskStrategy(partial, "alice@example.com"); got != "*************.com" {
+		t.Errorf("partial must keep last 4 runes, got %q", got)
+	}
+	// Shorter than keep_last → fully masked, never fully revealed.
+	if got, _ := applyMaskStrategy(partial, "abc"); got != "***" {
+		t.Errorf("short values must be fully masked, got %q", got)
+	}
+	// Runes counted, not bytes: multibyte text is never split mid-rune.
+	if got, _ := applyMaskStrategy(partial, "日本語です"); got != "*本語です" {
+		t.Errorf("partial must count runes not bytes, got %q", got)
 	}
 
 	unknown := &db.MaskingRule{Strategy: "typo"}
-	if got := applyMaskStrategy(unknown, "keep"); got != "keep" {
-		t.Errorf("unknown strategy must pass through, got %v", got)
+	got, applied := applyMaskStrategy(unknown, "keep")
+	if !applied && got == "keep" {
+		return // expected: passthrough reported as not-applied
 	}
+	t.Errorf("unknown strategy must pass through uncounted, got %v applied=%v", got, applied)
 }
 
 // TestExecuteQuery_MaskingE2E runs a real SQLite query through
@@ -94,6 +111,7 @@ func TestExecuteQuery_MaskingE2E(t *testing.T) {
 		rules: []db.MaskingRule{
 			{Pattern: "(?i)email", Strategy: "fixed_string", Value: "***MASKED***"},
 			{Pattern: "tax_id", Strategy: "null"},
+			{Pattern: "note", Strategy: "partial", KeepLast: 4},
 		},
 	}
 	uc := NewDatabaseUseCase(&fakeRepo{db: mdb, dbType: "sqlite"})
@@ -112,8 +130,19 @@ func TestExecuteQuery_MaskingE2E(t *testing.T) {
 	if !strings.Contains(out, "\tNULL\t") && !strings.Contains(out, "\tNULL\n") {
 		t.Errorf("expected tax_id rendered as NULL, got:\n%s", out)
 	}
-	if !strings.Contains(out, "visible") {
-		t.Errorf("unmasked column must remain readable:\n%s", out)
+	// The unmasked id column stays readable.
+	if !strings.Contains(out, "\n1\t") {
+		t.Errorf("unmasked id column must remain readable:\n%s", out)
+	}
+	// partial keeps only the last 4 runes of the note ('visible' -> '***ible').
+	if !strings.Contains(out, "***ible") {
+		t.Errorf("expected partially masked note keeping last 4 chars, got:\n%s", out)
+	}
+	if strings.Contains(out, "visible") {
+		t.Errorf("partial mask leaked the original note:\n%s", out)
+	}
+	if !strings.Contains(out, "Masked cells: 3") {
+		t.Errorf("expected masked-cell count in footer (email+tax+note), got:\n%s", out)
 	}
 }
 

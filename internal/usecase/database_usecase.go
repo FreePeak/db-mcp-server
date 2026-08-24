@@ -347,19 +347,36 @@ func matchMaskingRules(columns []string, rules []db.MaskingRule) []*db.MaskingRu
 	return out
 }
 
-// applyMaskStrategy replaces one cell's value per the rule's strategy:
-// fixed_string swaps in the configured replacement, null blanks the cell
-// (rendered as NULL), unknown strategies pass through untouched so a
-// typo degrades to visible data rather than silent corruption.
-func applyMaskStrategy(rule *db.MaskingRule, val interface{}) interface{} {
+// applyMaskStrategy replaces one cell's value per the rule's strategy and
+// reports whether a mask was applied: fixed_string swaps in the configured
+// replacement, null blanks the cell (rendered as NULL), partial keeps the
+// trailing keep_last characters and stars the rest. Unknown strategies pass
+// through untouched so a typo degrades to visible data rather than silent
+// corruption.
+func applyMaskStrategy(rule *db.MaskingRule, val interface{}) (interface{}, bool) {
 	switch rule.Strategy {
 	case "fixed_string":
-		return rule.Value
+		return rule.Value, true
 	case "null":
-		return nil
+		return nil, true
+	case "partial":
+		return maskPartial(rule, val), true
 	default:
-		return val
+		return val, false
 	}
+}
+
+// maskPartial keeps the last keep_last characters of the value's string
+// form and replaces everything before them with '*'. Values no longer than
+// keep_last are fully masked so short cells cannot dodge the rule; runes
+// are counted, not bytes, so multibyte text is never split.
+func maskPartial(rule *db.MaskingRule, val interface{}) string {
+	runes := []rune(fmt.Sprintf("%v", val))
+	keep := rule.KeepLast
+	if keep <= 0 || len(runes) <= keep {
+		return strings.Repeat("*", len(runes))
+	}
+	return strings.Repeat("*", len(runes)-keep) + string(runes[len(runes)-keep:])
 }
 
 // formatQueryResults renders query results as text, stopping after maxRows
@@ -388,6 +405,7 @@ func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule) (
 
 	rowCount := 0
 	truncated := false
+	maskedCells := 0
 	for rows.Next() {
 		if maxRows > 0 && rowCount >= maxRows {
 			truncated = true
@@ -403,7 +421,10 @@ func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule) (
 		for i := range columns {
 			val := values[i]
 			if colMasks != nil && colMasks[i] != nil {
-				val = applyMaskStrategy(colMasks[i], val)
+				if masked, applied := applyMaskStrategy(colMasks[i], val); applied {
+					val = masked
+					maskedCells++
+				}
 			}
 			if val == nil {
 				rowText = append(rowText, "NULL")
@@ -427,6 +448,9 @@ func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule) (
 		resultText.WriteString(fmt.Sprintf("\nTotal rows shown: %d", rowCount))
 	} else {
 		resultText.WriteString(fmt.Sprintf("\nTotal rows: %d", rowCount))
+	}
+	if maskedCells > 0 {
+		resultText.WriteString(fmt.Sprintf("\nMasked cells: %d (masking_rules active)", maskedCells))
 	}
 	return resultText.String(), nil
 }

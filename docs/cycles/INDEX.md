@@ -50,6 +50,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 34 | Live-engine regression tests wired into CI (seed + port mappings) | ✅ Shipped | [cycle-34](cycle-34-ci-live-tests.md) |
 | 35 | Column masking scoping doc — name-based v1 needs no SQL parsing | ✅ Shipped | [cycle-35](cycle-35-masking-scoping.md) |
 | 36 | Column masking core: name-based rules wired into ExecuteQuery (Masking Cycle A) | ✅ Shipped | [cycle-36](cycle-36-masking-core.md) |
+| 37 | Masking hardening: fail-closed validation, partial strategy, masked-cell counts (Cycle B) | ✅ Shipped | [cycle-37](cycle-37-masking-hardening.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

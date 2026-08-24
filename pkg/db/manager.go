@@ -56,9 +56,10 @@ type DatabaseConnectionConfig struct {
 // MaskingRule masks values of result columns whose name matches Pattern.
 // The first matching rule wins.
 type MaskingRule struct {
-	Pattern  string `json:"pattern"`         // regex matched against output column names
-	Strategy string `json:"strategy"`        // "fixed_string" | "null"
-	Value    string `json:"value,omitempty"` // replacement text for fixed_string
+	Pattern  string `json:"pattern"`             // regex matched against output column names
+	Strategy string `json:"strategy"`            // "fixed_string" | "null" | "partial"
+	Value    string `json:"value,omitempty"`     // replacement text for fixed_string
+	KeepLast int    `json:"keep_last,omitempty"` // partial: trailing characters left visible
 }
 
 // MultiDBConfig represents the configuration for multiple database connections

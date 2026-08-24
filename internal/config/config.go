@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 
 	"github.com/joho/godotenv"
@@ -147,8 +148,33 @@ func LoadConfig(logDir string) (*Config, error) {
 	if v := getEnv("QUERY_TIMEOUT_SECONDS", ""); v != "" {
 		applyQueryTimeoutOverride(config.MultiDBConfig.Connections, v, logger.Warn)
 	}
+	if err := validateMaskingRules(config.MultiDBConfig.Connections); err != nil {
+		return nil, err
+	}
 
 	return config, nil
+}
+
+// validateMaskingRules compiles every configured masking rule at startup.
+// A broken pattern silently disables the mask it was meant to enforce,
+// which is exactly when graceful degradation is dangerous: data the
+// operator believes is hidden would flow through unmasked. Fail closed.
+func validateMaskingRules(conns []db.DatabaseConnectionConfig) error {
+	for i := range conns {
+		for j, rule := range conns[i].MaskingRules {
+			where := fmt.Sprintf("database %q masking_rules[%d]", conns[i].ID, j)
+			if _, err := regexp.Compile(rule.Pattern); err != nil {
+				return fmt.Errorf("%s: invalid pattern %q: %w", where, rule.Pattern, err)
+			}
+			switch rule.Strategy {
+			case "fixed_string", "null", "partial":
+				// valid; fixed_string with empty value is legitimate (mask to "")
+			default:
+				return fmt.Errorf("%s: unknown strategy %q (want fixed_string, null, or partial)", where, rule.Strategy)
+			}
+		}
+	}
+	return nil
 }
 
 // applyQueryTimeoutOverride fills unset (0) per-connection timeouts from the
