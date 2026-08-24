@@ -39,6 +39,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 23 | Execution-weighted workload suggestions with per-statement composites | ✅ Shipped | [cycle-23](cycle-23-traffic-weighting.md) |
 | 24 | Live protocol smoke: tracker bypass, health formatter, adapter pass-through fixed | ✅ Shipped | [cycle-24](cycle-24-live-smoke.md) |
 | 25 | Statement-path tracking + reusable smoke script (`scripts/smoke.sh`) | ✅ Shipped | [cycle-25](cycle-25-smoke-script.md) |
+| 26 | Index health analysis (`index_health`): duplicates + redundant indexes | ✅ Shipped | [cycle-26](cycle-26-index-health.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
