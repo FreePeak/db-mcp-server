@@ -312,6 +312,21 @@ export DB_CONFIG='{"connections":[...]}'
 - `-log-dir`: Directory for log files (default: `./logs` in current directory)
 - `-db-config`: Inline JSON database configuration
 
+### Environment Variables
+
+Values in a `.env` file are loaded first; real environment variables take precedence. A JSON config file (`CONFIG_PATH`/`DB_CONFIG_FILE`) overrides per-database env vars.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CONFIG_PATH` / `DB_CONFIG_FILE` | `config.json` | Path to the multi-database JSON config |
+| `DB_CONFIG` | — | Inline JSON database configuration (alternative to a file) |
+| `TRANSPORT_MODE` | `sse` | Transport mode when `-t` is not passed |
+| `SERVER_PORT` | `9090` | HTTP port for SSE mode |
+| `LOG_LEVEL` | `info` | Log verbosity (`debug`, `info`, `warn`, `error`) |
+| `DISABLE_LOGGING` | `false` | `true`/`1` silences logging entirely |
+| `DB_TYPE`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | engine defaults | Single-database fallback when no JSON config exists |
+| `QUERY_TIMEOUT_SECONDS` | unset | Fills connections that don't set their own `query_timeout`; negative disables the cap. JSON configs keep precedence. |
+
 ## SQLite Configuration Options
 
 When using SQLite databases, you can leverage these additional configuration options:

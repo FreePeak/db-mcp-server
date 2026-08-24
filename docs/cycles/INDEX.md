@@ -54,6 +54,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 38 | Explain output carries index suggestions — closes backlog #9 loop | ✅ Shipped | [cycle-38](cycle-38-explain-advice-wiring.md) |
 | 39 | Live-engine masking validation — catches MySQL []byte driver bug in partial strategy | ✅ Shipped | [cycle-39](cycle-39-masking-live-validation.md) |
 | 40 | Duration-weighted workload ranking — engine total time beats traffic counts (backlog #8 done) | ✅ Shipped | [cycle-40](cycle-40-duration-weighted-workload.md) |
+| 41 | README environment-variables section — closes backlog #10 | ✅ Shipped | [cycle-41](cycle-41-env-vars-doc.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -75,5 +76,5 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing
 8. Workload-driven tuning — fully done (cycles 19, 23, 40: execution weighting → composites → duration-weighted ranking)
 9. Wire suggest_indexes into explain/slow-query output — done for explain (cycle 38); slow-queries per-statement advice deferred (multiplies catalog reads; interactive path covered)
-10. Guardrail visibility + env timeout override — shipped (cycle 21); remaining: document QUERY_TIMEOUT_SECONDS in README config section
+10. Guardrail visibility + env timeout override — fully done (cycle 21 + cycle 41 README environment-variables section)
 11. Column masking / SELECT-target resolution — needs real SQL parsing or catalog help; scope as multi-cycle effort first
