@@ -160,15 +160,24 @@ func (uc *DatabaseUseCase) SuggestIndexes(ctx context.Context, dbID, query strin
 		return "No tables detected in the query; nothing to advise on.", nil
 	}
 
-	return uc.emitIndexSuggestions(ctx, dbID, dbType, []map[string]*tableAdvice{advice},
+	return uc.emitIndexSuggestions(ctx, dbID, dbType, []statementAdvice{{advice: advice, weight: 1}},
 		"Index suggestions (heuristic — verify with EXPLAIN before creating):", false), nil
 }
 
+// statementAdvice pairs one analyzed statement's extracted advice with how
+// many executions it represents.
+type statementAdvice struct {
+	advice map[string]*tableAdvice
+	weight int
+}
+
 // emitIndexSuggestions renders CREATE INDEX proposals for the given per-
-// statement advice. Suggestions are merged across statements: identical
-// column sets coalesce, and with annotate=true each line reports how many
-// analyzed statements it serves.
-func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbType string, adviceList []map[string]*tableAdvice, header string, annotate bool) string {
+// statement advice. Composites form within a single statement only — folding
+// together columns from disjoint statements would propose indexes whose
+// trailing columns serve nothing. Across statements, identical composites
+// coalesce, each line's weight counts every analyzed execution whose columns
+// it serves, and output is ranked by traffic.
+func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbType string, entries []statementAdvice, header string, annotate bool) string {
 	const (
 		cEq = iota
 		cRng
@@ -182,12 +191,32 @@ func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbTyp
 	suggestions := 0
 	skippedUnknown := 0
 
-	// Merge every statement's candidates per table and class, keeping
-	// first-seen order and counting how many statements reference each
-	// column.
+	// Composite candidates keyed by their column signature, formed per
+	// statement and coalesced across statements.
+	type compKey struct {
+		table string
+		cols  string
+	}
+	comps := map[compKey][]string{}
+	compOrder := []compKey{}
+
+	// Merge single-column candidates per table and class, summing execution
+	// weights.
 	merged := map[string]*[classCount][]colHit{}
-	for _, advice := range adviceList {
-		for table, a := range advice {
+	totalWeight := 0
+	for _, e := range entries {
+		totalWeight += e.weight
+		for table, a := range e.advice {
+			if comp := mergeDedup(a.eq, a.sort); len(comp) >= 2 {
+				if len(comp) > 3 {
+					comp = comp[:3]
+				}
+				k := compKey{table: table, cols: strings.Join(comp, ",")}
+				if _, seen := comps[k]; !seen {
+					comps[k] = comp
+					compOrder = append(compOrder, k)
+				}
+			}
 			m := merged[table]
 			if m == nil {
 				m = &[classCount][]colHit{}
@@ -198,16 +227,101 @@ func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbTyp
 					found := false
 					for i := range m[ci] {
 						if m[ci][i].col == col {
-							m[ci][i].hits++
+							m[ci][i].hits += e.weight
 							found = true
 							break
 						}
 					}
 					if !found {
-						m[ci] = append(m[ci], colHit{col: col, hits: 1})
+						m[ci] = append(m[ci], colHit{col: col, hits: e.weight})
 					}
 				}
 			}
+		}
+	}
+
+	// servingWeight sums the executions of all statements whose eq/sort
+	// columns are a subset of cols — those are the queries an index on cols
+	// can actually serve.
+	servingWeight := func(table string, cols map[string]bool) int {
+		w := 0
+		for _, e := range entries {
+			a := e.advice[table]
+			if a == nil || len(a.eq)+len(a.sort) == 0 {
+				continue
+			}
+			subset := true
+			for _, c := range a.eq {
+				if !cols[c] {
+					subset = false
+					break
+				}
+			}
+			if subset {
+				for _, c := range a.sort {
+					if !cols[c] {
+						subset = false
+						break
+					}
+				}
+			}
+			if subset {
+				w += e.weight
+			}
+		}
+		return w
+	}
+
+	rankStable := func(list []colHit) {
+		sort.SliceStable(list, func(i, j int) bool { return list[i].hits > list[j].hits })
+	}
+
+	// Rank composite candidates by served traffic.
+	type rankedComp struct {
+		key    compKey
+		cols   []string
+		weight int
+	}
+	rankedComps := make([]rankedComp, 0, len(compOrder))
+	for _, k := range compOrder {
+		set := make(map[string]bool, len(comps[k]))
+		for _, c := range comps[k] {
+			set[c] = true
+		}
+		rankedComps = append(rankedComps, rankedComp{key: k, cols: comps[k], weight: servingWeight(k.table, set)})
+	}
+	sort.SliceStable(rankedComps, func(i, j int) bool { return rankedComps[i].weight > rankedComps[j].weight })
+
+	note := func(hits int) string {
+		if !annotate || totalWeight <= 1 {
+			return ""
+		}
+		return fmt.Sprintf("  -- serves %d of %d execution(s)", hits, totalWeight)
+	}
+
+	for _, rc := range rankedComps {
+		table := rc.key.table
+		existing, err := uc.queryTableMetadata(ctx, dbID, indexQueries(strings.ToLower(dbType), table))
+		if err != nil {
+			continue // cannot compare; skip silently
+		}
+		indexedText := strings.ToLower(fmt.Sprintf("%v", existing))
+
+		cols := make([]string, 0, len(rc.cols))
+		valid := true
+		for _, c := range rc.cols {
+			if knownCols, colErr := uc.tableColumns(ctx, dbID, strings.ToLower(dbType), table); colErr != nil || knownCols[c] {
+				cols = append(cols, c)
+			} else {
+				skippedUnknown++
+				valid = false
+			}
+		}
+		if valid && len(cols) >= 2 && !indexCovers(indexedText, cols[0]) {
+			suggestions++
+			name := append([]string{table}, cols...)
+			fmt.Fprintf(&b, "  CREATE INDEX idx_%s ON %s (%s);%s\n",
+				strings.Join(name, "_"), table, strings.Join(cols, ", "), note(rc.weight))
 		}
 	}
 
@@ -226,9 +340,19 @@ func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbTyp
 		indexedText := strings.ToLower(fmt.Sprintf("%v", existing))
 		knownCols, colErr := uc.tableColumns(ctx, dbID, strings.ToLower(dbType), table)
 
+		handled := map[string]bool{}
+		for _, rc := range rankedComps {
+			if rc.key.table == table {
+				for _, c := range rc.cols {
+					handled[c] = true
+				}
+			}
+		}
+
 		// Drop references that are not real columns when the catalog is
 		// readable (ORDER BY aliases, expressions); when it is not, keep the
-		// candidates rather than losing coverage.
+		// candidates rather than losing coverage. Lists stay ranked by the
+		// executions they serve.
 		filter := func(list []colHit) []colHit {
 			out := make([]colHit, 0, len(list))
 			for _, ch := range list {
@@ -238,39 +362,11 @@ func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbTyp
 				}
 				out = append(out, ch)
 			}
+			rankStable(out)
 			return out
 		}
 		eq, rng, srt, jn := filter(m[cEq]), filter(m[cRng]), filter(m[cSort]), filter(m[cJoin])
 
-		note := func(hits int) string {
-			if !annotate || len(adviceList) <= 1 {
-				return ""
-			}
-			return fmt.Sprintf("  -- serves %d of %d statement(s)", hits, len(adviceList))
-		}
-
-		handled := map[string]bool{}
-		// Composite candidate: equality columns then sort columns, capped at
-		// three. Usable only when its leading column is uncovered.
-		composite := mergeDedup(hitCols(eq), hitCols(srt))
-		if len(composite) > 3 {
-			composite = composite[:3]
-		}
-		if len(composite) >= 2 && !indexCovers(indexedText, composite[0]) {
-			suggestions++
-			name := append([]string{table}, composite...)
-			lead := 0
-			for _, ch := range append(eq, srt...) {
-				if ch.col == composite[0] && ch.hits > lead {
-					lead = ch.hits
-				}
-			}
-			fmt.Fprintf(&b, "  CREATE INDEX idx_%s ON %s (%s);%s\n",
-				strings.Join(name, "_"), table, strings.Join(composite, ", "), note(lead))
-			for _, c := range composite {
-				handled[c] = true
-			}
-		}
 		for _, list := range [][]colHit{eq, rng, srt, jn} {
 			for _, ch := range list {
 				if handled[ch.col] || indexCovers(indexedText, ch.col) {
@@ -297,15 +393,6 @@ func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbTyp
 type colHit struct {
 	col  string
 	hits int
-}
-
-// hitCols strips hit counters down to plain column names.
-func hitCols(list []colHit) []string {
-	out := make([]string, 0, len(list))
-	for _, ch := range list {
-		out = append(out, ch.col)
-	}
-	return out
 }
 
 // mergeDedup appends srcs to dst preserving order and dropping duplicates.

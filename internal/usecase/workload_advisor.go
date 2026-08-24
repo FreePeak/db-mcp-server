@@ -9,12 +9,19 @@ import (
 	"github.com/FreePeak/db-mcp-server/pkg/dbtools"
 )
 
+// weightedStatement pairs an analyzed statement with how often it ran, so
+// suggestions rank by real traffic rather than statement variety.
+type weightedStatement struct {
+	sql        string
+	executions int
+}
+
 // WorkloadIndexSuggestions analyzes the database's most expensive recent
-// statements and proposes indexes serving the largest share of them. It is
-// our counterpart of Postgres MCP Pro's analyze_workload_indexes: engine
-// catalogs (pg_stat_statements, MySQL digest tables) are preferred, with a
-// fallback to this server's own execution history so every supported engine
-// can answer. Heuristic output — verify with EXPLAIN before creating.
+// statements and proposes indexes serving the largest share of executions.
+// It is our counterpart of Postgres MCP Pro's analyze_workload_indexes:
+// engine catalogs (pg_stat_statements, MySQL digest tables) are preferred,
+// with a fallback to this server's own execution history so every supported
+// engine can answer. Heuristic output — verify with EXPLAIN before creating.
 func (uc *DatabaseUseCase) WorkloadIndexSuggestions(ctx context.Context, dbID string, limit int) (string, error) {
 	if limit <= 0 {
 		limit = 10
@@ -32,39 +39,64 @@ func (uc *DatabaseUseCase) WorkloadIndexSuggestions(ctx context.Context, dbID st
 		return "No workload statements available yet. Run some queries through this server first, or enable engine statistics (pg_stat_statements on PostgreSQL, performance_schema on MySQL).", nil
 	}
 
-	var adviceList []map[string]*tableAdvice
+	var entries []statementAdvice
+	totalExecutions := 0
 	for _, s := range stmts {
-		if a := extractIndexAdvice(s); len(a) > 0 {
-			adviceList = append(adviceList, a)
+		if a := extractIndexAdvice(s.sql); len(a) > 0 {
+			w := s.executions
+			if w <= 0 {
+				w = 1 // catalogs that omit call counts still count as one
+			}
+			entries = append(entries, statementAdvice{advice: a, weight: w})
+			totalExecutions += w
 		}
 	}
-	if len(adviceList) == 0 {
+	if len(entries) == 0 {
 		return fmt.Sprintf("No index-worthy access patterns found across %d analyzed statement(s).", len(stmts)), nil
 	}
 
 	header := fmt.Sprintf(
-		"Workload index suggestions from %d statement(s), ranked by coverage (heuristic — verify with EXPLAIN before creating):",
-		len(adviceList))
-	return uc.emitIndexSuggestions(ctx, dbID, dbType, adviceList, header, true), nil
+		"Workload index suggestions from %d statement(s) (%d executions), ranked by traffic (heuristic — verify with EXPLAIN before creating):",
+		len(entries), totalExecutions)
+	return uc.emitIndexSuggestions(ctx, dbID, dbType, entries, header, true), nil
 }
 
-// workloadStatements returns up to limit expensive statements: engine
-// catalogs first (full statement text, unlike the display-truncated slow
-// query views), then this server's own tracked history.
-func (uc *DatabaseUseCase) workloadStatements(ctx context.Context, dbID, dbType string, limit int) []string {
+// workloadStatements returns up to limit expensive statements with their
+// execution counts: engine catalogs first (full statement text, unlike the
+// display-truncated slow query views), then this server's own tracked
+// history.
+func (uc *DatabaseUseCase) workloadStatements(ctx context.Context, dbID, dbType string, limit int) []weightedStatement {
 	if queries := workloadQueries(dbType, limit); len(queries) > 0 {
 		rows, err := uc.queryTableMetadata(ctx, dbID, queries)
 		if err == nil {
-			out := make([]string, 0, len(rows))
+			out := make([]weightedStatement, 0, len(rows))
 			for _, r := range rows {
+				var ws *weightedStatement
 				for _, key := range []string{"query", "QUERY", "Query"} {
 					if v, ok := r[key]; ok {
 						if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-							out = append(out, s)
+							ws = &weightedStatement{sql: s, executions: 1}
 						}
 						break
 					}
 				}
+				if ws == nil {
+					continue
+				}
+				for _, key := range []string{"calls", "executions", "CALLS", "EXECUTIONS", "Count", "count"} {
+					if v, ok := r[key]; ok {
+						switch n := v.(type) {
+						case int:
+							ws.executions = n
+						case int64:
+							ws.executions = int(n)
+						case float64:
+							ws.executions = int(n)
+						}
+						break
+					}
+				}
+				out = append(out, *ws)
 			}
 			if len(out) > 0 {
 				return out
@@ -76,12 +108,9 @@ func (uc *DatabaseUseCase) workloadStatements(ctx context.Context, dbID, dbType 
 	sort.Slice(metrics, func(i, j int) bool {
 		return metrics[i].AvgDuration > metrics[j].AvgDuration
 	})
-	out := make([]string, 0, limit)
+	out := make([]weightedStatement, 0, limit)
 	for _, m := range metrics {
-		if out == nil {
-			out = make([]string, 0, limit)
-		}
-		out = append(out, m.Query)
+		out = append(out, weightedStatement{sql: m.Query, executions: m.Count})
 		if len(out) >= limit {
 			break
 		}
@@ -95,10 +124,10 @@ func workloadQueries(dbType string, limit int) []string {
 	switch dbType {
 	case "postgres", "timescale", "timescaledb":
 		return []string{fmt.Sprintf(
-			`SELECT query FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT %d`, limit)}
+			`SELECT query, calls AS executions FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT %d`, limit)}
 	case "mysql":
 		return []string{fmt.Sprintf(
-			"SELECT DIGEST_TEXT AS query FROM performance_schema.events_statements_summary_by_digest WHERE DIGEST_TEXT LIKE 'SELECT%%' ORDER BY SUM_TIMER_WAIT DESC LIMIT %d", limit)}
+			"SELECT DIGEST_TEXT AS query, COUNT_STAR AS executions FROM performance_schema.events_statements_summary_by_digest WHERE DIGEST_TEXT LIKE 'SELECT%%' ORDER BY SUM_TIMER_WAIT DESC LIMIT %d", limit)}
 	default:
 		return nil
 	}

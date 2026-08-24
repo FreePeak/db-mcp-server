@@ -36,6 +36,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 20 | Statement timeout enforcement (DBHub/PMP Pro time-cap parity) | ✅ Shipped | [cycle-20](cycle-20-query-timeout.md) |
 | 21 | Guardrail visibility in health + env timeout override | ✅ Shipped | [cycle-21](cycle-21-guardrail-visibility.md) |
 | 22 | Documentation currency: timeout semantics + performance actions in README | ✅ Shipped | main (this cycle) |
+| 23 | Execution-weighted workload suggestions with per-statement composites | ✅ Shipped | [cycle-23](cycle-23-traffic-weighting.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -55,7 +56,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 5. Column masking / governance features (Bytebase differentiator)
 6. FK referenced-table detail — done (cycle 15); multi-table relationship graph remains
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing
-8. Workload-driven tuning — shipped (cycle 19); execution-count weighting remains
+8. Workload-driven tuning — shipped (cycles 19, 23: weighted by executions, per-statement composites); duration-weighted ranking is the possible refinement
 9. Wire suggest_indexes into explain/slow-query output so plan analysis points at concrete fixes (close the Postgres MCP Pro loop)
 10. Guardrail visibility + env timeout override — shipped (cycle 21); remaining: document QUERY_TIMEOUT_SECONDS in README config section
 11. Column masking / SELECT-target resolution — needs real SQL parsing or catalog help; scope as multi-cycle effort first

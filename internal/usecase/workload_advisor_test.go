@@ -50,10 +50,52 @@ func TestWorkloadIndexSuggestions_EndToEnd(t *testing.T) {
 	if !strings.Contains(out, "CREATE INDEX idx_invoices_customer_id_state ON invoices (customer_id, state)") {
 		t.Fatalf("expected composite suggestion from merged workload, got:\n%s", out)
 	}
-	// The tracker groups identical query texts: three identical selects are
-	// one distinct statement, the sorted variant another — hence 2 of 2.
-	if !strings.Contains(out, "serves 2 of 2 statement(s)") {
-		t.Errorf("expected coverage annotation across distinct statements, got:\n%s", out)
+	// The tracker groups identical query texts with their counts: three
+	// identical selects plus the sorted variant total four executions, all
+	// served by the composite.
+	if !strings.Contains(out, "(4 executions)") {
+		t.Errorf("expected total-execution header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "serves 4 of 4 execution(s)") {
+		t.Errorf("expected coverage annotation across executions, got:\n%s", out)
+	}
+}
+
+// TestWorkloadIndexSuggestions_RanksByTraffic locks in cycle 23's weighting:
+// within a table, columns serving more executions are suggested first.
+func TestWorkloadIndexSuggestions_RanksByTraffic(t *testing.T) {
+	dbtools.GetPerformanceAnalyzer().Reset() // global tracker: isolate from other tests
+	raw := openSQLiteForTest(t)
+	raw.SetMaxOpenConns(1)
+	if _, err := raw.Exec(`CREATE TABLE hits (id INTEGER PRIMARY KEY, hot TEXT, cold TEXT)`); err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	ctx := context.Background()
+
+	seed := func(q string) {
+		if _, err := dbtools.GetPerformanceAnalyzer().TrackQuery(ctx, q, nil, func() (interface{}, error) {
+			return nil, nil
+		}); err != nil {
+			t.Fatalf("track failed: %v", err)
+		}
+	}
+	seed(`SELECT id FROM hits WHERE cold = 'rare'`) // 1 execution
+	for i := 0; i < 5; i++ {
+		seed(`SELECT id FROM hits WHERE hot = 'often'`) // 5 executions
+	}
+
+	out, err := uc.WorkloadIndexSuggestions(ctx, "db", 0)
+	if err != nil {
+		t.Fatalf("workload_suggestions failed: %v", err)
+	}
+	hotIdx := strings.Index(out, "idx_hits_hot")
+	coldIdx := strings.Index(out, "idx_hits_cold")
+	if hotIdx < 0 || coldIdx < 0 {
+		t.Fatalf("expected both suggestions, got:\n%s", out)
+	}
+	if hotIdx > coldIdx {
+		t.Errorf("expected hot column ranked before cold by traffic, got:\n%s", out)
 	}
 }
 
