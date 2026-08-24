@@ -47,6 +47,8 @@ gofmt + golangci-lint pre-commit checks passed
 
 ## Follow-ups
 
-- Wire the timescaledb-test compose service into CI so this regression suite
-  runs on push (mirrors cycle 34's live-engine CI wiring).
+- ~~Wire the timescaledb-test compose service into CI~~ — done in this cycle:
+  a `timescale/timescaledb:latest-pg16` service (port 15435) joined the
+  integration job and `TestTimescaleReadOnly_Live` runs in the live-engine
+  regression step on every PR and main build.
 - Dependabot flagged 1 low vulnerability on main — triage next cycle.
