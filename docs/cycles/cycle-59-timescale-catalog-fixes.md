@@ -51,4 +51,7 @@ gofmt + golangci-lint pre-commit checks passed
   a `timescale/timescaledb:latest-pg16` service (port 15435) joined the
   integration job and `TestTimescaleReadOnly_Live` runs in the live-engine
   regression step on every PR and main build.
-- Dependabot flagged 1 low vulnerability on main — triage next cycle.
+- ~~Dependabot low alert on filippo.io/edwards25519~~ — fixed in this
+  cycle: bumped to v1.1.1 (MultiScalarMult invalid-results advisory,
+  transitive via go-sql-driver/mysql); CI green and the alert now reports
+  state=fixed on GitHub.
