@@ -10,6 +10,7 @@ import (
 
 	"github.com/FreePeak/db-mcp-server/internal/domain"
 	"github.com/FreePeak/db-mcp-server/internal/logger"
+	"github.com/FreePeak/db-mcp-server/pkg/dbtools"
 )
 
 // TODO: Improve error handling with custom error types and better error messages
@@ -270,18 +271,32 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 		return "", fmt.Errorf("database %q is configured as read-only; write statements are not allowed via queries", dbID)
 	}
 
-	// Execute query
-	rows, err := db.Query(ctx, query, params...)
-	if err != nil {
-		return "", fmt.Errorf("query execution failed: %w", err)
-	}
-	defer func() {
-		if closeErr := rows.Close(); closeErr != nil {
-			logger.Error("error closing rows: %v", closeErr)
+	// Execute query with performance tracking so the in-process tracker
+	// (slow_queries, stats, workload_suggestions fallback) reflects real
+	// traffic instead of staying empty on the primary execution path.
+	var out string
+	_, trackErr := dbtools.GetPerformanceAnalyzer().TrackQuery(ctx, query, params, func() (interface{}, error) {
+		rows, qerr := db.Query(ctx, query, params...)
+		if qerr != nil {
+			return nil, fmt.Errorf("query execution failed: %w", qerr)
 		}
-	}()
+		defer func() {
+			if closeErr := rows.Close(); closeErr != nil {
+				logger.Error("error closing rows: %v", closeErr)
+			}
+		}()
+		s, ferr := formatQueryResults(rows, db.MaxRows())
+		if ferr != nil {
+			return nil, ferr
+		}
+		out = s
+		return nil, nil
+	})
+	if trackErr != nil {
+		return "", trackErr
+	}
 
-	return formatQueryResults(rows, db.MaxRows())
+	return out, nil
 }
 
 // formatQueryResults renders query results as text, stopping after maxRows

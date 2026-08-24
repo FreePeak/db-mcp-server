@@ -37,6 +37,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 21 | Guardrail visibility in health + env timeout override | ✅ Shipped | [cycle-21](cycle-21-guardrail-visibility.md) |
 | 22 | Documentation currency: timeout semantics + performance actions in README | ✅ Shipped | main (this cycle) |
 | 23 | Execution-weighted workload suggestions with per-statement composites | ✅ Shipped | [cycle-23](cycle-23-traffic-weighting.md) |
+| 24 | Live protocol smoke: tracker bypass, health formatter, adapter pass-through fixed | ✅ Shipped | [cycle-24](cycle-24-live-smoke.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

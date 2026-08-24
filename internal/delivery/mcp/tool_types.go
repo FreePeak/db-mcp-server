@@ -798,6 +798,11 @@ func formatHealthResult(info map[string]interface{}) string {
 	if ping, ok := info["ping_ms"].(float64); ok {
 		fmt.Fprintf(&b, "Ping: %.2f ms\n", ping)
 	}
+	for _, key := range []string{"read_only", "max_rows", "statement_timeout_seconds"} {
+		if v, ok := info[key]; ok {
+			fmt.Fprintf(&b, "%v: %v\n", key, v)
+		}
+	}
 	for _, key := range []string{"pool_open_connections", "pool_in_use", "pool_idle", "pool_wait_count", "pool_wait_duration_ms"} {
 		if v, ok := info[key]; ok {
 			fmt.Fprintf(&b, "%v: %v\n", key, v)

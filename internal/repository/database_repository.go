@@ -133,6 +133,16 @@ func (a *DatabaseAdapter) MaxRows() int {
 	return 0
 }
 
+// QueryTimeout returns the configured statement timeout in seconds for this
+// database, mirroring MaxRows so guardrails are observable above the
+// repository layer.
+func (a *DatabaseAdapter) QueryTimeout() int {
+	if t, ok := a.db.(interface{ QueryTimeout() int }); ok {
+		return t.QueryTimeout()
+	}
+	return 0
+}
+
 // Ping probes liveness of the underlying connection pool.
 func (a *DatabaseAdapter) Ping(ctx context.Context) error {
 	return a.db.Ping(ctx)

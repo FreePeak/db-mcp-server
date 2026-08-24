@@ -99,3 +99,16 @@ func TestDatabaseAdapter_ZeroTimeoutNoDeadline(t *testing.T) {
 		t.Fatal("expected no deadline when timeout is zero (disabled)")
 	}
 }
+
+// TestDatabaseAdapter_QueryTimeoutExposed locks in the pass-through that
+// lets health checks observe the configured timeout above the repository.
+func TestDatabaseAdapter_QueryTimeoutExposed(t *testing.T) {
+	a := &DatabaseAdapter{db: &timedCaptureDB{captureDB: &captureDB{}, secs: 42}}
+	if got := a.QueryTimeout(); got != 42 {
+		t.Errorf("expected 42, got %d", got)
+	}
+	bare := &DatabaseAdapter{db: &captureDB{}}
+	if got := bare.QueryTimeout(); got != 0 {
+		t.Errorf("expected 0 without capability, got %d", got)
+	}
+}
