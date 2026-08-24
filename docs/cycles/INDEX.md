@@ -32,6 +32,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 16 | Mermaid ERD via schema tool (`format=mermaid`) | ✅ Shipped | [cycle-16](cycle-16-mermaid-erd.md) |
 | 17 | Index advisor: `suggest_indexes` action with alias + column validation | ✅ Shipped | [cycle-17](cycle-17-index-advisor.md) |
 | 18 | Composite index synthesis (equality-first, sort appended) | ✅ Shipped | [cycle-18](cycle-18-composite-indexes.md) |
+| 19 | Workload-driven index suggestions (`workload_suggestions`) | ✅ Shipped | [cycle-19](cycle-19-workload-indexes.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -51,4 +52,5 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 5. Column masking / governance features (Bytebase differentiator)
 6. FK referenced-table detail — done (cycle 15); multi-table relationship graph remains
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing
-8. Workload-driven tuning: feed engine_slow_queries top statements into suggest_indexes (our analyze_workload_indexes)
+8. Workload-driven tuning — shipped (cycle 19); execution-count weighting remains
+9. Wire suggest_indexes into explain/slow-query output so plan analysis points at concrete fixes (close the Postgres MCP Pro loop)

@@ -18,6 +18,125 @@ var (
 	identifierRe = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
 )
 
+// tableAdvice holds the candidate index columns extracted from one SQL
+// statement, grouped by predicate class.
+type tableAdvice struct {
+	eq   []string // equality-filterable: =, IN, LIKE/ILIKE
+	rng  []string // range predicates: >, <, >=, <=, BETWEEN
+	sort []string // ORDER BY / GROUP BY leading columns
+	join []string // join keys
+}
+
+func (t *tableAdvice) add(class, col string) {
+	var dst *[]string
+	switch class {
+	case "eq":
+		dst = &t.eq
+	case "rng":
+		dst = &t.rng
+	case "sort":
+		dst = &t.sort
+	default:
+		dst = &t.join
+	}
+	for _, c := range *dst {
+		if c == col {
+			return
+		}
+	}
+	*dst = append(*dst, col)
+}
+
+// extractIndexAdvice parses a SQL statement into per-table candidate columns
+// grouped by predicate class. Returns an empty map when no tables appear.
+func extractIndexAdvice(query string) map[string]*tableAdvice {
+	advice := map[string]*tableAdvice{}
+	tables := extractQueryTables(query)
+	if len(tables) == 0 {
+		return advice // DML without FROM/JOIN offers no index surface
+	}
+	tableSet := make(map[string]bool, len(tables))
+	for _, t := range tables {
+		tableSet[strings.ToLower(t)] = true
+	}
+	aliases := extractAliasMap(query)
+
+	entryFor := func(table string) *tableAdvice {
+		if advice[table] == nil {
+			advice[table] = &tableAdvice{}
+		}
+		return advice[table]
+	}
+
+	// push resolves the owning table (aliases included) and files the column
+	// under its predicate class. Columns resolving outside the statement's
+	// tables are dropped rather than inventing phantom targets.
+	push := func(rawTable, col, class string) {
+		table := stripSchema(rawTable)
+		if real, ok := aliases[strings.ToLower(table)]; ok {
+			table = real // join aliases must resolve to actual tables
+		}
+		if !tableSet[strings.ToLower(table)] {
+			return
+		}
+		col = strings.ToLower(col)
+		if !isPlainIdentifier(col) || reservedWord(col) {
+			return
+		}
+		entryFor(table).add(class, col)
+	}
+
+	// attributeRef resolves a possibly-qualified column reference
+	// (b.author_id): explicit qualifiers go through the alias map, bare
+	// columns fall back to the first referenced table.
+	attributeRef := func(ref, class string) {
+		parts := identifierRe.FindAllString(ref, -1)
+		if len(parts) == 0 {
+			return
+		}
+		col := parts[len(parts)-1]
+		table := primaryTableFor(tables, "", col)
+		if len(parts) >= 2 {
+			table = parts[len(parts)-2]
+			if real, ok := aliases[strings.ToLower(stripSchema(table))]; ok {
+				table = real
+			}
+		}
+		push(table, col, class)
+	}
+
+	// Join columns are their own access path — never folded into composites.
+	for _, m := range joinOnRe.FindAllStringSubmatch(query, -1) {
+		push(m[1], m[2], "join") // left side
+		push(m[3], m[4], "join") // right side
+	}
+
+	// Filter columns classified by operator: equality-shaped (=, IN, LIKE)
+	// can share a composite; range shapes cannot.
+	for _, m := range whereColRe.FindAllStringSubmatch(query, -1) {
+		class := "rng"
+		switch strings.ToUpper(m[2]) {
+		case "=", "IN", "LIKE", "ILIKE":
+			class = "eq"
+		}
+		attributeRef(m[1], class)
+	}
+
+	// ORDER BY / GROUP BY leading columns.
+	for _, re := range []*regexp.Regexp{orderColRe, groupColRe} {
+		for _, m := range re.FindAllStringSubmatch(query, -1) {
+			for _, raw := range splitColumns(m[1]) {
+				parts := strings.Fields(raw)
+				if len(parts) == 0 {
+					continue
+				}
+				attributeRef(parts[0], "sort")
+			}
+		}
+	}
+	return advice
+}
+
 // SuggestIndexes compares the columns a query filters, joins, and sorts on
 // against the database's existing indexes, proposing CREATE INDEX statements
 // for uncovered high-value columns. Equality predicates and sort columns are
@@ -36,185 +155,130 @@ func (uc *DatabaseUseCase) SuggestIndexes(ctx context.Context, dbID, query strin
 		return "", fmt.Errorf("failed to get database type: %w", err)
 	}
 
-	tables := extractQueryTables(query)
-	if len(tables) == 0 {
+	advice := extractIndexAdvice(query)
+	if len(advice) == 0 {
 		return "No tables detected in the query; nothing to advise on.", nil
 	}
-	aliases := extractAliasMap(query)
 
-	type tableAdvice struct {
-		eq   []string // equality-filterable: =, IN, LIKE/ILIKE
-		rng  []string // range predicates: >, <, >=, <=, BETWEEN
-		sort []string // ORDER BY / GROUP BY leading columns
-		join []string // join keys
-	}
-	add := func(t *tableAdvice, class, col string) {
-		var dst *[]string
-		switch class {
-		case "eq":
-			dst = &t.eq
-		case "rng":
-			dst = &t.rng
-		case "sort":
-			dst = &t.sort
-		default:
-			dst = &t.join
-		}
-		for _, c := range *dst {
-			if c == col {
-				return
-			}
-		}
-		*dst = append(*dst, col)
-	}
+	return uc.emitIndexSuggestions(ctx, dbID, dbType, []map[string]*tableAdvice{advice},
+		"Index suggestions (heuristic — verify with EXPLAIN before creating):", false), nil
+}
 
-	advice := map[string]*tableAdvice{}
-	entryFor := func(table string) *tableAdvice {
-		if advice[table] == nil {
-			advice[table] = &tableAdvice{}
-		}
-		return advice[table]
-	}
-
-	// push resolves the owning table (aliases included) and files the column
-	// under its predicate class.
-	push := func(rawTable, col, class string) {
-		table := stripSchema(rawTable)
-		if real, ok := aliases[strings.ToLower(table)]; ok {
-			table = real // join aliases must resolve to actual tables
-		}
-		col = strings.ToLower(col)
-		if !isPlainIdentifier(col) || reservedWord(col) {
-			return
-		}
-		add(entryFor(table), class, col)
-	}
-
-	// attributeWhere resolves a possibly-qualified filter reference
-	// (b.author_id): explicit qualifiers go through the alias map, bare
-	// columns fall back to the first referenced table.
-	attributeWhere := func(ref, opClass string) {
-		parts := identifierRe.FindAllString(ref, -1)
-		if len(parts) == 0 {
-			return
-		}
-		col := parts[len(parts)-1]
-		table := primaryTableFor(tables, "", col)
-		if len(parts) >= 2 {
-			table = parts[len(parts)-2]
-			if real, ok := aliases[strings.ToLower(stripSchema(table))]; ok {
-				table = real
-			}
-		}
-		push(table, col, opClass)
-	}
-
-	// Join columns are their own access path — never folded into composites.
-	for _, m := range joinOnRe.FindAllStringSubmatch(query, -1) {
-		push(m[1], m[2], "join") // left side
-		push(m[3], m[4], "join") // right side
-	}
-
-	// Filter columns classified by operator: equality-shaped (=, IN, LIKE)
-	// can share a composite; range shapes cannot.
-	for _, m := range whereColRe.FindAllStringSubmatch(query, -1) {
-		class := "rng"
-		switch strings.ToUpper(m[2]) {
-		case "=", "IN", "LIKE", "ILIKE":
-			class = "eq"
-		}
-		attributeWhere(m[1], class)
-	}
-
-	// ORDER BY / GROUP BY leading columns.
-	for _, re := range []*regexp.Regexp{orderColRe, groupColRe} {
-		for _, m := range re.FindAllStringSubmatch(query, -1) {
-			for _, raw := range splitColumns(m[1]) {
-				parts := strings.Fields(raw)
-				if len(parts) == 0 {
-					continue
-				}
-				refParts := identifierRe.FindAllString(parts[0], -1)
-				if len(refParts) == 0 {
-					continue
-				}
-				col := refParts[len(refParts)-1]
-				table := primaryTableFor(tables, "", col)
-				if len(refParts) >= 2 {
-					table = refParts[len(refParts)-2]
-					if real, ok := aliases[strings.ToLower(stripSchema(table))]; ok {
-						table = real
-					}
-				}
-				push(table, col, "sort")
-			}
-		}
-	}
+// emitIndexSuggestions renders CREATE INDEX proposals for the given per-
+// statement advice. Suggestions are merged across statements: identical
+// column sets coalesce, and with annotate=true each line reports how many
+// analyzed statements it serves.
+func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbType string, adviceList []map[string]*tableAdvice, header string, annotate bool) string {
+	const (
+		cEq = iota
+		cRng
+		cSort
+		cJoin
+		classCount
+	)
 
 	var b strings.Builder
-	b.WriteString("Index suggestions (heuristic — verify with EXPLAIN before creating):\n\n")
+	b.WriteString(header + "\n\n")
 	suggestions := 0
 	skippedUnknown := 0
 
-	keys := make([]string, 0, len(advice))
-	for t := range advice {
+	// Merge every statement's candidates per table and class, keeping
+	// first-seen order and counting how many statements reference each
+	// column.
+	merged := map[string]*[classCount][]colHit{}
+	for _, advice := range adviceList {
+		for table, a := range advice {
+			m := merged[table]
+			if m == nil {
+				m = &[classCount][]colHit{}
+				merged[table] = m
+			}
+			for ci, list := range [][]string{a.eq, a.rng, a.sort, a.join} {
+				for _, col := range list {
+					found := false
+					for i := range m[ci] {
+						if m[ci][i].col == col {
+							m[ci][i].hits++
+							found = true
+							break
+						}
+					}
+					if !found {
+						m[ci] = append(m[ci], colHit{col: col, hits: 1})
+					}
+				}
+			}
+		}
+	}
+
+	keys := make([]string, 0, len(merged))
+	for t := range merged {
 		keys = append(keys, t)
 	}
 	sort.Strings(keys)
 
-	// validColumns drops references that are not real columns when the
-	// catalog is readable (ORDER BY aliases, expressions); when it is not,
-	// candidates are kept rather than losing coverage.
-	validColumns := func(knownCols map[string]bool, colErr bool, cols []string) []string {
-		out := make([]string, 0, len(cols))
-		for _, c := range cols {
-			if !colErr && len(knownCols) > 0 && !knownCols[c] {
-				skippedUnknown++
-				continue
-			}
-			out = append(out, c)
-		}
-		return out
-	}
-
 	for _, table := range keys {
-		a := advice[table]
+		m := merged[table]
 		existing, err := uc.queryTableMetadata(ctx, dbID, indexQueries(strings.ToLower(dbType), table))
 		if err != nil {
 			continue // cannot compare; skip silently
 		}
 		indexedText := strings.ToLower(fmt.Sprintf("%v", existing))
 		knownCols, colErr := uc.tableColumns(ctx, dbID, strings.ToLower(dbType), table)
-		colFailed := colErr != nil
 
-		eq := validColumns(knownCols, colFailed, a.eq)
-		rng := validColumns(knownCols, colFailed, a.rng)
-		srt := validColumns(knownCols, colFailed, a.sort)
-		jn := validColumns(knownCols, colFailed, a.join)
+		// Drop references that are not real columns when the catalog is
+		// readable (ORDER BY aliases, expressions); when it is not, keep the
+		// candidates rather than losing coverage.
+		filter := func(list []colHit) []colHit {
+			out := make([]colHit, 0, len(list))
+			for _, ch := range list {
+				if colErr == nil && len(knownCols) > 0 && !knownCols[ch.col] {
+					skippedUnknown++
+					continue
+				}
+				out = append(out, ch)
+			}
+			return out
+		}
+		eq, rng, srt, jn := filter(m[cEq]), filter(m[cRng]), filter(m[cSort]), filter(m[cJoin])
+
+		note := func(hits int) string {
+			if !annotate || len(adviceList) <= 1 {
+				return ""
+			}
+			return fmt.Sprintf("  -- serves %d of %d statement(s)", hits, len(adviceList))
+		}
 
 		handled := map[string]bool{}
 		// Composite candidate: equality columns then sort columns, capped at
 		// three. Usable only when its leading column is uncovered.
-		composite := mergeDedup(eq, srt)
+		composite := mergeDedup(hitCols(eq), hitCols(srt))
 		if len(composite) > 3 {
 			composite = composite[:3]
 		}
 		if len(composite) >= 2 && !indexCovers(indexedText, composite[0]) {
 			suggestions++
 			name := append([]string{table}, composite...)
-			fmt.Fprintf(&b, "  CREATE INDEX idx_%s ON %s (%s);\n",
-				strings.Join(name, "_"), table, strings.Join(composite, ", "))
+			lead := 0
+			for _, ch := range append(eq, srt...) {
+				if ch.col == composite[0] && ch.hits > lead {
+					lead = ch.hits
+				}
+			}
+			fmt.Fprintf(&b, "  CREATE INDEX idx_%s ON %s (%s);%s\n",
+				strings.Join(name, "_"), table, strings.Join(composite, ", "), note(lead))
 			for _, c := range composite {
 				handled[c] = true
 			}
 		}
-		for _, group := range [][]string{eq, rng, srt, jn} {
-			for _, c := range group {
-				if handled[c] || indexCovers(indexedText, c) {
+		for _, list := range [][]colHit{eq, rng, srt, jn} {
+			for _, ch := range list {
+				if handled[ch.col] || indexCovers(indexedText, ch.col) {
 					continue
 				}
 				suggestions++
-				fmt.Fprintf(&b, "  CREATE INDEX idx_%s_%s ON %s (%s);\n", table, c, table, c)
+				fmt.Fprintf(&b, "  CREATE INDEX idx_%s_%s ON %s (%s);%s\n",
+					table, ch.col, table, ch.col, note(ch.hits))
 			}
 		}
 	}
@@ -226,7 +290,22 @@ func (uc *DatabaseUseCase) SuggestIndexes(ctx context.Context, dbID, query strin
 	if suggestions == 0 {
 		b.WriteString("  (none — filter/join/sort columns appear covered by existing indexes)\n")
 	}
-	return b.String(), nil
+	return b.String()
+}
+
+// colHit tracks a candidate column and how many analyzed statements use it.
+type colHit struct {
+	col  string
+	hits int
+}
+
+// hitCols strips hit counters down to plain column names.
+func hitCols(list []colHit) []string {
+	out := make([]string, 0, len(list))
+	for _, ch := range list {
+		out = append(out, ch.col)
+	}
+	return out
 }
 
 // mergeDedup appends srcs to dst preserving order and dropping duplicates.

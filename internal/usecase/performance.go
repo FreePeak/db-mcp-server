@@ -38,6 +38,8 @@ func (uc *DatabaseUseCase) AnalyzePerformance(ctx context.Context, dbID, action,
 		return uc.engineSlowQueries(ctx, dbID, limit)
 	case "suggest_indexes":
 		return uc.SuggestIndexes(ctx, dbID, query)
+	case "workload_suggestions":
+		return uc.WorkloadIndexSuggestions(ctx, dbID, limit)
 	case "suggest":
 		if strings.TrimSpace(query) == "" {
 			return "", fmt.Errorf("query parameter is required for suggest action")
@@ -48,7 +50,7 @@ func (uc *DatabaseUseCase) AnalyzePerformance(ctx context.Context, dbID, action,
 		analyzer.Reset()
 		return fmt.Sprintf("Performance history reset on database %q.", dbID), nil
 	default:
-		return "", fmt.Errorf("invalid performance action %q (use stats, slow_queries, engine_slow_queries, suggest, suggest_indexes, or reset)", action)
+		return "", fmt.Errorf("invalid performance action %q (use stats, slow_queries, engine_slow_queries, suggest, suggest_indexes, workload_suggestions, or reset)", action)
 	}
 }
 
