@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/FreePeak/cortex/pkg/server"
@@ -130,8 +131,19 @@ func TestHandleGetRetentionPolicyFull(t *testing.T) {
 	// Set up expectations
 	mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
 
-	// Get retention policy
-	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.Anything, mock.Anything).Return(`[{"hypertable_name":"test_table","retention_interval":"30 days","retention_enabled":true}]`, nil).Once()
+	// Extension probe from ensureTimescaleExtension
+	mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+		return strings.Contains(sql, "pg_extension")
+	}), mock.Anything).Return("Results:\nn\n 1\n", nil).Once()
+
+	// Get retention policy (read_only-safe ExecuteQuery path)
+	mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+		return strings.Contains(sql, "policy_retention")
+	}), mock.Anything).Return(`Results:
+hypertable_name	retention_interval	retention_enabled
+test_table	30 days	true
+
+Total rows: 1`, nil).Once()
 
 	// Create the tool
 	tool := NewTimescaleDBTool()
@@ -168,8 +180,18 @@ func TestHandleGetRetentionPolicyNoPolicy(t *testing.T) {
 	// Set up expectations
 	mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
 
-	// No retention policy found
-	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.Anything, mock.Anything).Return(`[]`, nil).Once()
+	// Extension probe from ensureTimescaleExtension
+	mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+		return strings.Contains(sql, "pg_extension")
+	}), mock.Anything).Return("Results:\nn\n 1\n", nil).Once()
+
+	// No retention policy found (read_only-safe ExecuteQuery path)
+	mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+		return strings.Contains(sql, "policy_retention")
+	}), mock.Anything).Return(`Results:
+hypertable_name	retention_interval	retention_enabled
+
+Total rows: 0`, nil).Once()
 
 	// Create the tool
 	tool := NewTimescaleDBTool()
@@ -193,7 +215,7 @@ func TestHandleGetRetentionPolicyNoPolicy(t *testing.T) {
 	resultMap, ok := result.(map[string]interface{})
 	assert.True(t, ok)
 	assert.Contains(t, resultMap, "message")
-	assert.Contains(t, resultMap["message"].(string), "No retention policy found")
+	assert.Contains(t, resultMap["message"].(string), "empty result means none is configured")
 
 	// Verify mock expectations
 	mockUseCase.AssertExpectations(t)

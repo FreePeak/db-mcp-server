@@ -3,6 +3,7 @@ package mcp
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/FreePeak/cortex/pkg/server"
@@ -253,14 +254,19 @@ func TestHandleGetCompressionSettings(t *testing.T) {
 	// Set up expectations
 	mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
 
-	// Check compression enabled
-	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.Anything, mock.Anything).Return(`[{"compress": true}]`, nil).Once()
+	// Extension probe from ensureTimescaleExtension
+	mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+		return strings.Contains(sql, "pg_extension")
+	}), mock.Anything).Return("Results:\nn\n 1\n", nil).Once()
 
-	// Get compression settings
-	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.Anything, mock.Anything).Return(`[{"segmentby": "device_id", "orderby": "time DESC"}]`, nil).Once()
+	// One catalog read covers settings + policy schedule (read_only-safe path)
+	mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+		return strings.Contains(sql, "compression_settings")
+	}), mock.Anything).Return(`Results:
+segmentby	orderby	compression_interval
+device_id	time DESC	30 days
 
-	// Get policy info
-	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.Anything, mock.Anything).Return(`[{"schedule_interval": "30 days", "chunk_time_interval": "1 day"}]`, nil).Once()
+Total rows: 1`, nil).Once()
 
 	// Create the tool
 	tool := NewTimescaleDBTool()
@@ -284,7 +290,11 @@ func TestHandleGetCompressionSettings(t *testing.T) {
 	resultMap, ok := result.(map[string]interface{})
 	assert.True(t, ok)
 	assert.Contains(t, resultMap, "message")
-	assert.Contains(t, resultMap, "settings")
+
+	// Read-only rewrite: settings render as catalog text under "details".
+	details := resultMap["details"].(string)
+	assert.Contains(t, details, "device_id")
+	assert.Contains(t, details, "30 days")
 
 	// Verify mock expectations
 	mockUseCase.AssertExpectations(t)

@@ -375,13 +375,26 @@ func TestContinuousAggregateTool(t *testing.T) {
 
 		// Set up expectations
 		mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
-		mockUseCase.On("ExecuteStatement",
+		// Extension probe from ensureTimescaleExtension
+		mockUseCase.On("ExecuteQuery",
+			mock.Anything,
+			"test_db",
+			mock.MatchedBy(func(sql string) bool {
+				return strings.Contains(sql, "pg_extension")
+			}),
+			mock.Anything).Return("Results:\nn\n 1\n", nil)
+		// List aggregates (read-only-safe ExecuteQuery path)
+		mockUseCase.On("ExecuteQuery",
 			mock.Anything,
 			"test_db",
 			mock.MatchedBy(func(sql string) bool {
 				return strings.Contains(sql, "SELECT") && strings.Contains(sql, "continuous_aggregates")
 			}),
-			mock.Anything).Return(`[{"view_name": "daily_metrics", "source_table": "sensor_data"}]`, nil)
+			mock.Anything).Return(`Results:
+view_name	source_table
+daily_metrics	sensor_data
+
+Total rows: 1`, nil)
 
 		// Create a request
 		request := server.ToolCallRequest{
@@ -418,13 +431,26 @@ func TestContinuousAggregateTool(t *testing.T) {
 
 		// Set up expectations
 		mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
-		mockUseCase.On("ExecuteStatement",
+		// Extension probe from ensureTimescaleExtension
+		mockUseCase.On("ExecuteQuery",
+			mock.Anything,
+			"test_db",
+			mock.MatchedBy(func(sql string) bool {
+				return strings.Contains(sql, "pg_extension")
+			}),
+			mock.Anything).Return("Results:\nn\n 1\n", nil)
+		// Aggregate info (read-only-safe ExecuteQuery path)
+		mockUseCase.On("ExecuteQuery",
 			mock.Anything,
 			"test_db",
 			mock.MatchedBy(func(sql string) bool {
 				return strings.Contains(sql, "SELECT") && strings.Contains(sql, "continuous_aggregates") && strings.Contains(sql, "WHERE")
 			}),
-			mock.Anything).Return(`[{"view_name": "daily_metrics", "source_table": "sensor_data", "bucket_interval": "1 day"}]`, nil)
+			mock.Anything).Return(`Results:
+view_name	source_table	bucket_interval
+daily_metrics	sensor_data	1 day
+
+Total rows: 1`, nil)
 
 		// Create a request
 		request := server.ToolCallRequest{

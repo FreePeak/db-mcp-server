@@ -182,6 +182,33 @@ func (tr *ToolRegistry) registerDatabaseTools(ctx context.Context, dbID string) 
 			} else {
 				logger.Info("Successfully registered TimescaleDB list hypertables tool: %s", tsListToolName)
 			}
+
+			// Register the remaining read-only discovery tools (compression
+			// settings, retention policy, continuous aggregates). They are
+			// pure catalog SELECTs served through ExecuteQuery, so they stay
+			// available on read_only databases.
+			roTools := []struct {
+				base       string
+				create     func(string, string) interface{}
+				descriptor string
+			}{
+				{"timescaledb_compression_settings", timescaleTool.CreateCompressionSettingsTool, "compression settings"},
+				{"timescaledb_retention_policy", timescaleTool.CreateRetentionPolicyTool, "retention policy"},
+				{"timescaledb_list_continuous_aggregates", timescaleTool.CreateContinuousAggregateListTool, "continuous aggregates list"},
+				{"timescaledb_continuous_aggregate_info", timescaleTool.CreateContinuousAggregateInfoTool, "continuous aggregate info"},
+			}
+			for _, ro := range roTools {
+				toolName := fmt.Sprintf("%s_%s", ro.base, dbID)
+				if err := tr.server.AddTool(ctx, ro.create(toolName, dbID), func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
+					response, err := timescaleTool.HandleRequest(ctx, request, dbID, tr.databaseUseCase)
+					return FormatResponse(response, err)
+				}); err != nil {
+					logger.Error("Error registering TimescaleDB %s tool: %v", ro.descriptor, err)
+					registrationErrors++
+				} else {
+					logger.Info("Successfully registered TimescaleDB %s tool: %s", ro.descriptor, toolName)
+				}
+			}
 		}
 
 		if tr.databaseUseCase.IsLazyLoading() {
@@ -311,6 +338,33 @@ func (tr *ToolRegistry) registerUnifiedTools(ctx context.Context) error {
 		}); err != nil {
 			logger.Error("Error registering unified TimescaleDB list hypertables tool: %v", err)
 			registrationErrors++
+		}
+
+		// Remaining read-only discovery tools (compression settings,
+		// retention policy, continuous aggregates): pure catalog SELECTs
+		// through ExecuteQuery, so they stay available on read_only databases.
+		unifiedROTools := []struct {
+			name   string
+			create func(string, []string) interface{}
+			desc   string
+		}{
+			{"timescaledb_compression_settings", timescaleTool.CreateUnifiedCompressionSettingsTool, "compression settings"},
+			{"timescaledb_retention_policy", timescaleTool.CreateUnifiedRetentionPolicyTool, "retention policy"},
+			{"timescaledb_list_continuous_aggregates", timescaleTool.CreateUnifiedContinuousAggregateListTool, "continuous aggregates list"},
+			{"timescaledb_continuous_aggregate_info", timescaleTool.CreateUnifiedContinuousAggregateInfoTool, "continuous aggregate info"},
+		}
+		for _, ro := range unifiedROTools {
+			if err := tr.server.AddTool(ctx, ro.create(ro.name, dbList), func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
+				database, err := extractAndValidateDatabase(request, dbList)
+				if err != nil {
+					return FormatResponse(nil, err)
+				}
+				response, err := timescaleTool.HandleRequest(ctx, request, database, tr.databaseUseCase)
+				return FormatResponse(response, err)
+			}); err != nil {
+				logger.Error("Error registering unified TimescaleDB %s tool: %v", ro.desc, err)
+				registrationErrors++
+			}
 		}
 	}
 

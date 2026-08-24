@@ -244,9 +244,18 @@ func TestHandleGetRetentionPolicy(t *testing.T) {
 
 	// Set up expectations
 	mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
-	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.MatchedBy(func(_ string) bool {
-		return true // Accept any SQL for now
-	}), mock.Anything).Return(`[{"hypertable_name":"metrics","retention_interval":"30 days","retention_enabled":true}]`, nil)
+	// Extension probe from ensureTimescaleExtension
+	mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+		return strings.Contains(sql, "pg_extension")
+	}), mock.Anything).Return("Results:\nn\n 1\n", nil).Once()
+	// Get retention policy (read_only-safe ExecuteQuery path)
+	mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.MatchedBy(func(sql string) bool {
+		return strings.Contains(sql, "policy_retention")
+	}), mock.Anything).Return(`Results:
+hypertable_name	retention_interval	retention_enabled
+metrics	30 days	true
+
+Total rows: 1`, nil).Once()
 
 	// Create the tool
 	tool := NewTimescaleDBTool()

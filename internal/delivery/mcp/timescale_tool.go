@@ -590,6 +590,90 @@ func (t *TimescaleDBTool) CreateUnifiedListHypertablesTool(name string, dbList [
 	)
 }
 
+// CreateUnifiedCompressionSettingsTool creates a unified read-only tool for
+// inspecting hypertable compression settings across databases
+func (t *TimescaleDBTool) CreateUnifiedCompressionSettingsTool(name string, dbList []string) interface{} {
+	desc := fmt.Sprintf("Get compression settings for a TimescaleDB hypertable. Available databases: %s", strings.Join(dbList, ", "))
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(desc),
+		cortextools.WithString("database",
+			cortextools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			cortextools.Required(),
+		),
+		cortextools.WithString("operation",
+			cortextools.Description("The operation must be 'get_compression_settings'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("target_table",
+			cortextools.Description("The hypertable to get compression settings for"),
+			cortextools.Required(),
+		),
+	)
+}
+
+// CreateUnifiedRetentionPolicyTool creates a unified read-only tool for
+// inspecting retention policies across databases
+func (t *TimescaleDBTool) CreateUnifiedRetentionPolicyTool(name string, dbList []string) interface{} {
+	desc := fmt.Sprintf("Get the retention policy configured on a TimescaleDB hypertable. Available databases: %s", strings.Join(dbList, ", "))
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(desc),
+		cortextools.WithString("database",
+			cortextools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			cortextools.Required(),
+		),
+		cortextools.WithString("operation",
+			cortextools.Description("The operation must be 'get_retention_policy'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("target_table",
+			cortextools.Description("The hypertable to get the retention policy for"),
+			cortextools.Required(),
+		),
+	)
+}
+
+// CreateUnifiedContinuousAggregateListTool creates a unified read-only tool
+// for listing continuous aggregates across databases
+func (t *TimescaleDBTool) CreateUnifiedContinuousAggregateListTool(name string, dbList []string) interface{} {
+	desc := fmt.Sprintf("List TimescaleDB continuous aggregates. Available databases: %s", strings.Join(dbList, ", "))
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(desc),
+		cortextools.WithString("database",
+			cortextools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			cortextools.Required(),
+		),
+		cortextools.WithString("operation",
+			cortextools.Description("The operation must be 'list_continuous_aggregates'"),
+			cortextools.Required(),
+		),
+	)
+}
+
+// CreateUnifiedContinuousAggregateInfoTool creates a unified read-only tool
+// for one continuous aggregate's details across databases
+func (t *TimescaleDBTool) CreateUnifiedContinuousAggregateInfoTool(name string, dbList []string) interface{} {
+	desc := fmt.Sprintf("Get details of one TimescaleDB continuous aggregate view. Available databases: %s", strings.Join(dbList, ", "))
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(desc),
+		cortextools.WithString("database",
+			cortextools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			cortextools.Required(),
+		),
+		cortextools.WithString("operation",
+			cortextools.Description("The operation must be 'get_continuous_aggregate_info'"),
+			cortextools.Required(),
+		),
+		cortextools.WithString("view_name",
+			cortextools.Description("Name of the continuous aggregate view"),
+			cortextools.Required(),
+		),
+	)
+}
+
 // HandleRequest handles a tool request
 func (t *TimescaleDBTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// Extract parameters from the request
@@ -1026,102 +1110,33 @@ func (t *TimescaleDBTool) handleGetCompressionSettings(ctx context.Context, requ
 		return nil, fmt.Errorf("TimescaleDB operations are only supported on PostgreSQL databases")
 	}
 
-	// Check if the table is a hypertable and has compression enabled
-	hypertableQuery := fmt.Sprintf(
-		"SELECT compress FROM timescaledb_information.hypertables WHERE hypertable_name = '%s'",
-		targetTable,
-	)
+	if err := ensureTimescaleExtension(ctx, dbID, useCase); err != nil {
+		return nil, err
+	}
 
-	hypertableResult, err := useCase.ExecuteStatement(ctx, dbID, hypertableQuery, nil)
+	// One catalog read covers the column settings and the compression policy
+	// schedule; an empty result means compression is not enabled on this
+	// table (or it is not a hypertable at all). ExecuteQuery rather than
+	// ExecuteStatement: this is a pure SELECT and must stay available on
+	// read_only databases. Results pass through as rendered text — the
+	// previous json.Unmarshal never worked because query results are not
+	// JSON.
+	sql := fmt.Sprintf(`
+		SELECT cs.segmentby, cs.orderby,
+			j.schedule_interval AS compression_interval
+		FROM timescaledb_information.compression_settings cs
+		LEFT JOIN timescaledb_information.jobs j
+			ON j.hypertable_name = cs.hypertable_name AND j.proc_name = 'policy_compression'
+		WHERE cs.hypertable_name = '%s'
+	`, targetTable)
+
+	result, err := useCase.ExecuteQuery(ctx, dbID, sql, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check hypertable info: %w", err)
+		return nil, fmt.Errorf("failed to get compression settings: %w", err)
 	}
-
-	// Parse the result
-	var hypertables []map[string]interface{}
-	if err := json.Unmarshal([]byte(hypertableResult), &hypertables); err != nil {
-		return nil, fmt.Errorf("failed to parse hypertable info: %w", err)
-	}
-
-	if len(hypertables) == 0 {
-		return nil, fmt.Errorf("table '%s' is not a hypertable", targetTable)
-	}
-
-	// Create settings object
-	settings := map[string]interface{}{
-		"hypertable_name":      targetTable,
-		"compression_enabled":  false,
-		"segment_by":           nil,
-		"order_by":             nil,
-		"chunk_time_interval":  nil,
-		"compression_interval": nil,
-	}
-
-	isCompressed := false
-	if compress, ok := hypertables[0]["compress"]; ok && compress != nil {
-		isCompressed = fmt.Sprintf("%v", compress) == "true"
-	}
-
-	settings["compression_enabled"] = isCompressed
-
-	if isCompressed {
-		// Get compression settings
-		compressionQuery := fmt.Sprintf(
-			"SELECT segmentby, orderby FROM timescaledb_information.compression_settings WHERE hypertable_name = '%s'",
-			targetTable,
-		)
-
-		compressionResult, err := useCase.ExecuteStatement(ctx, dbID, compressionQuery, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get compression settings: %w", err)
-		}
-
-		var compressionSettings []map[string]interface{}
-		if err := json.Unmarshal([]byte(compressionResult), &compressionSettings); err != nil {
-			return nil, fmt.Errorf("failed to parse compression settings: %w", err)
-		}
-
-		if len(compressionSettings) > 0 {
-			if segmentBy, ok := compressionSettings[0]["segmentby"]; ok && segmentBy != nil {
-				settings["segment_by"] = segmentBy
-			}
-
-			if orderBy, ok := compressionSettings[0]["orderby"]; ok && orderBy != nil {
-				settings["order_by"] = orderBy
-			}
-		}
-
-		// Get policy information
-		policyQuery := fmt.Sprintf(
-			"SELECT s.schedule_interval, h.chunk_time_interval FROM timescaledb_information.jobs j "+
-				"JOIN timescaledb_information.job_stats s ON j.job_id = s.job_id "+
-				"JOIN timescaledb_information.hypertables h ON j.hypertable_name = h.hypertable_name "+
-				"WHERE j.hypertable_name = '%s' AND j.proc_name = 'policy_compression'",
-			targetTable,
-		)
-
-		policyResult, err := useCase.ExecuteStatement(ctx, dbID, policyQuery, nil)
-		if err == nil {
-			var policyInfo []map[string]interface{}
-			if err := json.Unmarshal([]byte(policyResult), &policyInfo); err != nil {
-				return nil, fmt.Errorf("failed to parse policy info: %w", err)
-			}
-
-			if len(policyInfo) > 0 {
-				if interval, ok := policyInfo[0]["schedule_interval"]; ok && interval != nil {
-					settings["compression_interval"] = interval
-				}
-
-				if chunkInterval, ok := policyInfo[0]["chunk_time_interval"]; ok && chunkInterval != nil {
-					settings["chunk_time_interval"] = chunkInterval
-				}
-			}
-		}
-	}
-
 	return map[string]interface{}{
-		"message":  fmt.Sprintf("Retrieved compression settings for hypertable '%s'", targetTable),
-		"settings": settings,
+		"message": fmt.Sprintf("Compression settings for hypertable '%s' (empty result means compression is not enabled)", targetTable),
+		"details": result,
 	}, nil
 }
 
@@ -1236,6 +1251,9 @@ func (t *TimescaleDBTool) handleGetRetentionPolicy(ctx context.Context, request 
 		return nil, fmt.Errorf("TimescaleDB operations are only supported on PostgreSQL databases")
 	}
 
+	if err := ensureTimescaleExtension(ctx, dbID, useCase); err != nil {
+		return nil, err
+	}
 	// Build the SQL query to get retention policy details
 	sql := fmt.Sprintf(`
 		SELECT 
@@ -1250,23 +1268,17 @@ func (t *TimescaleDBTool) handleGetRetentionPolicy(ctx context.Context, request 
 			j.hypertable_name = '%s' AND j.proc_name = 'policy_retention'
 	`, targetTable, targetTable)
 
-	// Execute the statement
-	result, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	// ExecuteQuery rather than ExecuteStatement: this is a pure SELECT and
+	// must stay available on read_only databases.
+	result, err := useCase.ExecuteQuery(ctx, dbID, sql, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get retention policy: %w", err)
 	}
 
-	// Check if we got any results
-	if result == "[]" || result == "" {
-		// No retention policy found, return a default structure
-		return map[string]interface{}{
-			"message": fmt.Sprintf("No retention policy found for table '%s'", targetTable),
-			"details": fmt.Sprintf(`[{"hypertable_name":"%s","retention_enabled":false}]`, targetTable),
-		}, nil
-	}
-
+	// Rendered output carries a header even when zero rows match, which is
+	// why the old `result == "[]"` emptiness check never fired.
 	return map[string]interface{}{
-		"message": fmt.Sprintf("Successfully retrieved retention policy for '%s'", targetTable),
+		"message": fmt.Sprintf("Retention policy for table '%s' (empty result means none is configured)", targetTable),
 		"details": result,
 	}, nil
 }
@@ -1646,14 +1658,19 @@ func (t *TimescaleDBTool) handleListContinuousAggregates(ctx context.Context, _ 
 		return nil, fmt.Errorf("TimescaleDB operations are only supported on PostgreSQL databases")
 	}
 
+	if err := ensureTimescaleExtension(ctx, dbID, useCase); err != nil {
+		return nil, err
+	}
+
 	// Build the SQL query to list continuous aggregates
 	sql := `
 		SELECT view_name, source_table, time_column, bucket_interval, aggregations, where_condition, with_data, refresh_policy, refresh_interval
 		FROM timescaledb_information.continuous_aggregates
 	`
 
-	// Execute the statement
-	result, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	// ExecuteQuery rather than ExecuteStatement: this is a pure SELECT and
+	// must stay available on read_only databases.
+	result, err := useCase.ExecuteQuery(ctx, dbID, sql, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list continuous aggregates: %w", err)
 	}
@@ -1682,9 +1699,13 @@ func (t *TimescaleDBTool) handleGetContinuousAggregateInfo(ctx context.Context, 
 		return nil, fmt.Errorf("TimescaleDB operations are only supported on PostgreSQL databases")
 	}
 
+	if err := ensureTimescaleExtension(ctx, dbID, useCase); err != nil {
+		return nil, err
+	}
+
 	// Build the SQL query to get continuous aggregate information
 	sql := fmt.Sprintf(`
-		SELECT 
+		SELECT
 			view_name,
 			source_table,
 			time_column,
@@ -1694,14 +1715,15 @@ func (t *TimescaleDBTool) handleGetContinuousAggregateInfo(ctx context.Context, 
 			with_data,
 			refresh_policy,
 			refresh_interval
-		FROM 
+		FROM
 			timescaledb_information.continuous_aggregates
-		WHERE 
+		WHERE
 			view_name = '%s'
 	`, viewName)
 
-	// Execute the statement
-	result, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	// ExecuteQuery rather than ExecuteStatement: this is a pure SELECT and
+	// must stay available on read_only databases.
+	result, err := useCase.ExecuteQuery(ctx, dbID, sql, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get continuous aggregate info: %w", err)
 	}
