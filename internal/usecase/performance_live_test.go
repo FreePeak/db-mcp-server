@@ -94,10 +94,10 @@ func TestEngineSlowQueries_Live(t *testing.T) {
 }
 
 // TestDbHealth_Live exercises the db_health action against a real
-// PostgreSQL with known-seeded defects: an exact duplicate pair, a
-// redundant prefix pair, and an index forced invalid. Requires
-// docker-compose.test.yml or any PostgreSQL on port 15432 seeded with the
-// orders scenario; skips when unreachable.
+// PostgreSQL with known-seeded defects: an exact duplicate pair and a
+// redundant prefix pair, plus a subtest that forces an index invalid.
+// Requires docker-compose.test.yml or any PostgreSQL on port 15432 seeded
+// with the orders scenario; skips when unreachable.
 func TestDbHealth_Live(t *testing.T) {
 	g := openLive(t, "postgres", "host=localhost port=15432 user=user1 password=password1 dbname=db1 sslmode=disable")
 	// Seed idempotently; ignore errors when the objects already exist.
@@ -107,24 +107,45 @@ func TestDbHealth_Live(t *testing.T) {
 	_, _ = g.db.Exec(`CREATE INDEX IF NOT EXISTS idx_orders_customer_copy ON orders (customer_id)`)
 
 	uc := NewDatabaseUseCase(&fakeRepo{db: g, dbType: "postgres"})
-	out, err := uc.DbHealth(context.Background(), "pg1")
-	if err != nil {
-		t.Fatalf("db_health failed: %v", err)
-	}
 
-	if !strings.Contains(out, "DUPLICATE on orders") {
-		t.Errorf("expected duplicate-index finding, got:\n%s", out)
-	}
-	if !strings.Contains(out, "REDUNDANT on orders") {
-		t.Errorf("expected redundant-prefix finding, got:\n%s", out)
-	}
-	if !strings.Contains(out, "INVALID") {
-		t.Errorf("expected invalid-index finding from pg_index.indisvalid, got:\n%s", out)
-	}
-	// Primary-key indexes must never receive DROP advice (cycle 31 fix).
-	if strings.Contains(out, "DROP INDEX orders_pkey") {
-		t.Errorf("orders_pkey is constraint-backed and must not be flagged UNUSED:\n%s", out)
-	}
+	t.Run("structure findings", func(t *testing.T) {
+		out, err := uc.DbHealth(context.Background(), "pg1")
+		if err != nil {
+			t.Fatalf("db_health failed: %v", err)
+		}
+
+		if !strings.Contains(out, "DUPLICATE on orders") {
+			t.Errorf("expected duplicate-index finding, got:\n%s", out)
+		}
+		if !strings.Contains(out, "REDUNDANT on orders") {
+			t.Errorf("expected redundant-prefix finding, got:\n%s", out)
+		}
+		// Primary-key indexes must never receive DROP advice (cycle 31 fix).
+		if strings.Contains(out, "DROP INDEX orders_pkey") {
+			t.Errorf("orders_pkey is constraint-backed and must not be flagged UNUSED:\n%s", out)
+		}
+	})
+
+	t.Run("invalid index", func(t *testing.T) {
+		// Forcing indisvalid=false needs catalog-write privileges and does
+		// not stick on every engine/permission combination (CI postgres:15
+		// vs local PG18 diverged here). Verify the flip took effect rather
+		// than asserting blind; skip honestly where it cannot be arranged.
+		_, _ = g.db.Exec(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'idx_orders_customer_copy'::regclass`)
+		var valid bool
+		err := g.db.QueryRow(`SELECT i.indisvalid FROM pg_index i WHERE i.indexrelid = 'idx_orders_customer_copy'::regclass`).Scan(&valid)
+		if err != nil || valid {
+			t.Skipf("cannot force indisvalid=false in this environment (err=%v valid=%v)", err, valid)
+		}
+
+		out, err := uc.DbHealth(context.Background(), "pg1")
+		if err != nil {
+			t.Fatalf("db_health failed: %v", err)
+		}
+		if !strings.Contains(out, "INVALID") {
+			t.Errorf("expected invalid-index finding from pg_index.indisvalid while indisvalid=%v, got:\n%s", valid, out)
+		}
+	})
 }
 
 // TestDbHealth_LiveMySQL exercises db_health against real MySQL 9.x,
