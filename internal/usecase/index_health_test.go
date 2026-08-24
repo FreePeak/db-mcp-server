@@ -93,6 +93,64 @@ func TestParseIndexRows_MySQLShape(t *testing.T) {
 	}
 }
 
+// TestUsageFindings_Formatters locks in cycle 27's statistics-driven
+// findings for both engines' row shapes.
+func TestUsageFindings_Formatters(t *testing.T) {
+	pg := formatUnusedFindings([]map[string]interface{}{
+		{"table_name": "orders", "index_name": "idx_orders_region"},
+	})
+	if len(pg) != 1 || !strings.Contains(pg[0], "UNUSED on orders") || !strings.Contains(pg[0], "DROP INDEX idx_orders_region;") {
+		t.Errorf("unexpected pg unused finding: %v", pg)
+	}
+
+	inv := formatInvalidFindings([]map[string]interface{}{
+		{"index_name": "idx_users_email"},
+	})
+	if len(inv) != 1 || !strings.Contains(inv[0], "INVALID") || !strings.Contains(inv[0], "idx_users_email") {
+		t.Errorf("unexpected invalid finding: %v", inv)
+	}
+
+	my := formatMySQLUnusedFindings([]map[string]interface{}{
+		{"table_name": "orders", "index_name": "idx_orders_total"},
+	})
+	if len(my) != 1 || !strings.Contains(my[0], "ALTER TABLE `orders` DROP INDEX `idx_orders_total`;") {
+		t.Errorf("unexpected mysql unused finding: %v", my)
+	}
+}
+
+// TestIndexHealth_WithoutUsageStats verifies the graceful SQLite path: no
+// statistics catalogs exist, yet the report still renders. The
+// usage-unavailable footer only appears when there are findings; the clean
+// database takes the no-findings early return.
+func TestIndexHealth_WithoutUsageStats(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE t1 (id INTEGER PRIMARY KEY, a TEXT)`); err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	out, err := uc.IndexHealth(context.Background(), "db")
+	if err != nil {
+		t.Fatalf("index_health failed: %v", err)
+	}
+	if !strings.Contains(out, "No duplicate or redundant indexes") {
+		t.Errorf("expected clean report, got:\n%s", out)
+	}
+
+	// With a finding present, the footer must disclose that usage evidence
+	// was unavailable rather than implying UNUSED claims are exhaustive.
+	if _, err := raw.Exec(`CREATE INDEX idx_t1_a ON t1 (a); CREATE INDEX idx_t1_a_copy ON t1 (a)`); err != nil {
+		t.Fatalf("seed indexes failed: %v", err)
+	}
+	out, err = uc.IndexHealth(context.Background(), "db")
+	if err != nil {
+		t.Fatalf("index_health failed: %v", err)
+	}
+	if !strings.Contains(out, "DUPLICATE on t1") || !strings.Contains(out, "ran without them") {
+		t.Errorf("expected finding plus usage-unavailable footer, got:\n%s", out)
+	}
+}
+
 // TestRedundancyFindings_UniquenessGuard verifies a non-unique smaller
 // index under a unique larger one is flagged, but a unique smaller index
 // under a non-unique larger one is not (uniqueness cannot be recovered).

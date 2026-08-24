@@ -38,6 +38,13 @@ func (uc *DatabaseUseCase) IndexHealth(ctx context.Context, dbID string) (string
 		findings = append(findings, redundancyFindings(dbType, table, indexes)...)
 	}
 
+	usageConsulted := false
+	usage, ok := uc.usageFindings(ctx, dbID, dbType)
+	if ok {
+		usageConsulted = true
+		findings = append(findings, usage...)
+	}
+
 	if len(findings) == 0 {
 		return fmt.Sprintf("No duplicate or redundant indexes found across %d table(s).", len(tables)), nil
 	}
@@ -48,9 +55,109 @@ func (uc *DatabaseUseCase) IndexHealth(ctx context.Context, dbID string) (string
 	for _, f := range findings {
 		b.WriteString("  " + f + "\n")
 	}
-	b.WriteString("\nReview before dropping: unused-index evidence needs engine statistics")
-	b.WriteString(" (pg_stat_user_indexes / sys.schema_unused_indexes), which this heuristic view does not consult.")
+	if usageConsulted {
+		b.WriteString("\nUNUSED counts reflect scans since last statistics reset or server start;")
+		b.WriteString("\na recently created index can legitimately show zero scans.")
+	} else {
+		b.WriteString("\nUsage-based findings need engine statistics")
+		b.WriteString(" (pg_stat_user_indexes / sys.schema_unused_indexes); this view ran without them.")
+	}
 	return b.String(), nil
+}
+
+// usageFindings consults engine statistics catalogs for evidence the static
+// structure pass cannot see: never-scanned indexes (PostgreSQL
+// pg_stat_user_indexes, MySQL sys.schema_unused_indexes) and invalid
+// indexes (PostgreSQL pg_index.indisvalid). Returns ok=false when the
+// engine exposes no such statistics or every catalog read failed.
+func (uc *DatabaseUseCase) usageFindings(ctx context.Context, dbID, dbType string) ([]string, bool) {
+	var candidates []string
+	switch dbType {
+	case "postgres", "timescale", "timescaledb":
+		candidates = []string{
+			"SELECT relname AS table_name, indexrelname AS index_name FROM pg_stat_user_indexes WHERE schemaname = 'public' AND idx_scan = 0",
+			"SELECT i.indexrelid::regclass::text AS index_name FROM pg_index i WHERE NOT i.indisvalid",
+		}
+	case "mysql":
+		candidates = []string{
+			"SELECT table_name, index_name FROM sys.schema_unused_indexes",
+		}
+	default:
+		return nil, false // SQLite and unknown engines: no statistics catalogs
+	}
+
+	var findings []string
+	for _, q := range candidates {
+		rows, err := uc.queryTableMetadata(ctx, dbID, []string{q})
+		if err != nil {
+			continue // statistics may not exist yet (e.g. no sys schema); skip that catalog
+		}
+		switch {
+		case strings.Contains(q, "idx_scan"):
+			findings = append(findings, formatUnusedFindings(rows)...)
+		case strings.Contains(q, "indisvalid"):
+			findings = append(findings, formatInvalidFindings(rows)...)
+		default:
+			findings = append(findings, formatMySQLUnusedFindings(rows)...)
+		}
+	}
+	return findings, true
+}
+
+// formatUnusedFindings renders PostgreSQL never-scanned index rows.
+func formatUnusedFindings(rows []map[string]interface{}) []string {
+	var out []string
+	for _, r := range rows {
+		name := rowString(r, "index_name", "indexrelname", "INDEX_NAME")
+		table := rowString(r, "table_name", "relname", "TABLE_NAME")
+		if name == "" {
+			continue
+		}
+		if table != "" {
+			out = append(out, fmt.Sprintf("UNUSED on %s: %s has zero scans since statistics were last reset:\n    DROP INDEX %s;", table, name, name))
+		} else {
+			out = append(out, fmt.Sprintf("UNUSED: %s has zero scans since statistics were last reset:\n    DROP INDEX %s;", name, name))
+		}
+	}
+	return out
+}
+
+// formatInvalidFindings renders PostgreSQL invalid-index rows (failed
+// CREATE INDEX CONCURRENTLY leaves these behind).
+func formatInvalidFindings(rows []map[string]interface{}) []string {
+	var out []string
+	for _, r := range rows {
+		if name := rowString(r, "index_name", "INDEX_NAME"); name != "" {
+			out = append(out, fmt.Sprintf("INVALID: %s is marked invalid (often a leftover from a failed CREATE INDEX CONCURRENTLY):\n    DROP INDEX %s; -- then recreate if still needed", name, name))
+		}
+	}
+	return out
+}
+
+// formatMySQLUnusedFindings renders sys.schema_unused_indexes rows.
+func formatMySQLUnusedFindings(rows []map[string]interface{}) []string {
+	var out []string
+	for _, r := range rows {
+		name := rowString(r, "index_name", "INDEX_NAME")
+		table := rowString(r, "table_name", "TABLE_NAME")
+		if name == "" || table == "" {
+			continue
+		}
+		out = append(out, fmt.Sprintf("UNUSED on %s: %s has zero reads since the server started:\n    ALTER TABLE `%s` DROP INDEX `%s`;", table, name, table, name))
+	}
+	return out
+}
+
+// rowString returns the first non-empty string among the given keys.
+func rowString(r map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := r[k]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 // allTables enumerates user tables using the first candidate query that
