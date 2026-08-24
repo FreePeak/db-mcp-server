@@ -48,6 +48,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 32 | Live MySQL validation: sys.schema_unused_indexes column fix + TestDbHealth_LiveMySQL | ✅ Shipped | [cycle-32](cycle-32-mysql-live-validation.md) |
 | 33 | Repeatable live-engine setup script (`scripts/live-db-setup.sh`) | ✅ Shipped | [cycle-33](cycle-33-live-setup-script.md) |
 | 34 | Live-engine regression tests wired into CI (seed + port mappings) | ✅ Shipped | [cycle-34](cycle-34-ci-live-tests.md) |
+| 35 | Column masking scoping doc — name-based v1 needs no SQL parsing | ✅ Shipped | [cycle-35](cycle-35-masking-scoping.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -64,7 +65,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 2. Token-efficiency benchmark: unified vs per-db vs DBHub claim
 3. Merge PR #85 → tag v1.10.0 when CI green
 4. Hypothetical-index tuning depth — heuristic advisor shipped (cycles 17–18, incl. composites); constraint-aware coverage and workload-driven analysis remain
-5. Column masking / governance features (Bytebase differentiator)
+5. Column masking / governance features (Bytebase differentiator) — scoped in cycle 35: [docs/design/column-masking-scoping.md](../design/column-masking-scoping.md); name-based v1 needs no SQL parsing; 3-cycle breakdown inside
 6. FK referenced-table detail — done (cycle 15); multi-table relationship graph remains
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing
 8. Workload-driven tuning — shipped (cycles 19, 23: weighted by executions, per-statement composites); duration-weighted ranking is the possible refinement
