@@ -376,25 +376,33 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 		return "", fmt.Errorf("database %q is configured as read-only; write statements are not allowed", dbID)
 	}
 
-	// Execute statement
-	result, err := db.Exec(ctx, statement, params...)
-	if err != nil {
-		return "", fmt.Errorf("statement execution failed: %w", err)
+	var out string
+	_, trackErr := dbtools.GetPerformanceAnalyzer().TrackQuery(ctx, statement, params, func() (interface{}, error) {
+		result, xerr := db.Exec(ctx, statement, params...)
+		if xerr != nil {
+			return nil, fmt.Errorf("statement execution failed: %w", xerr)
+		}
+
+		// Get rows affected
+		rowsAffected, aerr := result.RowsAffected()
+		if aerr != nil {
+			rowsAffected = 0
+		}
+
+		// Get last insert ID (if applicable)
+		lastInsertID, ierr := result.LastInsertId()
+		if ierr != nil {
+			lastInsertID = 0
+		}
+
+		out = fmt.Sprintf("Statement executed successfully.\nRows affected: %d\nLast insert ID: %d", rowsAffected, lastInsertID)
+		return nil, nil
+	})
+	if trackErr != nil {
+		return "", trackErr
 	}
 
-	// Get rows affected
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		rowsAffected = 0
-	}
-
-	// Get last insert ID (if applicable)
-	lastInsertID, err := result.LastInsertId()
-	if err != nil {
-		lastInsertID = 0
-	}
-
-	return fmt.Sprintf("Statement executed successfully.\nRows affected: %d\nLast insert ID: %d", rowsAffected, lastInsertID), nil
+	return out, nil
 }
 
 // ExecuteTransaction executes operations in a transaction. Actions:

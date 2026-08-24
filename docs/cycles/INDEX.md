@@ -38,6 +38,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 22 | Documentation currency: timeout semantics + performance actions in README | ✅ Shipped | main (this cycle) |
 | 23 | Execution-weighted workload suggestions with per-statement composites | ✅ Shipped | [cycle-23](cycle-23-traffic-weighting.md) |
 | 24 | Live protocol smoke: tracker bypass, health formatter, adapter pass-through fixed | ✅ Shipped | [cycle-24](cycle-24-live-smoke.md) |
+| 25 | Statement-path tracking + reusable smoke script (`scripts/smoke.sh`) | ✅ Shipped | [cycle-25](cycle-25-smoke-script.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
