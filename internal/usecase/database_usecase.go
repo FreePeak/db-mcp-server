@@ -259,7 +259,10 @@ func (uc *DatabaseUseCase) GetDatabaseInfo(dbID string) (map[string]interface{},
 }
 
 // ExecuteQuery executes a SQL query and returns the formatted results
-func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string, params []interface{}) (string, error) {
+func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string, params []interface{}) (res string, resErr error) {
+	start := time.Now()
+	defer func() { audit.record("query", dbID, query, time.Since(start), resErr) }()
+
 	db, err := uc.repo.GetDatabase(dbID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get database: %w", err)
@@ -466,7 +469,10 @@ func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule) (
 }
 
 // ExecuteStatement executes a SQL statement (INSERT, UPDATE, DELETE)
-func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement string, params []interface{}) (string, error) {
+func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement string, params []interface{}) (res string, resErr error) {
+	start := time.Now()
+	defer func() { audit.record("execute", dbID, statement, time.Since(start), resErr) }()
+
 	db, err := uc.repo.GetDatabase(dbID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get database: %w", err)
@@ -514,7 +520,10 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 //   - "commit": commits and retires the transaction ID
 //   - "rollback": rolls back and retires the transaction ID
 func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action string, txID string,
-	statement string, params []interface{}, readOnly bool) (string, map[string]interface{}, error) {
+	statement string, params []interface{}, readOnly bool) (res string, meta map[string]interface{}, resErr error) {
+
+	start := time.Now()
+	defer func() { audit.record("tx_"+action, dbID, statement, time.Since(start), resErr) }()
 
 	switch action {
 	case "begin":

@@ -116,6 +116,8 @@ Protect agent sessions against runaway queries and accidental writes:
 | `"masking_rules": [...]` | per database | Masks values of result columns whose **name** matches a rule's regex before they leave the server — applies to every query shape including `SELECT *`. Strategies: `"fixed_string"` (replace with `value`), `"null"`, and `"partial"` (`keep_last` trailing characters visible; shorter values fully masked). First matching rule wins; invalid patterns or unknown strategies abort config load (fail closed); masked-cell counts are reported in the result footer. Renaming a column with an alias bypasses name matching by design. See [docs/design/column-masking-scoping.md](docs/design/column-masking-scoping.md). |
 | `"query_timeout": 30` | per database | Cancels statements that exceed the timeout in seconds; enforced at the repository layer for every tool (queries, statements, transactions, explain, schema inspection). Unset defaults to 30s; `-1` disables. Env-only deployments can set `QUERY_TIMEOUT_SECONDS` to fill connections without an explicit value (JSON keeps precedence). |
 
+| `DB_MCP_AUDIT_LOG=/path/audit.jsonl` | process | Appends one JSONL record per executed statement — timestamp, op (`query`/`execute`/`tx_*`), database, statement (capped at 10k chars), duration, error. Includes rejected attempts against read-only databases. Best-effort writes never fail a query; file is created with `0600`. |
+
 > **Defense in depth**: read-only is enforced in three layers — application classifier, engine session defaults, and (recommended) least-privilege database users. Oracle currently relies on the classifier plus user privileges.
 
 ## Supported Databases
