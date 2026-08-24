@@ -202,3 +202,40 @@ func TestEngineSlowQueries_IndexAdvice_Live(t *testing.T) {
 		t.Fatalf("expected bounded index advice appended to slow-queries output:\n%s", out)
 	}
 }
+
+// TestValidateIndexSuggestions_Live exercises the hypopg-backed
+// validation loop against real PostgreSQL: an equality filter on an
+// unindexed column must yield a USED verdict from actual planner output.
+// Skips when PostgreSQL is unreachable or when the hypopg extension
+// cannot be made available.
+func TestValidateIndexSuggestions_Live(t *testing.T) {
+	g := openLive(t, "postgres", "host=localhost port=15432 user=user1 password=password1 dbname=db1 sslmode=disable")
+	_, _ = g.db.Exec(`CREATE TABLE IF NOT EXISTS hypo46 (id SERIAL PRIMARY KEY, tenant_id INT)`)
+	_, _ = g.db.Exec(`INSERT INTO hypo46 (tenant_id) SELECT i%10 FROM generate_series(1,500) i`)
+
+	if _, err := g.db.Exec(`CREATE EXTENSION IF NOT EXISTS hypopg`); err != nil {
+		t.Skipf("hypopg unavailable in this environment: %v", err)
+	}
+	var n int
+	if err := g.db.QueryRow(`SELECT count(*) FROM pg_extension WHERE extname='hypopg'`).Scan(&n); err != nil || n == 0 {
+		t.Skipf("hypopg not installed (n=%d err=%v)", n, err)
+	}
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: g, dbType: "postgres"})
+	out, err := uc.AnalyzePerformance(context.Background(), "pg1", "validate_suggestions",
+		"SELECT * FROM hypo46 WHERE tenant_id = 3", 0, 0)
+	if err != nil {
+		t.Fatalf("validate_suggestions failed: %v", err)
+	}
+	if !strings.Contains(out, "USED") {
+		t.Fatalf("expected a USED verdict from planner-validated hypothetical index:\n%s", out)
+	}
+	if !strings.Contains(out, "CREATE INDEX ON hypo46 (tenant_id)") {
+		t.Errorf("expected the validated candidate rendered, got:\n%s", out)
+	}
+	// Nothing must persist after validation.
+	var idx int
+	if err := g.db.QueryRow(`SELECT count(*) FROM pg_indexes WHERE tablename='hypo46' AND indexname NOT LIKE 'hypo46_pkey%'`).Scan(&idx); err != nil || idx != 0 {
+		t.Errorf("hypothetical indexes leaked into the catalog: n=%d err=%v", idx, err)
+	}
+}

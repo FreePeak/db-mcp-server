@@ -64,6 +64,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 48 | CI green: digest-table grant for live advice tests | ✅ Shipped | [cycle-48](cycle-48-ci-grant-fix.md) |
 | 49 | Token benchmark re-verification + README drift fix (backlog #2 done) | ✅ Shipped | [cycle-49](cycle-49-token-benchmark-reverify.md) |
 | 50 | Verification depth: full suite under -race + whole-repo dead-code sweep clean | ✅ Shipped | [cycle-50](cycle-50-verification-depth.md) |
+| 51 | Planner-validated index suggestions via hypopg (`validate_suggestions`) | ✅ Shipped | [cycle-51](cycle-51-hypopg-validation.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -79,7 +80,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 1. Oracle engine-level read-only — fully done (cycle 44: fail-closed privilege audit + native oracle-free image)
 2. Token-efficiency benchmark — fully done (cycle 43 harness + cycle 49 re-verification: unified ~1.25–1.6k tok flat vs per-db ~800/db, 80% saving at 10 DBs)
 3. Merge PR #85 → tag release — done (merged 2026-08-22 with green CI; tagged v1.10.0/v1.11.0; CHANGELOG backfilled in cycle 45)
-4. Hypothetical-index tuning depth — fully done (cycles 17–18 composites + 19/23/40 workload-driven analysis + 42 constraint-aware coverage)
+4. Hypothetical-index tuning depth — fully done (cycles 17–18 composites + 19/23/40 workload-driven analysis + 42 constraint-aware coverage; planner-validated via hypopg since cycle 51)
 5. Column masking / governance features (Bytebase differentiator) — fully done (cycles 35 scoping + 36 core + 37 hardening + 39 live validation)
 6. FK referenced-table detail — fully done (cycle 15 + database-wide Mermaid relationship graph via performance tool format=mermaid)
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing
