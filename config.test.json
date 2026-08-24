@@ -1,0 +1,19 @@
+{
+    "connections": [
+        {
+            "id": "test_sqlite",
+            "type": "sqlite",
+            "name": "test_sqlite",
+            "database_path": "./data/app.db",
+            "journal_mode": "WAL",
+            "cache_size": 2000,
+            "read_only": false,
+            "use_modernc_driver": true,
+            "query_timeout": 30,
+            "max_open_conns": 1,
+            "max_idle_conns": 1,
+            "conn_max_lifetime_seconds": 300,
+            "conn_max_idle_time_seconds": 60
+        }
+    ]
+}

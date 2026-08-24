@@ -30,3 +30,9 @@ logs/
 .vscode/
 
 .kilocode/.worktrees/
+
+# Local build & test artifacts
+/db-mcp-server
+/data/
+*.db
+/test_sqlite

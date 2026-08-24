@@ -151,6 +151,27 @@ func TestIndexHealth_WithoutUsageStats(t *testing.T) {
 	}
 }
 
+// TestBloatFindings locks in cycle 28's dead-tuple and free-space logic:
+// ratio floor plus minimum-dead-tuples gate, and numeric type coercion.
+func TestBloatFindings(t *testing.T) {
+	pg := formatBloatFindings([]map[string]interface{}{
+		{"table_name": "hot", "n_live_tup": int64(1000), "n_dead_tup": float64(5000)}, // 83% -> flag
+		{"table_name": "small", "n_live_tup": int64(10), "n_dead_tup": int64(900)},    // below floor of dead tuples
+		{"table_name": "low", "n_live_tup": int64(9900), "n_dead_tup": int64(100)},    // 1% ratio
+	})
+	if len(pg) != 1 || !strings.Contains(pg[0], "BLOAT on hot") || !strings.Contains(pg[0], "VACUUM (ANALYZE) hot;") {
+		t.Errorf("expected single bloat finding for hot table, got: %v", pg)
+	}
+
+	my := formatMySQLBloatFindings([]map[string]interface{}{
+		{"TABLE_NAME": "orders", "ENGINE": "InnoDB", "DATA_FREE": int64(33554432)},
+		{"TABLE_NAME": "empty_free", "DATA_FREE": int64(0)},
+	})
+	if len(my) != 1 || !strings.Contains(my[0], "FRAGMENTATION on orders [InnoDB]") || !strings.Contains(my[0], "32.0 MB") {
+		t.Errorf("unexpected fragmentation finding: %v", my)
+	}
+}
+
 // TestRedundancyFindings_UniquenessGuard verifies a non-unique smaller
 // index under a unique larger one is flagged, but a unique smaller index
 // under a non-unique larger one is not (uniqueness cannot be recovered).

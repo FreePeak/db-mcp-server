@@ -77,10 +77,12 @@ func (uc *DatabaseUseCase) usageFindings(ctx context.Context, dbID, dbType strin
 		candidates = []string{
 			"SELECT relname AS table_name, indexrelname AS index_name FROM pg_stat_user_indexes WHERE schemaname = 'public' AND idx_scan = 0",
 			"SELECT i.indexrelid::regclass::text AS index_name FROM pg_index i WHERE NOT i.indisvalid",
+			"SELECT relname AS table_name, n_live_tup, n_dead_tup FROM pg_stat_user_tables WHERE schemaname = 'public' AND n_dead_tup >= 1000 ORDER BY n_dead_tup DESC LIMIT 20",
 		}
 	case "mysql":
 		candidates = []string{
 			"SELECT table_name, index_name FROM sys.schema_unused_indexes",
+			"SELECT table_name AS table_name, engine AS engine, data_free AS data_free FROM information_schema.tables WHERE data_free > 16777216 ORDER BY data_free DESC LIMIT 20",
 		}
 	default:
 		return nil, false // SQLite and unknown engines: no statistics catalogs
@@ -97,6 +99,10 @@ func (uc *DatabaseUseCase) usageFindings(ctx context.Context, dbID, dbType strin
 			findings = append(findings, formatUnusedFindings(rows)...)
 		case strings.Contains(q, "indisvalid"):
 			findings = append(findings, formatInvalidFindings(rows)...)
+		case strings.Contains(q, "n_dead_tup"):
+			findings = append(findings, formatBloatFindings(rows)...)
+		case strings.Contains(q, "data_free"):
+			findings = append(findings, formatMySQLBloatFindings(rows)...)
 		default:
 			findings = append(findings, formatMySQLUnusedFindings(rows)...)
 		}
@@ -158,6 +164,82 @@ func rowString(r map[string]interface{}, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// rowInt coerces common numeric cell types to int; missing cells read as 0.
+func rowInt(r map[string]interface{}, keys ...string) int64 {
+	for _, k := range keys {
+		v, ok := r[k]
+		if !ok {
+			continue
+		}
+		switch n := v.(type) {
+		case int64:
+			return n
+		case int:
+			return int64(n)
+		case float64:
+			return int64(n)
+		}
+	}
+	return 0
+}
+
+// bloatThreshold is the dead-to-live ratio above which a table is flagged,
+// alongside a floor so tiny tables with one or two dead rows stay quiet.
+const (
+	bloatRatioFloor    = 0.20
+	bloatMinDeadTuples = 1000
+)
+
+// formatBloatFindings renders PostgreSQL dead-tuple findings from
+// pg_stat_user_tables. High dead ratios mean autovacuum is falling behind;
+// the remedy is usually VACUUM ANALYZE, not index changes.
+func formatBloatFindings(rows []map[string]interface{}) []string {
+	var out []string
+	for _, r := range rows {
+		table := rowString(r, "table_name", "relname")
+		live := rowInt(r, "n_live_tup")
+		dead := rowInt(r, "n_dead_tup")
+		if table == "" || dead < bloatMinDeadTuples {
+			continue
+		}
+		total := live + dead
+		if total > 0 && float64(dead)/float64(total) < bloatRatioFloor {
+			continue
+		}
+		pct := 0.0
+		if total > 0 {
+			pct = float64(dead) / float64(total) * 100
+		}
+		out = append(out, fmt.Sprintf(
+			"BLOAT on %s: %d dead of %d tuple(s) (%.1f%%) — autovacuum may be behind:\n    VACUUM (ANALYZE) %s;",
+			table, dead, total, pct, table))
+	}
+	return out
+}
+
+// formatMySQLBloatFindings renders information_schema DATA_FREE findings.
+// DATA_FREE is a coarse signal (InnoDB reports free extents per tablespace);
+// it flags candidates for OPTIMIZE TABLE, not certainties.
+func formatMySQLBloatFindings(rows []map[string]interface{}) []string {
+	var out []string
+	for _, r := range rows {
+		table := rowString(r, "table_name", "TABLE_NAME")
+		engine := rowString(r, "engine", "ENGINE")
+		free := rowInt(r, "data_free", "DATA_FREE")
+		if table == "" || free <= 0 {
+			continue
+		}
+		note := ""
+		if engine != "" {
+			note = fmt.Sprintf(" [%s]", engine)
+		}
+		out = append(out, fmt.Sprintf(
+			"FRAGMENTATION on %s%s: %.1f MB reported free — candidate for OPTIMIZE TABLE if growth churn is high:",
+			table, note, float64(free)/(1024*1024)))
+	}
+	return out
 }
 
 // allTables enumerates user tables using the first candidate query that

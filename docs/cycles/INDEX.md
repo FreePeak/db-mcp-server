@@ -41,6 +41,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 25 | Statement-path tracking + reusable smoke script (`scripts/smoke.sh`) | ✅ Shipped | [cycle-25](cycle-25-smoke-script.md) |
 | 26 | Index health analysis (`index_health`): duplicates + redundant indexes | ✅ Shipped | [cycle-26](cycle-26-index-health.md) |
 | 27 | Usage-evidence findings: unused/invalid indexes from engine statistics | ✅ Shipped | [cycle-27](cycle-27-usage-evidence.md) |
+| 28 | Table bloat/fragmentation findings + repo hygiene + smoke config committed | ✅ Shipped | [cycle-28](cycle-28-bloat.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
