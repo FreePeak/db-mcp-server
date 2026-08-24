@@ -517,9 +517,17 @@ func NewDatabase(config Config) (Database, error) {
 
 // Connect establishes a connection to the database
 func (d *database) Connect() error {
-	db, err := sql.Open(d.driverName, d.dsn)
-	if err != nil {
-		return fmt.Errorf("failed to open database connection: %w", err)
+	var db *sql.DB
+	var err error
+	if d.config.Type == "oracle" && d.config.ReadOnly {
+		// go-ora has no DSN-level read-only switch, so engine-level
+		// enforcement happens per pooled session via a wrapped connector.
+		db = sql.OpenDB(newReadOnlySessionConnector(d.dsn))
+	} else {
+		db, err = sql.Open(d.driverName, d.dsn)
+		if err != nil {
+			return fmt.Errorf("failed to open database connection: %w", err)
+		}
 	}
 
 	// Configure connection pool

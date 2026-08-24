@@ -2,12 +2,12 @@ version: '3.8'
 
 services:
   oracle-xe:
-    image: gvenzl/oracle-xe:21-slim
+    image: gvenzl/oracle-free:23-slim
     container_name: db-mcp-oracle-test
     ports:
       - "1521:1521"
     environment:
-      # Oracle system password
+      # Oracle system password (image: oracle-free has native arm64 builds)
       ORACLE_PASSWORD: oracle
       # Default database name
       ORACLE_DATABASE: TESTDB
