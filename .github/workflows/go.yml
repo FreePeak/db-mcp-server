@@ -187,6 +187,9 @@ jobs:
         INSERT INTO orders (customer_id, region, total)
         WITH RECURSIVE seq AS (SELECT 1 AS i UNION ALL SELECT i+1 FROM seq WHERE i < 2000)
         SELECT i%100, CONCAT('r', i%5), i*1.0 FROM seq;" || echo "mysql seed skipped (already present?)"
+        # Live index-advice tests read statement digests; the service
+        # container only grants user1 access to db1 by default.
+        docker exec $MY_CONTAINER mysql -uroot -ppassword -e "GRANT SELECT ON performance_schema.events_statements_summary_by_digest TO 'user1'@'%';"
 
     - name: Run Live-Engine Regression Tests
       run: |
