@@ -21,10 +21,55 @@ func TestSuggestIndexes_EndToEnd_SuggestsUnindexedColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("suggest_indexes failed: %v", err)
 	}
-	for _, col := range []string{"customer_id", "status"} {
-		if !strings.Contains(out, "CREATE INDEX idx_orders_"+col+" ON orders ("+col+")") {
-			t.Errorf("expected suggestion for orders.%s, got:\n%s", col, out)
-		}
+	// Two equality predicates fold into one composite index instead of two
+	// single-column suggestions.
+	if !strings.Contains(out, "CREATE INDEX idx_orders_customer_id_status ON orders (customer_id, status)") {
+		t.Errorf("expected composite suggestion for (customer_id, status), got:\n%s", out)
+	}
+	if strings.Contains(out, "idx_orders_status ON orders (status)") {
+		t.Errorf("expected composite members not re-suggested singly, got:\n%s", out)
+	}
+}
+
+// TestSuggestIndexes_CompositeEqualityThenSort locks in btree column order:
+// equality columns first, then ORDER BY columns.
+func TestSuggestIndexes_CompositeEqualityThenSort(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE events (id INTEGER PRIMARY KEY, tenant_id INTEGER, kind TEXT, created_at TEXT)`); err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	out, err := uc.SuggestIndexes(context.Background(), "db",
+		`SELECT * FROM events WHERE tenant_id = 7 ORDER BY created_at DESC`)
+	if err != nil {
+		t.Fatalf("suggest_indexes failed: %v", err)
+	}
+	if !strings.Contains(out, "(tenant_id, created_at)") {
+		t.Fatalf("expected composite (tenant_id, created_at), got:\n%s", out)
+	}
+}
+
+// TestSuggestIndexes_PureRangeQueriesStaySingleColumn checks that range-only
+// predicates never form composites — there is no equality prefix to lead one.
+func TestSuggestIndexes_PureRangeQueriesStaySingleColumn(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE products (id INTEGER PRIMARY KEY, price REAL, stock INTEGER)`); err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	out, err := uc.SuggestIndexes(context.Background(), "db",
+		`SELECT * FROM products WHERE price > 10 AND stock < 5`)
+	if err != nil {
+		t.Fatalf("suggest_indexes failed: %v", err)
+	}
+	if !strings.Contains(out, "idx_products_price ON products (price)") ||
+		!strings.Contains(out, "idx_products_stock ON products (stock)") {
+		t.Fatalf("expected separate single-column suggestions, got:\n%s", out)
+	}
+	if strings.Contains(out, ", ") && strings.Contains(out, "CREATE INDEX idx_products_price_stock") {
+		t.Errorf("range-only query must not produce a composite, got:\n%s", out)
 	}
 }
 
