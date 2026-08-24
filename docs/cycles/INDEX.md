@@ -56,6 +56,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 40 | Duration-weighted workload ranking — engine total time beats traffic counts (backlog #8 done) | ✅ Shipped | [cycle-40](cycle-40-duration-weighted-workload.md) |
 | 41 | README environment-variables section — closes backlog #10 | ✅ Shipped | [cycle-41](cycle-41-env-vars-doc.md) |
 | 42 | Constraint-aware index coverage — PK/UNIQUE columns count as covered (backlog #4 done) | ✅ Shipped | [cycle-42](cycle-42-constraint-aware-coverage.md) |
+| 43 | Token-benchmark wire-payload harness + refreshed numbers (backlog #2 hardening) | ✅ Shipped | [cycle-43](cycle-43-token-benchmark-harness.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -69,11 +70,11 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 ## Standing Backlog (fed by each cycle)
 
 1. Oracle engine-level read-only enforcement (needs live Oracle container)
-2. Token-efficiency benchmark: unified vs per-db vs DBHub claim
+2. Token-efficiency benchmark: unified vs per-db vs DBHub claim — re-measurable via scripts/token-benchmark.sh (cycle 43)
 3. Merge PR #85 → tag v1.10.0 when CI green
 4. Hypothetical-index tuning depth — fully done (cycles 17–18 composites + 19/23/40 workload-driven analysis + 42 constraint-aware coverage)
 5. Column masking / governance features (Bytebase differentiator) — scoped in cycle 35: [docs/design/column-masking-scoping.md](../design/column-masking-scoping.md); name-based v1 needs no SQL parsing; 3-cycle breakdown inside
-6. FK referenced-table detail — done (cycle 15); multi-table relationship graph remains
+6. FK referenced-table detail — fully done (cycle 15 + database-wide Mermaid relationship graph via performance tool format=mermaid)
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing
 8. Workload-driven tuning — fully done (cycles 19, 23, 40: execution weighting → composites → duration-weighted ranking)
 9. Wire suggest_indexes into explain/slow-query output — done for explain (cycle 38); slow-queries per-statement advice deferred (multiplies catalog reads; interactive path covered)
