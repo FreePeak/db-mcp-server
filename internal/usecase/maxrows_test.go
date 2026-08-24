@@ -51,7 +51,7 @@ func newFakeRows(n int) *fakeRows {
 // TestFormatQueryResults_NoLimit verifies unlimited output when maxRows <= 0.
 func TestFormatQueryResults_NoLimit(t *testing.T) {
 	rows := newFakeRows(5)
-	out, err := formatQueryResults(rows, 0)
+	out, err := formatQueryResults(rows, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestFormatQueryResults_NoLimit(t *testing.T) {
 // a query hitting a billion-row table must not flood the agent context window.
 func TestFormatQueryResults_TruncatesAtMaxRows(t *testing.T) {
 	rows := newFakeRows(100)
-	out, err := formatQueryResults(rows, 3)
+	out, err := formatQueryResults(rows, 3, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestFormatQueryResults_TruncatesAtMaxRows(t *testing.T) {
 // TestFormatQueryResults_LimitAboveRowCount ensures no false truncation.
 func TestFormatQueryResults_LimitAboveRowCount(t *testing.T) {
 	rows := newFakeRows(4)
-	out, err := formatQueryResults(rows, 10)
+	out, err := formatQueryResults(rows, 10, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestFormatQueryResults_ScanErrorPropagates(t *testing.T) {
 		data:    [][]interface{}{{"x"}},
 		scanErr: fmt.Errorf("boom"),
 	}
-	if _, err := formatQueryResults(rows, 0); err == nil || !strings.Contains(err.Error(), "boom") {
+	if _, err := formatQueryResults(rows, 0, nil); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("expected scan error to propagate, got %v", err)
 	}
 }

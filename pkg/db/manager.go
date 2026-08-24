@@ -46,6 +46,19 @@ type DatabaseConnectionConfig struct {
 
 	// Result guardrails (all engines)
 	MaxRows int `json:"max_rows,omitempty"` // Maximum rows returned per query; 0 means unlimited
+
+	// Result masking: output columns whose name matches a rule's pattern
+	// are masked before results leave this process. Name-based by design —
+	// no SQL parsing; see docs/design/column-masking-scoping.md.
+	MaskingRules []MaskingRule `json:"masking_rules,omitempty"`
+}
+
+// MaskingRule masks values of result columns whose name matches Pattern.
+// The first matching rule wins.
+type MaskingRule struct {
+	Pattern  string `json:"pattern"`         // regex matched against output column names
+	Strategy string `json:"strategy"`        // "fixed_string" | "null"
+	Value    string `json:"value,omitempty"` // replacement text for fixed_string
 }
 
 // MultiDBConfig represents the configuration for multiple database connections
@@ -221,6 +234,7 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 
 	// Result guardrails (all engines)
 	dbConfig.MaxRows = cfg.MaxRows
+	dbConfig.MaskingRules = cfg.MaskingRules
 
 	// Connection pool settings
 	if cfg.MaxOpenConns > 0 {

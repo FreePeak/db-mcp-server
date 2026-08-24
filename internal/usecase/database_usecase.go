@@ -4,12 +4,14 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/FreePeak/db-mcp-server/internal/domain"
 	"github.com/FreePeak/db-mcp-server/internal/logger"
+	"github.com/FreePeak/db-mcp-server/pkg/db"
 	"github.com/FreePeak/db-mcp-server/pkg/dbtools"
 )
 
@@ -285,7 +287,7 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 				logger.Error("error closing rows: %v", closeErr)
 			}
 		}()
-		s, ferr := formatQueryResults(rows, db.MaxRows())
+		s, ferr := formatQueryResults(rows, db.MaxRows(), databaseMaskingRules(db))
 		if ferr != nil {
 			return nil, ferr
 		}
@@ -299,14 +301,78 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 	return out, nil
 }
 
+// databaseMaskingRules fetches a database's configured masking rules when
+// its adapter exposes them; engines or fakes without rules mask nothing.
+func databaseMaskingRules(d domain.Database) []db.MaskingRule {
+	if m, ok := d.(interface{ MaskingRules() []db.MaskingRule }); ok {
+		return m.MaskingRules()
+	}
+	return nil
+}
+
+// matchMaskingRules resolves each output column to the first rule whose
+// pattern matches its name. Returns nil when there is nothing to apply.
+// Invalid patterns never match — config validation reports them, this
+// hot path just skips.
+func matchMaskingRules(columns []string, rules []db.MaskingRule) []*db.MaskingRule {
+	if len(rules) == 0 || len(columns) == 0 {
+		return nil
+	}
+	type compiledRule struct {
+		re   *regexp.Regexp
+		rule *db.MaskingRule
+	}
+	compiled := make([]compiledRule, 0, len(rules))
+	for i := range rules {
+		re, err := regexp.Compile(rules[i].Pattern)
+		if err != nil {
+			continue
+		}
+		compiled = append(compiled, compiledRule{re: re, rule: &rules[i]})
+	}
+	out := make([]*db.MaskingRule, len(columns))
+	matched := false
+	for ci, col := range columns {
+		for _, cr := range compiled {
+			if cr.re.MatchString(col) {
+				out[ci] = cr.rule
+				matched = true
+				break
+			}
+		}
+	}
+	if !matched {
+		return nil
+	}
+	return out
+}
+
+// applyMaskStrategy replaces one cell's value per the rule's strategy:
+// fixed_string swaps in the configured replacement, null blanks the cell
+// (rendered as NULL), unknown strategies pass through untouched so a
+// typo degrades to visible data rather than silent corruption.
+func applyMaskStrategy(rule *db.MaskingRule, val interface{}) interface{} {
+	switch rule.Strategy {
+	case "fixed_string":
+		return rule.Value
+	case "null":
+		return nil
+	default:
+		return val
+	}
+}
+
 // formatQueryResults renders query results as text, stopping after maxRows
 // rows when maxRows > 0 so large result sets cannot flood the client's
-// context window. The caller owns closing rows.
-func formatQueryResults(rows domain.Rows, maxRows int) (string, error) {
+// context window. Values in columns matched by masks are replaced before
+// rendering so sensitive data never leaves this process. The caller owns
+// closing rows.
+func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule) (string, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return "", fmt.Errorf("failed to get column names: %w", err)
 	}
+	colMasks := matchMaskingRules(columns, masks)
 
 	var resultText strings.Builder
 	resultText.WriteString("Results:\n\n")
@@ -336,6 +402,9 @@ func formatQueryResults(rows domain.Rows, maxRows int) (string, error) {
 		var rowText []string
 		for i := range columns {
 			val := values[i]
+			if colMasks != nil && colMasks[i] != nil {
+				val = applyMaskStrategy(colMasks[i], val)
+			}
 			if val == nil {
 				rowText = append(rowText, "NULL")
 			} else {

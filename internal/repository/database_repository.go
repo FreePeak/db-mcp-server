@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/FreePeak/db-mcp-server/internal/domain"
+	"github.com/FreePeak/db-mcp-server/pkg/db"
 	"github.com/FreePeak/db-mcp-server/pkg/dbtools"
 )
 
@@ -141,6 +142,16 @@ func (a *DatabaseAdapter) QueryTimeout() int {
 		return t.QueryTimeout()
 	}
 	return 0
+}
+
+// MaskingRules returns the configured result-masking rules for this
+// database, mirroring MaxRows/QueryTimeout so guardrails are observable
+// above the repository layer.
+func (a *DatabaseAdapter) MaskingRules() []db.MaskingRule {
+	if m, ok := a.db.(interface{ MaskingRules() []db.MaskingRule }); ok {
+		return m.MaskingRules()
+	}
+	return nil
 }
 
 // Ping probes liveness of the underlying connection pool.

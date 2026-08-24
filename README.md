@@ -113,6 +113,7 @@ Protect agent sessions against runaway queries and accidental writes:
 |---------|-------|--------|
 | `"read_only": true` | per database | Blocks write statements (`INSERT`, `UPDATE`, `DELETE`, DDL, data-modifying CTEs, stacked writes) through **both** query and execute tools, **and** enforces rejection at the database engine itself on PostgreSQL/TimescaleDB (`default_transaction_read_only=on`) and MySQL (`transaction_read_only=1`); SQLite opens `mode=ro`. Classification strips comments and string literals and defaults to deny for unrecognized statements. |
 | `"max_rows": 1000` | per database | Truncates result sets at N rows and appends an explicit `[Truncated]` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. |
+| `"masking_rules": [...]` | per database | Masks values of result columns whose **name** matches a rule's regex before they leave the server — applies to every query shape including `SELECT *`. Strategies: `"fixed_string"` (replace with `value`) and `"null"`. First matching rule wins; renaming a column with an alias bypasses name matching by design. See [docs/design/column-masking-scoping.md](docs/design/column-masking-scoping.md). |
 | `"query_timeout": 30` | per database | Cancels statements that exceed the timeout in seconds; enforced at the repository layer for every tool (queries, statements, transactions, explain, schema inspection). Unset defaults to 30s; `-1` disables. Env-only deployments can set `QUERY_TIMEOUT_SECONDS` to fill connections without an explicit value (JSON keeps precedence). |
 
 > **Defense in depth**: read-only is enforced in three layers — application classifier, engine session defaults, and (recommended) least-privilege database users. Oracle currently relies on the classifier plus user privileges.
@@ -233,7 +234,11 @@ Create a `config.json` file with your database connections:
       "conn_max_lifetime_seconds": 300,
       "conn_max_idle_time_seconds": 60,
       "read_only": false,
-      "max_rows": 1000
+      "max_rows": 1000,
+      "masking_rules": [
+        { "pattern": "(?i)email", "strategy": "fixed_string", "value": "***MASKED***" },
+        { "pattern": "(?i)(ssn|tax_id)", "strategy": "null" }
+      ]
     },
     {
       "id": "postgres1",

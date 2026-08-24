@@ -49,6 +49,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 33 | Repeatable live-engine setup script (`scripts/live-db-setup.sh`) | ✅ Shipped | [cycle-33](cycle-33-live-setup-script.md) |
 | 34 | Live-engine regression tests wired into CI (seed + port mappings) | ✅ Shipped | [cycle-34](cycle-34-ci-live-tests.md) |
 | 35 | Column masking scoping doc — name-based v1 needs no SQL parsing | ✅ Shipped | [cycle-35](cycle-35-masking-scoping.md) |
+| 36 | Column masking core: name-based rules wired into ExecuteQuery (Masking Cycle A) | ✅ Shipped | [cycle-36](cycle-36-masking-core.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

@@ -86,6 +86,10 @@ type Config struct {
 	// Result guardrails (all engines)
 	MaxRows int // Maximum rows returned per query; 0 means unlimited
 
+	// Result masking: output columns whose name matches a rule's pattern
+	// are masked before results leave this process.
+	MaskingRules []MaskingRule
+
 	// Oracle specific options
 	ServiceName     string // Oracle service name (preferred over SID)
 	SID             string // Oracle SID (legacy)
@@ -734,4 +738,10 @@ func (d *database) IsReadOnly() bool {
 // MaxRows returns the configured query row limit. Zero means unlimited.
 func (d *database) MaxRows() int {
 	return d.config.MaxRows
+}
+
+// MaskingRules returns the configured result-masking rules for this
+// database. Empty means no masking is applied.
+func (d *database) MaskingRules() []MaskingRule {
+	return d.config.MaskingRules
 }
