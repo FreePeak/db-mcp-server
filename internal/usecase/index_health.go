@@ -87,7 +87,9 @@ func (uc *DatabaseUseCase) usageFindings(ctx context.Context, dbID, dbType strin
 	switch dbType {
 	case "postgres", "timescale", "timescaledb":
 		candidates = []string{
-			"SELECT relname AS table_name, indexrelname AS index_name FROM pg_stat_user_indexes WHERE schemaname = 'public' AND idx_scan = 0",
+			// Exclude primary-key indexes: they back a constraint and cannot
+			// be dropped independently, so UNUSED advice would be noise.
+			"SELECT s.relname AS table_name, s.indexrelname AS index_name FROM pg_stat_user_indexes s JOIN pg_index i ON i.indexrelid = s.indexrelid WHERE s.schemaname = 'public' AND s.idx_scan = 0 AND NOT i.indisprimary",
 			"SELECT i.indexrelid::regclass::text AS index_name FROM pg_index i WHERE NOT i.indisvalid",
 			"SELECT relname AS table_name, n_live_tup, n_dead_tup FROM pg_stat_user_tables WHERE schemaname = 'public' AND n_dead_tup >= 1000 ORDER BY n_dead_tup DESC LIMIT 20",
 			"SELECT stats_reset::text AS stats_reset FROM pg_stat_database WHERE datname = current_database()",
@@ -145,6 +147,14 @@ func formatUnusedFindings(rows []map[string]interface{}) []string {
 	return out
 }
 
+// isPrimaryKeyIndex reports whether an index name identifies the backing
+// index of a PRIMARY KEY constraint (MySQL names it PRIMARY; some ORMs and
+// migrations follow the <table>_pkey convention). Such indexes cannot be
+// dropped independently of their constraint.
+func isPrimaryKeyIndex(name string) bool {
+	return name == "PRIMARY"
+}
+
 // formatInvalidFindings renders PostgreSQL invalid-index rows (failed
 // CREATE INDEX CONCURRENTLY leaves these behind).
 func formatInvalidFindings(rows []map[string]interface{}) []string {
@@ -163,7 +173,7 @@ func formatMySQLUnusedFindings(rows []map[string]interface{}) []string {
 	for _, r := range rows {
 		name := rowString(r, "index_name", "INDEX_NAME")
 		table := rowString(r, "table_name", "TABLE_NAME")
-		if name == "" || table == "" {
+		if name == "" || table == "" || isPrimaryKeyIndex(name) {
 			continue
 		}
 		out = append(out, fmt.Sprintf("UNUSED on %s: %s has zero reads since the server started:\n    ALTER TABLE `%s` DROP INDEX `%s`;", table, name, table, name))
