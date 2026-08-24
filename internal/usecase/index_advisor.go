@@ -306,6 +306,7 @@ func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbTyp
 			continue // cannot compare; skip silently
 		}
 		indexedText := strings.ToLower(fmt.Sprintf("%v", existing))
+		ccols := uc.constraintCoveredCols(ctx, dbID, strings.ToLower(dbType), table)
 
 		cols := make([]string, 0, len(rc.cols))
 		valid := true
@@ -317,7 +318,7 @@ func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbTyp
 				valid = false
 			}
 		}
-		if valid && len(cols) >= 2 && !indexCovers(indexedText, cols[0]) {
+		if valid && len(cols) >= 2 && !indexCovers(indexedText, cols[0]) && !ccols[cols[0]] {
 			suggestions++
 			name := append([]string{table}, cols...)
 			fmt.Fprintf(&b, "  CREATE INDEX idx_%s ON %s (%s);%s\n",
@@ -338,6 +339,7 @@ func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbTyp
 			continue // cannot compare; skip silently
 		}
 		indexedText := strings.ToLower(fmt.Sprintf("%v", existing))
+		ccols := uc.constraintCoveredCols(ctx, dbID, strings.ToLower(dbType), table)
 		knownCols, colErr := uc.tableColumns(ctx, dbID, strings.ToLower(dbType), table)
 
 		handled := map[string]bool{}
@@ -369,7 +371,7 @@ func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbTyp
 
 		for _, list := range [][]colHit{eq, rng, srt, jn} {
 			for _, ch := range list {
-				if handled[ch.col] || indexCovers(indexedText, ch.col) {
+				if handled[ch.col] || indexCovers(indexedText, ch.col) || ccols[ch.col] {
 					continue
 				}
 				suggestions++
@@ -518,6 +520,28 @@ func extractAliasMap(query string) map[string]string {
 		table := stripSchema(m[1])
 		if _, dup := out[alias]; !dup && isPlainIdentifier(table) {
 			out[alias] = table
+		}
+	}
+	return out
+}
+
+// constraintCoveredCols returns columns already enforced unique by
+// PRIMARY KEY or UNIQUE constraints — indexes the engine maintains
+// automatically, so proposing one would duplicate work. This complements
+// indexQueries: SQLite autoindexes carry NULL sql in sqlite_master and
+// never appear in definition-based index listings.
+func (uc *DatabaseUseCase) constraintCoveredCols(ctx context.Context, dbID, dbType, table string) map[string]bool {
+	rows, err := uc.queryTableMetadata(ctx, dbID, constraintQueries(dbType, table))
+	if err != nil {
+		return nil // cannot read constraints; suggest as before rather than blind
+	}
+	out := map[string]bool{}
+	for _, r := range rows {
+		switch strings.ToUpper(rowString(r, "constraint_type", "CONSTRAINT_TYPE")) {
+		case "PRIMARY KEY", "UNIQUE":
+			if col := strings.ToLower(rowString(r, "column_name", "COLUMN_NAME")); col != "" {
+				out[col] = true
+			}
 		}
 	}
 	return out

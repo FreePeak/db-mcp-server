@@ -192,3 +192,36 @@ func TestSuggestIndexes_InputGuards(t *testing.T) {
 		t.Fatalf("expected no-tables notice for SELECT 1, got:\n%s", out)
 	}
 }
+
+// TestSuggestIndexes_ConstraintBackedColumns locks in cycle 42's
+// constraint-aware coverage: columns already enforced by PRIMARY KEY or
+// UNIQUE constraints need no new index, even when the engine's index
+// catalog hides constraint-backed indexes (SQLite autoindexes have NULL
+// sql and never reach parseIndexRows).
+func TestSuggestIndexes_ConstraintBackedColumns(t *testing.T) {
+	raw := openSQLiteForTest(t)
+	for _, s := range []string{
+		`CREATE TABLE sessions (id INTEGER PRIMARY KEY, token TEXT UNIQUE, payload TEXT)`,
+	} {
+		if _, err := raw.Exec(s); err != nil {
+			t.Fatalf("seed failed: %v", err)
+		}
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+
+	out, err := uc.SuggestIndexes(context.Background(), "db", "SELECT * FROM sessions WHERE token = 'x'")
+	if err != nil {
+		t.Fatalf("suggest failed: %v", err)
+	}
+	if strings.Contains(out, "CREATE INDEX") {
+		t.Errorf("UNIQUE-constrained column must count as covered, got:\n%s", out)
+	}
+
+	out, err = uc.SuggestIndexes(context.Background(), "db", "SELECT * FROM sessions WHERE id = 7")
+	if err != nil {
+		t.Fatalf("suggest failed: %v", err)
+	}
+	if strings.Contains(out, "CREATE INDEX") {
+		t.Errorf("PK column must count as covered, got:\n%s", out)
+	}
+}

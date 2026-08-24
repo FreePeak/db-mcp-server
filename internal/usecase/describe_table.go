@@ -291,6 +291,9 @@ ORDER BY tc.CONSTRAINT_TYPE, kcu.ORDINAL_POSITION`, table)}
 	case "sqlite", "sqlite3":
 		return []string{
 			fmt.Sprintf("SELECT 'PRIMARY KEY' AS constraint_type, name AS constraint_name, name AS column_name FROM pragma_table_info('%s') WHERE pk > 0", table),
+			// UNIQUE constraints materialize as autoindexes with NULL sql,
+			// invisible to sqlite_master-based index listings.
+			fmt.Sprintf("SELECT 'UNIQUE' AS constraint_type, ii.name AS column_name FROM pragma_index_list('%s') pl JOIN pragma_index_info(pl.name) ii ON 1=1 WHERE pl.origin = 'u'", table),
 			fmt.Sprintf("SELECT 'FOREIGN KEY' AS constraint_type, \"table\" AS referenced_table, \"to\" AS referenced_column, \"from\" AS column_name FROM pragma_foreign_key_list('%s')", table),
 		}
 	case "oracle":
