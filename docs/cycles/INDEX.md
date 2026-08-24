@@ -63,6 +63,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 47 | Oracle init scripts connect to TESTDB — fresh-volume reproducibility verified | ✅ Shipped | [cycle-47](cycle-47-oracle-init-fix.md) |
 | 48 | CI green: digest-table grant for live advice tests | ✅ Shipped | [cycle-48](cycle-48-ci-grant-fix.md) |
 | 49 | Token benchmark re-verification + README drift fix (backlog #2 done) | ✅ Shipped | [cycle-49](cycle-49-token-benchmark-reverify.md) |
+| 50 | Verification depth: full suite under -race + whole-repo dead-code sweep clean | ✅ Shipped | [cycle-50](cycle-50-verification-depth.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
