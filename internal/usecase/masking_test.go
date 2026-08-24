@@ -83,6 +83,10 @@ func TestApplyMaskStrategy(t *testing.T) {
 	if got, _ := applyMaskStrategy(partial, "日本語です"); got != "*本語です" {
 		t.Errorf("partial must count runes not bytes, got %q", got)
 	}
+	// Drivers hand back []byte (MySQL VARCHAR); decode as text, never %v.
+	if got, _ := applyMaskStrategy(partial, []byte("5551234567")); got != "******4567" {
+		t.Errorf("partial must decode []byte as text, got %q", got)
+	}
 
 	unknown := &db.MaskingRule{Strategy: "typo"}
 	got, applied := applyMaskStrategy(unknown, "keep")

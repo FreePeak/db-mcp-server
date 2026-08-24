@@ -369,9 +369,19 @@ func applyMaskStrategy(rule *db.MaskingRule, val interface{}) (interface{}, bool
 // maskPartial keeps the last keep_last characters of the value's string
 // form and replaces everything before them with '*'. Values no longer than
 // keep_last are fully masked so short cells cannot dodge the rule; runes
-// are counted, not bytes, so multibyte text is never split.
+// are counted, not bytes, so multibyte text is never split. Drivers hand
+// back engine-specific types — notably []byte for MySQL VARCHAR — which
+// must be decoded as text before any rune arithmetic.
 func maskPartial(rule *db.MaskingRule, val interface{}) string {
-	runes := []rune(fmt.Sprintf("%v", val))
+	var s string
+	switch v := val.(type) {
+	case nil:
+	case []byte:
+		s = string(v)
+	default:
+		s = fmt.Sprintf("%v", v)
+	}
+	runes := []rune(s)
 	keep := rule.KeepLast
 	if keep <= 0 || len(runes) <= keep {
 		return strings.Repeat("*", len(runes))

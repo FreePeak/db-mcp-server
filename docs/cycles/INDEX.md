@@ -52,6 +52,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 36 | Column masking core: name-based rules wired into ExecuteQuery (Masking Cycle A) | ✅ Shipped | [cycle-36](cycle-36-masking-core.md) |
 | 37 | Masking hardening: fail-closed validation, partial strategy, masked-cell counts (Cycle B) | ✅ Shipped | [cycle-37](cycle-37-masking-hardening.md) |
 | 38 | Explain output carries index suggestions — closes backlog #9 loop | ✅ Shipped | [cycle-38](cycle-38-explain-advice-wiring.md) |
+| 39 | Live-engine masking validation — catches MySQL []byte driver bug in partial strategy | ✅ Shipped | [cycle-39](cycle-39-masking-live-validation.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
