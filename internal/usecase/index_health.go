@@ -39,10 +39,12 @@ func (uc *DatabaseUseCase) IndexHealth(ctx context.Context, dbID string) (string
 	}
 
 	usageConsulted := false
+	resetTS := ""
 	usage, ok := uc.usageFindings(ctx, dbID, dbType)
 	if ok {
 		usageConsulted = true
-		findings = append(findings, usage...)
+		resetTS = usage.resetTS
+		findings = append(findings, usage.findings...)
 	}
 
 	if len(findings) == 0 {
@@ -56,8 +58,11 @@ func (uc *DatabaseUseCase) IndexHealth(ctx context.Context, dbID string) (string
 		b.WriteString("  " + f + "\n")
 	}
 	if usageConsulted {
-		b.WriteString("\nUNUSED counts reflect scans since last statistics reset or server start;")
-		b.WriteString("\na recently created index can legitimately show zero scans.")
+		b.WriteString("\nUNUSED counts reflect scans since last statistics reset or server start")
+		if resetTS != "" {
+			fmt.Fprintf(&b, " (statistics were last reset at %s)", resetTS)
+		}
+		b.WriteString(";\na recently created index can legitimately show zero scans.")
 	} else {
 		b.WriteString("\nUsage-based findings need engine statistics")
 		b.WriteString(" (pg_stat_user_indexes / sys.schema_unused_indexes); this view ran without them.")
@@ -65,12 +70,19 @@ func (uc *DatabaseUseCase) IndexHealth(ctx context.Context, dbID string) (string
 	return b.String(), nil
 }
 
+// usageStats carries statistics-catalog findings plus the observation
+// window's reset timestamp when the engine reports one.
+type usageStats struct {
+	findings []string
+	resetTS  string
+}
+
 // usageFindings consults engine statistics catalogs for evidence the static
 // structure pass cannot see: never-scanned indexes (PostgreSQL
-// pg_stat_user_indexes, MySQL sys.schema_unused_indexes) and invalid
-// indexes (PostgreSQL pg_index.indisvalid). Returns ok=false when the
-// engine exposes no such statistics or every catalog read failed.
-func (uc *DatabaseUseCase) usageFindings(ctx context.Context, dbID, dbType string) ([]string, bool) {
+// pg_stat_user_indexes, MySQL sys.schema_unused_indexes), invalid indexes
+// (PostgreSQL pg_index.indisvalid), and bloat signals. Returns ok=false
+// when the engine exposes no such statistics or every catalog read failed.
+func (uc *DatabaseUseCase) usageFindings(ctx context.Context, dbID, dbType string) (usageStats, bool) {
 	var candidates []string
 	switch dbType {
 	case "postgres", "timescale", "timescaledb":
@@ -78,6 +90,7 @@ func (uc *DatabaseUseCase) usageFindings(ctx context.Context, dbID, dbType strin
 			"SELECT relname AS table_name, indexrelname AS index_name FROM pg_stat_user_indexes WHERE schemaname = 'public' AND idx_scan = 0",
 			"SELECT i.indexrelid::regclass::text AS index_name FROM pg_index i WHERE NOT i.indisvalid",
 			"SELECT relname AS table_name, n_live_tup, n_dead_tup FROM pg_stat_user_tables WHERE schemaname = 'public' AND n_dead_tup >= 1000 ORDER BY n_dead_tup DESC LIMIT 20",
+			"SELECT stats_reset::text AS stats_reset FROM pg_stat_database WHERE datname = current_database()",
 		}
 	case "mysql":
 		candidates = []string{
@@ -85,10 +98,10 @@ func (uc *DatabaseUseCase) usageFindings(ctx context.Context, dbID, dbType strin
 			"SELECT table_name AS table_name, engine AS engine, data_free AS data_free FROM information_schema.tables WHERE data_free > 16777216 ORDER BY data_free DESC LIMIT 20",
 		}
 	default:
-		return nil, false // SQLite and unknown engines: no statistics catalogs
+		return usageStats{}, false // SQLite and unknown engines: no statistics catalogs
 	}
 
-	var findings []string
+	var st usageStats
 	for _, q := range candidates {
 		rows, err := uc.queryTableMetadata(ctx, dbID, []string{q})
 		if err != nil {
@@ -96,18 +109,22 @@ func (uc *DatabaseUseCase) usageFindings(ctx context.Context, dbID, dbType strin
 		}
 		switch {
 		case strings.Contains(q, "idx_scan"):
-			findings = append(findings, formatUnusedFindings(rows)...)
+			st.findings = append(st.findings, formatUnusedFindings(rows)...)
 		case strings.Contains(q, "indisvalid"):
-			findings = append(findings, formatInvalidFindings(rows)...)
+			st.findings = append(st.findings, formatInvalidFindings(rows)...)
 		case strings.Contains(q, "n_dead_tup"):
-			findings = append(findings, formatBloatFindings(rows)...)
+			st.findings = append(st.findings, formatBloatFindings(rows)...)
+		case strings.Contains(q, "stats_reset"):
+			if len(rows) > 0 {
+				st.resetTS = rowString(rows[0], "stats_reset")
+			}
 		case strings.Contains(q, "data_free"):
-			findings = append(findings, formatMySQLBloatFindings(rows)...)
+			st.findings = append(st.findings, formatMySQLBloatFindings(rows)...)
 		default:
-			findings = append(findings, formatMySQLUnusedFindings(rows)...)
+			st.findings = append(st.findings, formatMySQLUnusedFindings(rows)...)
 		}
 	}
-	return findings, true
+	return st, true
 }
 
 // formatUnusedFindings renders PostgreSQL never-scanned index rows.

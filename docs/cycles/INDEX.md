@@ -42,6 +42,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 26 | Index health analysis (`index_health`): duplicates + redundant indexes | ✅ Shipped | [cycle-26](cycle-26-index-health.md) |
 | 27 | Usage-evidence findings: unused/invalid indexes from engine statistics | ✅ Shipped | [cycle-27](cycle-27-usage-evidence.md) |
 | 28 | Table bloat/fragmentation findings + repo hygiene + smoke config committed | ✅ Shipped | [cycle-28](cycle-28-bloat.md) |
+| 29 | UNUSED observation window (pg stats_reset) + README currency for index_health | ✅ Shipped | [cycle-29](cycle-29-reset-window.md) |
 
 ## Competitive Baseline (researched 2026-08)
 

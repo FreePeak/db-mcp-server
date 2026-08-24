@@ -505,7 +505,7 @@ For each connected database, DB MCP Server automatically generates these special
 
 | Tool Name | Description |
 |-----------|-------------|
-| `performance_<db_id>` | Analyze query performance via actions: `stats` / `slow_queries` (in-process tracker), `engine_slow_queries` (pg_stat_statements / MySQL digest tables), `suggest` (static SQL lint), `suggest_indexes` (heuristic CREATE INDEX advice for one statement, equality-first composites, verify with EXPLAIN), `workload_suggestions` (same analysis across the top-N expensive workload statements, annotated with per-statement coverage), `reset` |
+| `performance_<db_id>` | Analyze query performance via actions: `stats` / `slow_queries` (in-process tracker), `engine_slow_queries` (pg_stat_statements / MySQL digest tables), `suggest` (static SQL lint), `suggest_indexes` (heuristic CREATE INDEX advice for one statement, equality-first composites, verify with EXPLAIN), `workload_suggestions` (same analysis across the top-N expensive workload statements, weighted by executions), `index_health` (duplicate/redundant/unused/invalid indexes and table bloat findings from catalogs; usage evidence where engine statistics exist), `reset` |
 | `explain_<db_id>` | Show the execution plan for a SQL statement without running it; `analyze: true` executes with timing/buffer stats (PostgreSQL/MySQL). Writes stay blocked on read-only databases |
 | `describe_<db_id>` | Inspect one table's columns, indexes, and row estimate via engine catalog queries |
 | `health_<db_id>` | Report connectivity, ping latency, connection-pool state, and engine stats (PostgreSQL buffer-cache hit ratio, MySQL InnoDB buffer efficiency) |
