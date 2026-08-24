@@ -107,8 +107,9 @@ func TestTimeSeriesQueryTool(t *testing.T) {
 			{"time_bucket": "2023-01-02T00:00:00Z", "avg_temp": 23.1, "count": 12}
 		]`
 
-		// Set up expectations for the mock
-		mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.AnythingOfType("string"), mock.Anything).
+		// Set up expectations for the mock. Pure SELECTs must go through
+		// ExecuteQuery so the tool stays available on read_only databases.
+		mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.AnythingOfType("string"), mock.Anything).
 			Return(sampleResult, nil).Once()
 
 		// Create a request with time_series_query operation
@@ -150,8 +151,9 @@ func TestTimeSeriesQueryTool(t *testing.T) {
 			{"time_bucket": "2023-01-02T00:00:00Z", "avg_temp": 23.1, "prev_avg": 22.5}
 		]`
 
-		// Set up expectations for the mock
-		mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.AnythingOfType("string"), mock.Anything).
+		// Set up expectations for the mock. Pure SELECTs must go through
+		// ExecuteQuery so the tool stays available on read_only databases.
+		mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.AnythingOfType("string"), mock.Anything).
 			Return(sampleResult, nil).Once()
 
 		// Create a request with time_series_query operation

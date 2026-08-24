@@ -128,7 +128,7 @@ Protect agent sessions against runaway queries and accidental writes:
 | PostgreSQL | ✅ Full Support (v9.6-17) | Queries, Transactions, Schema Analysis, Performance Insights |
 | SQLite     | ✅ Full Support           | File-based & In-memory databases, SQLCipher encryption support |
 | Oracle     | ✅ Full Support (10g-23c) | Queries, Transactions, Schema Analysis, RAC, Cloud Wallet, TNS |
-| TimescaleDB| ✅ Full Support           | Hypertables, Time-Series Queries, Continuous Aggregates, Compression, Retention Policies |
+| TimescaleDB| ✅ Full Support           | Time-Series Queries, Hypertable Discovery (write policies via SQL) |
 
 ## Deployment Options
 
@@ -534,19 +534,26 @@ For each connected database, DB MCP Server automatically generates these special
 
 ### TimescaleDB Tools
 
-For PostgreSQL databases with TimescaleDB extension, these additional specialized tools are available:
+For PostgreSQL databases with the `timescaledb` extension installed, these additional
+specialized tools are registered automatically at startup (detection requires eager
+loading; under `--lazy-loading` they are skipped):
 
 | Tool Name | Description |
 |-----------|-------------|
-| `timescaledb_<db_id>` | Perform general TimescaleDB operations |
-| `create_hypertable_<db_id>` | Convert a standard table to a TimescaleDB hypertable |
-| `list_hypertables_<db_id>` | List all hypertables in the database |
-| `time_series_query_<db_id>` | Execute optimized time-series queries with bucketing |
-| `time_series_analyze_<db_id>` | Analyze time-series data patterns |
-| `continuous_aggregate_<db_id>` | Create materialized views that automatically update |
-| `refresh_continuous_aggregate_<db_id>` | Manually refresh continuous aggregates |
+| `timescaledb_timeseries_query_<db_id>` | Execute optimized time-series queries with time bucketing (`time_bucket`), filtering, and window functions |
+| `timescaledb_analyze_timeseries_<db_id>` | Analyze time-series patterns (trend, seasonality summary) for one table/column |
+| `timescaledb_list_hypertables_<db_id>` | List hypertables with their time column and dimension count (read-only) |
 
-For detailed documentation on TimescaleDB tools, see [TIMESCALEDB_TOOLS.md](docs/TIMESCALEDB_TOOLS.md).
+In unified mode the same three tools appear once as `timescaledb_timeseries_query`,
+`timescaledb_analyze_timeseries`, and `timescaledb_list_hypertables`, each taking a
+required `database` parameter.
+
+> **Scope note**: write-policy operations (hypertable creation, compression,
+> retention policies, continuous aggregates) are implemented in the codebase but not
+> yet exposed as MCP tools — use plain SQL through the query/execute tools in the
+> meantime. All read-only paths above go through the query pipeline and therefore
+> remain usable on `read_only` databases. For detailed documentation, see
+> [TIMESCALEDB_TOOLS.md](docs/TIMESCALEDB_TOOLS.md).
 
 ### Unified Tool Mode
 

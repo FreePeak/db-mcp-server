@@ -572,6 +572,24 @@ func (t *TimescaleDBTool) CreateUnifiedTimeSeriesAnalyzeTool(name string, dbList
 	)
 }
 
+// CreateUnifiedListHypertablesTool creates a unified read-only tool for
+// listing hypertables across databases
+func (t *TimescaleDBTool) CreateUnifiedListHypertablesTool(name string, dbList []string) interface{} {
+	desc := fmt.Sprintf("List TimescaleDB hypertables. Available databases: %s", strings.Join(dbList, ", "))
+	return cortextools.NewTool(
+		name,
+		cortextools.WithDescription(desc),
+		cortextools.WithString("database",
+			cortextools.Description(fmt.Sprintf("Database ID to use. Available: %s", strings.Join(dbList, ", "))),
+			cortextools.Required(),
+		),
+		cortextools.WithString("operation",
+			cortextools.Description("The operation must be 'list_hypertables'"),
+			cortextools.Required(),
+		),
+	)
+}
+
 // HandleRequest handles a tool request
 func (t *TimescaleDBTool) HandleRequest(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
 	// Extract parameters from the request
@@ -699,8 +717,9 @@ func (t *TimescaleDBTool) handleListHypertables(ctx context.Context, _ server.To
 		GROUP BY h.id, h.table_name, h.schema_name
 	`
 
-	// Execute the statement
-	result, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	// Execute the query (ExecuteQuery, not ExecuteStatement: listing is a
+	// pure SELECT and must stay available on read_only databases)
+	result, err := useCase.ExecuteQuery(ctx, dbID, sql, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list hypertables: %w", err)
 	}
@@ -1344,8 +1363,9 @@ func (t *TimescaleDBTool) handleTimeSeriesQuery(ctx context.Context, request ser
 		`, aggregations, windowFunctions, bucketInterval, timeColumn, aggregations, targetTable, whereClause, groupBy, orderBy, orderBy, limit)
 	}
 
-	// Execute the query
-	result, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	// ExecuteQuery rather than ExecuteStatement: this is a pure SELECT and
+	// must stay available on read_only databases
+	result, err := useCase.ExecuteQuery(ctx, dbID, sql, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute time-series query: %w", err)
 	}
@@ -1417,8 +1437,9 @@ func (t *TimescaleDBTool) handleTimeSeriesAnalyze(ctx context.Context, request s
 		%s
 	`, timeColumn, timeColumn, timeColumn, timeColumn, timeColumn, targetTable, whereClause)
 
-	// Execute the query
-	result, err := useCase.ExecuteStatement(ctx, dbID, sql, nil)
+	// ExecuteQuery rather than ExecuteStatement: this is a pure SELECT and
+	// must stay available on read_only databases
+	result, err := useCase.ExecuteQuery(ctx, dbID, sql, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze time-series data: %w", err)
 	}

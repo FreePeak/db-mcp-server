@@ -77,7 +77,9 @@ func TestHandleListHypertables(t *testing.T) {
 
 	// Set up expectations
 	mockUseCase.On("GetDatabaseType", "test_db").Return("postgres", nil)
-	mockUseCase.On("ExecuteStatement", mock.Anything, "test_db", mock.MatchedBy(func(_ string) bool {
+	// Listing is a pure SELECT and must go through ExecuteQuery so it stays
+	// available on read_only databases (ExecuteStatement is blocked there).
+	mockUseCase.On("ExecuteQuery", mock.Anything, "test_db", mock.MatchedBy(func(_ string) bool {
 		return true // Any SQL that contains the relevant query
 	}), mock.Anything).Return(`[{"table_name":"metrics","schema_name":"public","time_column":"time"}]`, nil)
 

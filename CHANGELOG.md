@@ -1,5 +1,10 @@
 # Changelog
 ## [Unreleased]
+### Added
+- TimescaleDB discovery tool: `timescaledb_list_hypertables_<db_id>` (and unified `timescaledb_list_hypertables`) listing hypertables with time column and dimensions; auto-detected via the `timescaledb` extension at startup
+### Fixed
+- Read-only safety for the wired TimescaleDB tools: `list_hypertables`, `time_series_query`, and `analyze_time_series` executed their SELECTs through the write-classified statement path and failed on `"read_only": true` databases; they now use the query path
+- README TimescaleDB section advertised seven tools when only two were registered; it now documents the three wired tools and states that write-policy operations remain SQL-only
 ## [v1.12.0] - 2026-08-25
 ### Added
 - Engine-level read-only enforcement for Oracle via fail-closed privilege auditing (`read_only` databases refuse credentials holding write privileges; completes the four-engine guarantee started in v1.10.0)

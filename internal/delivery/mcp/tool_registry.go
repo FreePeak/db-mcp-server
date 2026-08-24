@@ -172,6 +172,19 @@ func (tr *ToolRegistry) registerDatabaseTools(ctx context.Context, dbID string) 
 				} else {
 					logger.Info("Successfully registered TimescaleDB time series analyze tool: %s", tsAnalyzeToolName)
 				}
+
+				// Register read-only hypertable discovery tool
+				tsListToolName := fmt.Sprintf("timescaledb_list_hypertables_%s", dbID)
+				tsListTool := timescaleTool.CreateListHypertablesTool(tsListToolName, dbID)
+				if err := tr.server.AddTool(ctx, tsListTool, func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
+					response, err := timescaleTool.HandleRequest(ctx, request, dbID, tr.databaseUseCase)
+					return FormatResponse(response, err)
+				}); err != nil {
+					logger.Error("Error registering TimescaleDB list hypertables tool: %v", err)
+					registrationErrors++
+				} else {
+					logger.Info("Successfully registered TimescaleDB list hypertables tool: %s", tsListToolName)
+				}
 			}
 		} else {
 			logger.Info("Skipping TimescaleDB detection for database %s (lazy loading enabled)", dbID)
@@ -280,6 +293,19 @@ func (tr *ToolRegistry) registerUnifiedTools(ctx context.Context) error {
 					return FormatResponse(response, err)
 				}); err != nil {
 					logger.Error("Error registering unified TimescaleDB time series analyze tool: %v", err)
+					registrationErrors++
+				}
+
+				tsListTool := timescaleTool.CreateUnifiedListHypertablesTool("timescaledb_list_hypertables", dbList)
+				if err := tr.server.AddTool(ctx, tsListTool, func(ctx context.Context, request server.ToolCallRequest) (interface{}, error) {
+					database, err := extractAndValidateDatabase(request, dbList)
+					if err != nil {
+						return FormatResponse(nil, err)
+					}
+					response, err := timescaleTool.HandleRequest(ctx, request, database, tr.databaseUseCase)
+					return FormatResponse(response, err)
+				}); err != nil {
+					logger.Error("Error registering unified TimescaleDB list hypertables tool: %v", err)
 					registrationErrors++
 				}
 
