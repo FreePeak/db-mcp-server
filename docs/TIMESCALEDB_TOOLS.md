@@ -8,14 +8,29 @@ TimescaleDB extends PostgreSQL with specialized time-series capabilities. The DB
 
 ### Available Tools
 
+These tools are registered automatically for PostgreSQL databases whose config
+type is `postgres` (registration is config-driven, so it also works under
+`--lazy-loading`; each handler verifies the extension at call time and returns
+an actionable error when it is absent). Per-database mode names them
+`timescaledb_<tool>_<db_id>`; unified mode drops both affixes in favor of a
+required `database` parameter.
+
 | Tool | Description |
 |------|-------------|
-| `time_series_query` | Execute time-series queries with optimized bucketing |
-| `analyze_time_series` | Analyze time-series data patterns and characteristics |
+| `timescaledb_timeseries_query` | Execute time-series queries with optimized bucketing (`time_bucket`) |
+| `timescaledb_analyze_timeseries` | Analyze time-series data patterns and characteristics |
+| `timescaledb_list_hypertables` | List hypertables with their time column and dimension count (read-only) |
+| `timescaledb_compression_settings` | Show compression configuration for one hypertable (read-only; takes `target_table`) |
+| `timescaledb_retention_policy` | Show configured retention policy for one hypertable (read-only; takes `target_table`) |
+| `timescaledb_list_continuous_aggregates` | List continuous aggregates with bucket interval and refresh policy (read-only) |
+| `timescaledb_continuous_aggregate_info` | Inspect one continuous aggregate in detail (read-only; takes `view_name`) |
+
+All read-only discovery above runs through the query pipeline, so it stays
+usable on `read_only` databases.
 
 ### Time-Series Query Options
 
-The `time_series_query` tool supports the following parameters:
+The `timescaledb_timeseries_query` tool supports the following parameters:
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -71,68 +86,72 @@ The `time_series_query` tool supports the following parameters:
 }
 ```
 
-## Continuous Aggregate Tools
+## Continuous Aggregate Discovery Tools
 
 Continuous aggregates are one of TimescaleDB's most powerful features, providing materialized views that automatically refresh as new data is added.
 
-### Available Tools
+### Available Tools (read-only)
 
 | Tool | Description |
 |------|-------------|
-| `create_continuous_aggregate` | Create a new continuous aggregate view |
-| `refresh_continuous_aggregate` | Manually refresh a continuous aggregate |
+| `timescaledb_list_continuous_aggregates_<db_id>` | List continuous aggregates with bucket interval and refresh policy (no parameters) |
+| `timescaledb_continuous_aggregate_info_<db_id>` | Inspect one continuous aggregate in detail; requires `view_name` |
+
+> **Scope note**: write-policy operations (`create_hypertable`,
+> `enable_compression` / `disable_compression`, `add_compression_policy` /
+> `remove_compression_policy`, `add_retention_policy` /
+> `remove_retention_policy`, `create_continuous_aggregate`,
+> `refresh_continuous_aggregate`, `drop_continuous_aggregate`,
+> `add_continuous_aggregate_policy` /
+> `remove_continuous_aggregate_policy`) are implemented in the codebase but
+> not exposed as MCP tools — use plain SQL through the query/execute tools
+> in the meantime. The read-only discovery tools above go through the query
+> pipeline and therefore remain usable on `read_only` databases.
 
 ### Continuous Aggregate Options
 
-The `create_continuous_aggregate` tool supports the following parameters:
+The `timescaledb_list_continuous_aggregates_<db_id>` tool takes no parameters
+and returns every continuous aggregate with its bucket interval and refresh
+policy.
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `view_name` | Yes | Name for the continuous aggregate view |
-| `source_table` | Yes | Source table with raw data |
-| `time_column` | Yes | Time column to bucket |
-| `bucket_interval` | Yes | Time bucket interval (e.g., '1 hour', '1 day') |
-| `aggregations` | No | Comma-separated list of aggregations |
-| `where_condition` | No | WHERE condition to filter source data |
-| `with_data` | No | Whether to materialize data immediately (default: false) |
-| `refresh_policy` | No | Whether to add a refresh policy (default: false) |
-| `refresh_interval` | No | Refresh interval (e.g., '1 day') |
-
-The `refresh_continuous_aggregate` tool supports:
+The `timescaledb_continuous_aggregate_info_<db_id>` tool supports:
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `view_name` | Yes | Name of the continuous aggregate view |
-| `start_time` | No | Start of time range to refresh |
-| `end_time` | No | End of time range to refresh |
 
 ### Examples
 
-#### Creating a Daily Temperature Aggregate
+#### Listing Continuous Aggregates
 
 ```json
 {
-  "operation": "create_continuous_aggregate",
-  "view_name": "daily_temperatures",
-  "source_table": "sensor_data",
-  "time_column": "timestamp",
-  "bucket_interval": "1 day",
-  "aggregations": "AVG(temperature) as avg_temp, MIN(temperature) as min_temp, MAX(temperature) as max_temp, COUNT(*) as reading_count",
-  "with_data": true,
-  "refresh_policy": true,
-  "refresh_interval": "1 hour"
+  "operation": "list_continuous_aggregates"
 }
 ```
 
-#### Refreshing a Continuous Aggregate for a Specific Period
+#### Inspecting One Continuous Aggregate
 
 ```json
 {
-  "operation": "refresh_continuous_aggregate",
-  "view_name": "daily_temperatures",
-  "start_time": "2023-01-01",
-  "end_time": "2023-01-31"
+  "operation": "get_continuous_aggregate_info",
+  "view_name": "daily_temperatures"
 }
+```
+
+#### Creating and Refreshing an Aggregate via SQL
+
+Since create/refresh operations are not exposed as tools yet, use the query
+and execute tools directly:
+
+```sql
+CREATE MATERIALIZED VIEW daily_temperatures
+WITH (timescaledb.continuous) AS
+SELECT time_bucket('1 day', ts) AS day,
+       AVG(temperature) AS avg_temp,
+       MAX(temperature) AS max_temp,
+       COUNT(*) AS reading_count
+FROM sensor_data GROUP BY day;
 ```
 
 ## Common Time Bucket Intervals

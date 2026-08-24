@@ -535,24 +535,31 @@ For each connected database, DB MCP Server automatically generates these special
 ### TimescaleDB Tools
 
 For PostgreSQL databases with the `timescaledb` extension installed, these additional
-specialized tools are registered automatically at startup (detection requires eager
-loading; under `--lazy-loading` they are skipped):
+specialized tools are registered automatically at startup (registration is config-driven,
+so it also works under `--lazy-loading`; each handler verifies the extension at call time
+and returns an actionable error when it is absent):
 
 | Tool Name | Description |
 |-----------|-------------|
 | `timescaledb_timeseries_query_<db_id>` | Execute optimized time-series queries with time bucketing (`time_bucket`), filtering, and window functions |
 | `timescaledb_analyze_timeseries_<db_id>` | Analyze time-series patterns (trend, seasonality summary) for one table/column |
 | `timescaledb_list_hypertables_<db_id>` | List hypertables with their time column and dimension count (read-only) |
+| `timescaledb_compression_settings_<db_id>` | Show compression configuration for hypertables (read-only) |
+| `timescaledb_retention_policy_<db_id>` | Show configured retention policies (read-only) |
+| `timescaledb_list_continuous_aggregates_<db_id>` | List continuous aggregates with bucket interval and refresh policy (read-only) |
+| `timescaledb_continuous_aggregate_info_<db_id>` | Inspect one continuous aggregate in detail (read-only) |
 
-In unified mode the same three tools appear once as `timescaledb_timeseries_query`,
-`timescaledb_analyze_timeseries`, and `timescaledb_list_hypertables`, each taking a
-required `database` parameter.
+In unified mode the same seven tools appear once as `timescaledb_timeseries_query`,
+`timescaledb_analyze_timeseries`, `timescaledb_list_hypertables`,
+`timescaledb_compression_settings`, `timescaledb_retention_policy`,
+`timescaledb_list_continuous_aggregates`, and `timescaledb_continuous_aggregate_info`,
+each taking a required `database` parameter.
 
-> **Scope note**: write-policy operations (hypertable creation, compression,
-> retention policies, continuous aggregates) are implemented in the codebase but not
-> yet exposed as MCP tools — use plain SQL through the query/execute tools in the
-> meantime. All read-only paths above go through the query pipeline and therefore
-> remain usable on `read_only` databases. For detailed documentation, see
+> **Scope note**: read-only discovery above goes through the query pipeline and therefore
+> stays usable on `read_only` databases; each handler checks for the `timescaledb`
+> extension first. Write-policy operations (hypertable creation, compression toggles,
+> add/remove retention or refresh policies) remain unexposed — use plain SQL through
+> the query/execute tools in the meantime. For detailed documentation, see
 > [TIMESCALEDB_TOOLS.md](docs/TIMESCALEDB_TOOLS.md).
 
 ### Unified Tool Mode
