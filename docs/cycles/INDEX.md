@@ -61,6 +61,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 45 | Release readiness: CHANGELOG backfill v1.10/v1.11 + stale backlog sweep (#3/#5 done) | ✅ Shipped | [cycle-45](cycle-45-release-readiness.md) |
 | 46 | Slow-query index advice + MySQL digest backtick fix (backlog #9 done) | ✅ Shipped | [cycle-46](cycle-46-slow-query-advice.md) |
 | 47 | Oracle init scripts connect to TESTDB — fresh-volume reproducibility verified | ✅ Shipped | [cycle-47](cycle-47-oracle-init-fix.md) |
+| 48 | CI green: digest-table grant for live advice tests | ✅ Shipped | [cycle-48](cycle-48-ci-grant-fix.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
