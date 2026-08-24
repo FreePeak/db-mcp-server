@@ -33,6 +33,16 @@ func (uc *DatabaseUseCase) HealthCheck(ctx context.Context, dbID string) (map[st
 		"checked_at": time.Now().UTC().Format(time.RFC3339),
 	}
 
+	// Surface the active guardrails so operators can verify enforcement
+	// rather than trust configuration files.
+	result["read_only"] = db.IsReadOnly()
+	if mr := db.MaxRows(); mr > 0 {
+		result["max_rows"] = mr
+	}
+	if t, ok := db.(interface{ QueryTimeout() int }); ok && t.QueryTimeout() > 0 {
+		result["statement_timeout_seconds"] = t.QueryTimeout()
+	}
+
 	if pp, ok := db.(pingProvider); ok {
 		start := time.Now()
 		if perr := pp.Ping(ctx); perr != nil {

@@ -29,6 +29,35 @@ func TestHealthCheck_EndToEnd(t *testing.T) {
 	}
 }
 
+// TestHealthCheck_GuardrailsVisible locks in cycle 21: health output must
+// surface the active guardrails (read-only flag, row cap, statement timeout)
+// so operators can verify enforcement instead of trusting config files.
+func TestHealthCheck_GuardrailsVisible(t *testing.T) {
+	db := &guardedDB{fakeDB: &fakeDB{readOnly: true, maxRows: 100}}
+	uc := NewDatabaseUseCase(&fakeRepo{db: db})
+
+	info, err := uc.HealthCheck(context.Background(), "guarded_db")
+	if err != nil {
+		t.Fatalf("health check failed: %v", err)
+	}
+	if ro, ok := info["read_only"].(bool); !ok || !ro {
+		t.Errorf("expected read_only=true, got %v", info["read_only"])
+	}
+	if mr, ok := info["max_rows"].(int); !ok || mr != 100 {
+		t.Errorf("expected max_rows=100, got %v", info["max_rows"])
+	}
+	if to, ok := info["statement_timeout_seconds"].(int); !ok || to != 30 {
+		t.Errorf("expected statement_timeout_seconds=30, got %v", info["statement_timeout_seconds"])
+	}
+}
+
+// guardedDB adds guardrail capabilities on top of fakeDB.
+type guardedDB struct {
+	*fakeDB
+}
+
+func (g *guardedDB) QueryTimeout() int { return 30 }
+
 // TestHealthCheck_UnreachableDatabaseReportsUnhealthy verifies a failing
 // probe marks the database unhealthy instead of erroring out.
 func TestHealthCheck_UnreachableDatabaseReportsUnhealthy(t *testing.T) {

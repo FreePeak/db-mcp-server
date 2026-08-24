@@ -34,6 +34,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 18 | Composite index synthesis (equality-first, sort appended) | ✅ Shipped | [cycle-18](cycle-18-composite-indexes.md) |
 | 19 | Workload-driven index suggestions (`workload_suggestions`) | ✅ Shipped | [cycle-19](cycle-19-workload-indexes.md) |
 | 20 | Statement timeout enforcement (DBHub/PMP Pro time-cap parity) | ✅ Shipped | [cycle-20](cycle-20-query-timeout.md) |
+| 21 | Guardrail visibility in health + env timeout override | ✅ Shipped | [cycle-21](cycle-21-guardrail-visibility.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -55,4 +56,5 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing
 8. Workload-driven tuning — shipped (cycle 19); execution-count weighting remains
 9. Wire suggest_indexes into explain/slow-query output so plan analysis points at concrete fixes (close the Postgres MCP Pro loop)
-10. Surface effective statement timeout in health output; env-based per-database timeout override (cycle 20 feed-forward)
+10. Guardrail visibility + env timeout override — shipped (cycle 21); remaining: document QUERY_TIMEOUT_SECONDS in README config section
+11. Column masking / SELECT-target resolution — needs real SQL parsing or catalog help; scope as multi-cycle effort first

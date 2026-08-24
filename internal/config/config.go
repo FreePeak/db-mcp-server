@@ -141,7 +141,30 @@ func LoadConfig(logDir string) (*Config, error) {
 		}
 	}
 
+	// Apply the global statement-timeout override to connections that do not
+	// set their own query_timeout, so env-only deployments get time caps too.
+	// Negative values disable the cap; JSON configs keep precedence.
+	if v := getEnv("QUERY_TIMEOUT_SECONDS", ""); v != "" {
+		applyQueryTimeoutOverride(config.MultiDBConfig.Connections, v, logger.Warn)
+	}
+
 	return config, nil
+}
+
+// applyQueryTimeoutOverride fills unset (0) per-connection timeouts from the
+// QUERY_TIMEOUT_SECONDS value; invalid or out-of-range input is ignored with
+// a warning so one bad variable cannot block startup.
+func applyQueryTimeoutOverride(conns []db.DatabaseConnectionConfig, raw string, warnf func(format string, args ...interface{})) {
+	secs, err := strconv.Atoi(raw)
+	if err != nil || secs < -1 {
+		warnf("Warning: invalid QUERY_TIMEOUT_SECONDS %q ignored", raw)
+		return
+	}
+	for i := range conns {
+		if conns[i].QueryTimeout == 0 {
+			conns[i].QueryTimeout = secs
+		}
+	}
 }
 
 // resolveSQLitePaths resolves SQLite database_path values to absolute paths
