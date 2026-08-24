@@ -1,4 +1,35 @@
 # Changelog
+## [Unreleased]
+### Added
+- Engine-level read-only enforcement for Oracle via fail-closed privilege auditing (`read_only` databases refuse credentials holding write privileges; completes the four-engine guarantee started in v1.10.0)
+- Performance analysis actions: engine-level slow queries (`pg_stat_statements` / MySQL performance_schema digests), `index_health` (duplicate/redundant/unused/invalid indexes, table bloat), and unified `db_health` with connection-pressure findings
+- Index advisor: `suggest_indexes` with composite synthesis (equality-first, sort appended), join/alias resolution, constraint-aware coverage (PK/UNIQUE columns count as covered), and workload-driven suggestions weighted by execution count then total engine time
+- Index suggestions appended to `explain` output
+- Statement timeout enforcement: per-database `query_timeout`, env-only deployments covered by `QUERY_TIMEOUT_SECONDS`
+- Name-based column masking: `fixed_string`/`null`/`partial` strategies, fail-closed config validation, masked-cell counts in results
+- Foreign-key referenced-table resolution in describe output; database-wide Mermaid ERD via performance tool `format=mermaid`
+- Live-engine regression tests in CI; repeatable harnesses: `scripts/live-db-setup.sh`, `scripts/smoke.sh`, `scripts/token-benchmark.sh`
+
+### Fixed
+- MySQL `[]byte` driver cells are decoded before partial masking (found by live validation)
+- Constraint-backed primary keys excluded from UNUSED-index advice
+- `sys.schema_unused_indexes` column mapping corrected against live MySQL
+
+## [v1.11.0] - 2026-08-22
+Tagged alongside v1.10.0 for distribution-pipeline verification; no functional changes beyond v1.10.0.
+
+## [v1.10.0] - 2026-08-22
+### Added
+- Production guardrails pack (#85): query-tool read-only bypass closed, `max_rows` result cap, real stored transactions replacing stubs
+- Engine-level read-only enforcement for PostgreSQL (`default_transaction_read_only=on`) and MySQL (`transaction_read_only=1`)
+- `explain_<db_id>` tool for execution-plan analysis
+- `describe_<db_id>` tool for per-table schema inspection with PK/FK constraint surfacing
+- Real performance tool backed by a query-metrics analyzer (placeholder removed)
+- Streamable HTTP transport (#34)
+- Bearer-token API key middleware for HTTP transports (#57)
+
+### Fixed
+- Prompts list behavior (#35)
 
 ## [v1.9.0] - 2026-04-11
 

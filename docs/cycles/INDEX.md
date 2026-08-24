@@ -58,6 +58,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 42 | Constraint-aware index coverage — PK/UNIQUE columns count as covered (backlog #4 done) | ✅ Shipped | [cycle-42](cycle-42-constraint-aware-coverage.md) |
 | 43 | Token-benchmark wire-payload harness + refreshed numbers (backlog #2 hardening) | ✅ Shipped | [cycle-43](cycle-43-token-benchmark-harness.md) |
 | 44 | Oracle engine-level read-only via fail-closed privilege audit (backlog #1 done) | ✅ Shipped | [cycle-44](cycle-44-oracle-readonly.md) |
+| 45 | Release readiness: CHANGELOG backfill v1.10/v1.11 + stale backlog sweep (#3/#5 done) | ✅ Shipped | [cycle-45](cycle-45-release-readiness.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -72,9 +73,9 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 
 1. Oracle engine-level read-only — fully done (cycle 44: fail-closed privilege audit + native oracle-free image)
 2. Token-efficiency benchmark: unified vs per-db vs DBHub claim — re-measurable via scripts/token-benchmark.sh (cycle 43)
-3. Merge PR #85 → tag v1.10.0 when CI green
+3. Merge PR #85 → tag release — done (merged 2026-08-22 with green CI; tagged v1.10.0/v1.11.0; CHANGELOG backfilled in cycle 45)
 4. Hypothetical-index tuning depth — fully done (cycles 17–18 composites + 19/23/40 workload-driven analysis + 42 constraint-aware coverage)
-5. Column masking / governance features (Bytebase differentiator) — scoped in cycle 35: [docs/design/column-masking-scoping.md](../design/column-masking-scoping.md); name-based v1 needs no SQL parsing; 3-cycle breakdown inside
+5. Column masking / governance features (Bytebase differentiator) — fully done (cycles 35 scoping + 36 core + 37 hardening + 39 live validation)
 6. FK referenced-table detail — fully done (cycle 15 + database-wide Mermaid relationship graph via performance tool format=mermaid)
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing
 8. Workload-driven tuning — fully done (cycles 19, 23, 40: execution weighting → composites → duration-weighted ranking)
