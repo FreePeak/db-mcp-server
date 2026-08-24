@@ -35,15 +35,16 @@ OUT="$(run_session)"
 fail() { echo "SMOKE FAIL: $1" >&2; exit 1; }
 echo "$OUT" | grep -q "idx_users_name ON users (name)" \
     || fail "suggest_indexes did not propose idx_users_name"
-echo "$OUT" | grep -q "(3 executions)" \
-    || fail "workload_suggestions missing execution weighting — tracker wiring broken?"
+echo "$OUT" | grep -q "ranked by estimated total time" \
+    || fail "workload_suggestions missing duration weighting — tracker wiring broken?"
 echo "$OUT" | grep -q "read_only:" \
     || fail "health output missing read_only guardrail"
 echo "$OUT" | grep -Eq "statement_timeout_seconds: [0-9]+" \
     || fail "health output missing statement_timeout_seconds"
 
-# The suggest_indexes and workload suggestions must agree on the same fix.
-echo "$OUT" | grep -qE "serves 3 of 3 execution" \
+# The suggest_indexes and workload suggestions must agree on the same fix;
+# cycle 40 switched weighting to engine-reported total time, so units are ms.
+echo "$OUT" | grep -qE "serves [0-9]+ of [0-9]+ ms of engine time" \
     || fail "workload coverage annotation wrong"
 
 echo "SMOKE OK: advisor, tracker wiring, and health guardrails all verified over live stdio protocol"

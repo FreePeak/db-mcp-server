@@ -50,14 +50,15 @@ func TestWorkloadIndexSuggestions_EndToEnd(t *testing.T) {
 	if !strings.Contains(out, "CREATE INDEX idx_invoices_customer_id_state ON invoices (customer_id, state)") {
 		t.Fatalf("expected composite suggestion from merged workload, got:\n%s", out)
 	}
-	// The tracker groups identical query texts with their counts: three
-	// identical selects plus the sorted variant total four executions, all
-	// served by the composite.
-	if !strings.Contains(out, "(4 executions)") {
-		t.Errorf("expected total-execution header, got:\n%s", out)
+	// Cycle 40: tracker-fallback statements carry real durations, so
+	// ranking switches from traffic to estimated total time and weights
+	// become milliseconds — exact values vary run to run, so assert the
+	// stable wording rather than numbers.
+	if !strings.Contains(out, "ranked by estimated total time") {
+		t.Errorf("expected duration-ranked header, got:\n%s", out)
 	}
-	if !strings.Contains(out, "serves 4 of 4 execution(s)") {
-		t.Errorf("expected coverage annotation across executions, got:\n%s", out)
+	if !strings.Contains(out, "serves ") || !strings.Contains(out, "ms of engine time") {
+		t.Errorf("expected time-based coverage annotation, got:\n%s", out)
 	}
 }
 

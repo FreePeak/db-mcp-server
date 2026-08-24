@@ -53,6 +53,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 37 | Masking hardening: fail-closed validation, partial strategy, masked-cell counts (Cycle B) | ✅ Shipped | [cycle-37](cycle-37-masking-hardening.md) |
 | 38 | Explain output carries index suggestions — closes backlog #9 loop | ✅ Shipped | [cycle-38](cycle-38-explain-advice-wiring.md) |
 | 39 | Live-engine masking validation — catches MySQL []byte driver bug in partial strategy | ✅ Shipped | [cycle-39](cycle-39-masking-live-validation.md) |
+| 40 | Duration-weighted workload ranking — engine total time beats traffic counts (backlog #8 done) | ✅ Shipped | [cycle-40](cycle-40-duration-weighted-workload.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
@@ -72,7 +73,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 5. Column masking / governance features (Bytebase differentiator) — scoped in cycle 35: [docs/design/column-masking-scoping.md](../design/column-masking-scoping.md); name-based v1 needs no SQL parsing; 3-cycle breakdown inside
 6. FK referenced-table detail — done (cycle 15); multi-table relationship graph remains
 7. After #86 secrets land: verify docker tags v1.9.0/v1.10.0/v1.11.0 + npm 1.11.0; consider npm OIDC trusted publishing
-8. Workload-driven tuning — shipped (cycles 19, 23: weighted by executions, per-statement composites); duration-weighted ranking is the possible refinement
+8. Workload-driven tuning — fully done (cycles 19, 23, 40: execution weighting → composites → duration-weighted ranking)
 9. Wire suggest_indexes into explain/slow-query output — done for explain (cycle 38); slow-queries per-statement advice deferred (multiplies catalog reads; interactive path covered)
 10. Guardrail visibility + env timeout override — shipped (cycle 21); remaining: document QUERY_TIMEOUT_SECONDS in README config section
 11. Column masking / SELECT-target resolution — needs real SQL parsing or catalog help; scope as multi-cycle effort first

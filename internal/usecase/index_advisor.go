@@ -161,7 +161,7 @@ func (uc *DatabaseUseCase) SuggestIndexes(ctx context.Context, dbID, query strin
 	}
 
 	return uc.emitIndexSuggestions(ctx, dbID, dbType, []statementAdvice{{advice: advice, weight: 1}},
-		"Index suggestions (heuristic — verify with EXPLAIN before creating):", false), nil
+		"Index suggestions (heuristic — verify with EXPLAIN before creating):", false, "statement(s)"), nil
 }
 
 // statementAdvice pairs one analyzed statement's extracted advice with how
@@ -177,7 +177,7 @@ type statementAdvice struct {
 // trailing columns serve nothing. Across statements, identical composites
 // coalesce, each line's weight counts every analyzed execution whose columns
 // it serves, and output is ranked by traffic.
-func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbType string, entries []statementAdvice, header string, annotate bool) string {
+func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbType string, entries []statementAdvice, header string, annotate bool, weightUnit string) string {
 	const (
 		cEq = iota
 		cRng
@@ -296,7 +296,7 @@ func (uc *DatabaseUseCase) emitIndexSuggestions(ctx context.Context, dbID, dbTyp
 		if !annotate || totalWeight <= 1 {
 			return ""
 		}
-		return fmt.Sprintf("  -- serves %d of %d execution(s)", hits, totalWeight)
+		return fmt.Sprintf("  -- serves %d of %d %s", hits, totalWeight, weightUnit)
 	}
 
 	for _, rc := range rankedComps {
