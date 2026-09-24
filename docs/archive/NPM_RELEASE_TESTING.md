@@ -6,14 +6,13 @@ This guide explains how to test the npm publish workflow and release automation 
 
 ## Architecture
 
-The package uses a two-step installation approach:
-1. **GitHub Releases** contain pre-built binaries for all platforms
-2. **npm package** contains the install script that downloads the correct binary from GitHub
+The package uses a checksum-verified two-step installation approach:
+1. **GitHub Releases** contain pre-built binaries and `SHA256SUMS` for all platforms
+2. **npm package** contains the tracked launchers and an install script that downloads the correct binary and verifies its SHA-256 digest
 
-For **local testing**, the install script has fallback mechanisms:
-- Uses pre-built binaries included in the test package
-- Can build locally if Go is available
-- Gracefully handles missing releases
+The published package does not embed platform binaries or fall back to a
+local Go build. Release automation must publish the checksum manifest before
+npm is published.
 
 ## Testing Methods
 
@@ -82,24 +81,23 @@ make version-bump TYPE=minor  # 1.6.3 → 1.7.0
 make version-bump TYPE=major  # 1.6.3 → 2.0.0
 ```
 
-### 4. Manual Install Script Testing
+### 4. Manual Package and Installer Testing
 
-Test the install script directly:
+Validate the package manifest without publishing:
 
 ```bash
-# Build a binary first
-go build -o bin/db-mcp-server ./cmd/server/main.go
-
-# Run install script
-node bin/install.js
-
-# Verify it uses the existing binary
-ls -lh bin/db-mcp-server
+npm pack --dry-run --json
+node --check bin/run.js
+node --check bin/install.js
 ```
+
+The dry run must include `bin/run.js`, `bin/run.cmd`, and
+`bin/install.js`. A real installation requires a GitHub release containing
+both the platform binary and `SHA256SUMS`.
 
 ### 5. GitHub Actions Workflow Validation
 
-The [.github/workflows/npm-publish.yml](.github/workflows/npm-publish.yml) workflow can be triggered manually:
+The [.github/workflows/npm-publish.yml](.github/workflows/npm-publish.yml) workflow runs on an immutable `v*` tag or manual version input:
 
 ```bash
 # Via GitHub UI:

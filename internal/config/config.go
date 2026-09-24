@@ -2,8 +2,10 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -56,10 +58,10 @@ func LoadConfig(logDir string) (*Config, error) {
 		logger.Info("Loaded configuration from .env file")
 	}
 
-	port, err := strconv.Atoi(getEnv("SERVER_PORT", "9090"))
+	port, err := strconv.Atoi(getEnv("SERVER_PORT", "9092"))
 	if err != nil {
-		logger.Warn("Warning: Invalid SERVER_PORT value, using default 9090")
-		port = 9090
+		logger.Warn("Warning: Invalid SERVER_PORT value, using default 9092")
+		port = 9092
 	}
 
 	dbPort, err := strconv.Atoi(getEnv("DB_PORT", "3306"))
@@ -92,7 +94,7 @@ func LoadConfig(logDir string) (*Config, error) {
 
 	config := &Config{
 		ServerPort:     port,
-		TransportMode:  getEnv("TRANSPORT_MODE", "sse"),
+		TransportMode:  getEnv("TRANSPORT_MODE", "stdio"),
 		LogLevel:       getEnv("LOG_LEVEL", "info"),
 		ConfigPath:     configPath,
 		DisableLogging: disableLogging,
@@ -106,24 +108,41 @@ func LoadConfig(logDir string) (*Config, error) {
 		},
 	}
 
-	// Try to load multi-database configuration from JSON file
-	if _, err := os.Stat(config.ConfigPath); err == nil {
+	// Load exactly one canonical multi-database configuration. The parsed
+	// object is passed to dbtools.InitDatabase; the file is never re-parsed by a
+	// second, reduced connection type.
+	if _, statErr := os.Stat(config.ConfigPath); statErr == nil {
 		logger.Info("Loading configuration from: %s", config.ConfigPath)
 		configData, err := os.ReadFile(config.ConfigPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read config file %s: %w", config.ConfigPath, err)
 		}
-
-		var multiDBConfig db.MultiDBConfig
-		if err := json.Unmarshal(configData, &multiDBConfig); err != nil {
-			return nil, fmt.Errorf("failed to parse config file %s: %w", config.ConfigPath, err)
+		multiDBConfig, err := decodeMultiDBConfig(configData, config.ConfigPath)
+		if err != nil {
+			return nil, err
 		}
-
-		// Resolve SQLite database paths relative to the config file directory
-		configDir := filepath.Dir(config.ConfigPath)
-		resolveSQLitePaths(&multiDBConfig, configDir)
-
-		config.MultiDBConfig = &multiDBConfig
+		if len(multiDBConfig.Connections) == 0 {
+			return nil, fmt.Errorf("config file %s contains no database connections", config.ConfigPath)
+		}
+		resolveSQLitePaths(multiDBConfig, filepath.Dir(config.ConfigPath))
+		config.MultiDBConfig = multiDBConfig
+	} else if !os.IsNotExist(statErr) {
+		return nil, fmt.Errorf("failed to inspect config file %s: %w", config.ConfigPath, statErr)
+	} else if inline := os.Getenv("DB_CONFIG"); inline != "" {
+		logger.Info("Loading configuration from DB_CONFIG")
+		multiDBConfig, err := decodeMultiDBConfig([]byte(inline), "DB_CONFIG")
+		if err != nil {
+			return nil, err
+		}
+		if len(multiDBConfig.Connections) == 0 {
+			return nil, fmt.Errorf("DB_CONFIG contains no database connections")
+		}
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve DB_CONFIG SQLite paths: %w", err)
+		}
+		resolveSQLitePaths(multiDBConfig, cwd)
+		config.MultiDBConfig = multiDBConfig
 	} else {
 		logger.Info("Warning: Config file not found at %s, using environment variables", config.ConfigPath)
 		// If no JSON config found, create a single connection config from environment variables
@@ -142,6 +161,19 @@ func LoadConfig(logDir string) (*Config, error) {
 		}
 	}
 
+	secretBaseDir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve secret file paths: %w", err)
+	}
+	if _, statErr := os.Stat(config.ConfigPath); statErr == nil {
+		secretBaseDir = filepath.Dir(config.ConfigPath)
+	}
+	for i := range config.MultiDBConfig.Connections {
+		if err := db.ResolveSecretReferences(&config.MultiDBConfig.Connections[i], secretBaseDir); err != nil {
+			return nil, err
+		}
+	}
+
 	// Apply the global statement-timeout override to connections that do not
 	// set their own query_timeout, so env-only deployments get time caps too.
 	// Negative values disable the cap; JSON configs keep precedence.
@@ -153,6 +185,30 @@ func LoadConfig(logDir string) (*Config, error) {
 	}
 
 	return config, nil
+}
+
+// decodeMultiDBConfig parses the canonical configuration and rejects unknown
+// fields or trailing JSON values. A typo in a security-sensitive key must not
+// silently fall back to a writable connection.
+func decodeMultiDBConfig(data []byte, source string) (*db.MultiDBConfig, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+
+	var multiDBConfig db.MultiDBConfig
+	if err := decoder.Decode(&multiDBConfig); err != nil {
+		return nil, fmt.Errorf("failed to parse config %s: %w", source, err)
+	}
+	if multiDBConfig.SchemaVersion != 0 && multiDBConfig.SchemaVersion != 1 {
+		return nil, fmt.Errorf("config %s uses unsupported schema_version %d", source, multiDBConfig.SchemaVersion)
+	}
+	var trailing interface{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("config %s contains multiple JSON values", source)
+		}
+		return nil, fmt.Errorf("failed to parse config %s: %w", source, err)
+	}
+	return &multiDBConfig, nil
 }
 
 // validateMaskingRules compiles every configured masking rule at startup.

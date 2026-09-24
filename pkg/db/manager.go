@@ -3,6 +3,9 @@ package db
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,13 +14,15 @@ import (
 
 // DatabaseConnectionConfig represents a single database connection configuration
 type DatabaseConnectionConfig struct {
-	ID       string `json:"id"`   // Unique identifier for this connection
-	Type     string `json:"type"` // mysql, postgres, oracle, or sqlite
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	User     string `json:"user"`
-	Password string `json:"password"`
-	Name     string `json:"name"`
+	ID           string `json:"id"`   // Unique identifier for this connection
+	Type         string `json:"type"` // mysql, postgres, oracle, or sqlite
+	Host         string `json:"host"`
+	Port         int    `json:"port"`
+	User         string `json:"user"`
+	Password     string `json:"password"`
+	PasswordEnv  string `json:"password_env,omitempty"`
+	PasswordFile string `json:"password_file,omitempty"`
+	Name         string `json:"name"`
 
 	// PostgreSQL specific options
 	SSLMode            string            `json:"ssl_mode,omitempty"`
@@ -30,13 +35,28 @@ type DatabaseConnectionConfig struct {
 	TargetSessionAttrs string            `json:"target_session_attrs,omitempty"`
 	Options            map[string]string `json:"options,omitempty"`
 
+	// Oracle connection options. These are first-class fields in the canonical
+	// configuration; the legacy options map is still accepted and normalized by
+	// LoadConfig for backwards compatibility.
+	ServiceName     string `json:"service_name,omitempty"`
+	SID             string `json:"sid,omitempty"`
+	WalletLocation  string `json:"wallet_location,omitempty"`
+	TNSAdmin        string `json:"tns_admin,omitempty"`
+	TNSEntry        string `json:"tns_entry,omitempty"`
+	Edition         string `json:"edition,omitempty"`
+	Pooling         bool   `json:"pooling,omitempty"`
+	StandbySessions bool   `json:"standby_sessions,omitempty"`
+	NLSLang         string `json:"nls_lang,omitempty"`
+
 	// SQLite specific options
-	DatabasePath     string `json:"database_path,omitempty"`      // Path to SQLite database file
-	EncryptionKey    string `json:"encryption_key,omitempty"`     // Key for SQLCipher encryption
-	ReadOnly         bool   `json:"read_only,omitempty"`          // Open database in read-only mode
-	CacheSize        int    `json:"cache_size,omitempty"`         // SQLite cache size (in pages)
-	JournalMode      string `json:"journal_mode,omitempty"`       // Journal mode for SQLite
-	UseModerncDriver bool   `json:"use_modernc_driver,omitempty"` // Use modernc.org/sqlite driver instead of mattn/go-sqlite3
+	DatabasePath      string `json:"database_path,omitempty"`  // Path to SQLite database file
+	EncryptionKey     string `json:"encryption_key,omitempty"` // Key for SQLCipher encryption
+	EncryptionKeyEnv  string `json:"encryption_key_env,omitempty"`
+	EncryptionKeyFile string `json:"encryption_key_file,omitempty"`
+	ReadOnly          bool   `json:"read_only,omitempty"`          // Open database in read-only mode
+	CacheSize         int    `json:"cache_size,omitempty"`         // SQLite cache size (in pages)
+	JournalMode       string `json:"journal_mode,omitempty"`       // Journal mode for SQLite
+	UseModerncDriver  bool   `json:"use_modernc_driver,omitempty"` // Use modernc.org/sqlite driver instead of mattn/go-sqlite3
 
 	// Connection pool settings
 	MaxOpenConns    int `json:"max_open_conns,omitempty"`
@@ -64,7 +84,8 @@ type MaskingRule struct {
 
 // MultiDBConfig represents the configuration for multiple database connections
 type MultiDBConfig struct {
-	Connections []DatabaseConnectionConfig `json:"connections"`
+	SchemaVersion int                        `json:"schema_version,omitempty"`
+	Connections   []DatabaseConnectionConfig `json:"connections"`
 }
 
 // Manager manages multiple database connections
@@ -105,6 +126,105 @@ func (m *Manager) IsLazyLoading() bool {
 	return m.lazyLoading
 }
 
+// ResolveSecretReferences loads password/encryption secrets from environment
+// variables or files and clears the reference fields after resolution. The
+// values remain in memory only for the lifetime of the connection config.
+func ResolveSecretReferences(conn *DatabaseConnectionConfig, baseDir string) error {
+	if conn == nil {
+		return fmt.Errorf("cannot resolve secrets for a nil connection")
+	}
+	var err error
+	conn.Password, err = resolveSecretValue(conn.Password, conn.PasswordEnv, conn.PasswordFile, baseDir, "password")
+	if err != nil {
+		return fmt.Errorf("database %q: %w", conn.ID, err)
+	}
+	conn.EncryptionKey, err = resolveSecretValue(conn.EncryptionKey, conn.EncryptionKeyEnv, conn.EncryptionKeyFile, baseDir, "encryption_key")
+	if err != nil {
+		return fmt.Errorf("database %q: %w", conn.ID, err)
+	}
+	conn.PasswordEnv, conn.PasswordFile = "", ""
+	conn.EncryptionKeyEnv, conn.EncryptionKeyFile = "", ""
+	return nil
+}
+
+func resolveSecretValue(value, envName, fileName, baseDir, label string) (string, error) {
+	if envName != "" && fileName != "" {
+		return "", fmt.Errorf("%s cannot set both %s_env and %s_file", label, label, label)
+	}
+	if value != "" && (envName != "" || fileName != "") {
+		return "", fmt.Errorf("%s cannot combine an inline value with an environment/file reference", label)
+	}
+	if envName != "" {
+		resolved, ok := os.LookupEnv(envName)
+		if !ok || resolved == "" {
+			return "", fmt.Errorf("%s environment variable %q is unset or empty", label, envName)
+		}
+		return resolved, nil
+	}
+	if fileName == "" {
+		return value, nil
+	}
+	path := fileName
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(baseDir, path)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("%s file %q: %w", label, fileName, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("%s file %q is not a regular file", label, fileName)
+	}
+	if info.Size() > 64*1024 {
+		return "", fmt.Errorf("%s file %q is larger than 64 KiB", label, fileName)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read %s file %q: %w", label, fileName, err)
+	}
+	resolved := strings.TrimRight(string(data), "\r\n")
+	if resolved == "" {
+		return "", fmt.Errorf("%s file %q is empty", label, fileName)
+	}
+	return resolved, nil
+}
+
+// normalizeOracleConfig promotes legacy Oracle options into the canonical
+// fields and rejects ambiguous string values. The options map is retained so
+// existing driver settings continue to be passed through.
+func normalizeOracleConfig(conn *DatabaseConnectionConfig) error {
+	if conn.Type != "oracle" || len(conn.Options) == 0 {
+		return nil
+	}
+
+	stringFields := []struct {
+		name   string
+		value  *string
+		legacy string
+	}{
+		{"service_name", &conn.ServiceName, "service_name"},
+		{"sid", &conn.SID, "sid"},
+		{"wallet_location", &conn.WalletLocation, "wallet_location"},
+		{"tns_admin", &conn.TNSAdmin, "tns_admin"},
+		{"tns_entry", &conn.TNSEntry, "tns_entry"},
+		{"edition", &conn.Edition, "edition"},
+		{"nls_lang", &conn.NLSLang, "nls_lang"},
+	}
+	for _, field := range stringFields {
+		legacyValue := conn.Options[field.legacy]
+		if legacyValue == "" {
+			continue
+		}
+		if *field.value != "" && *field.value != legacyValue {
+			return fmt.Errorf("database %q has conflicting Oracle fields %q and options[%q]", conn.ID, field.name, field.legacy)
+		}
+		if *field.value == "" {
+			*field.value = legacyValue
+		}
+	}
+	return nil
+}
+
 // LoadConfig loads database configurations from JSON
 func (m *Manager) LoadConfig(configJSON []byte) error {
 	var config MultiDBConfig
@@ -113,12 +233,16 @@ func (m *Manager) LoadConfig(configJSON []byte) error {
 	}
 
 	// Validate and store configurations
-	for _, conn := range config.Connections {
+	for i := range config.Connections {
+		conn := &config.Connections[i]
 		if conn.ID == "" {
 			return fmt.Errorf("database connection ID cannot be empty")
 		}
 		if conn.Type != "mysql" && conn.Type != "postgres" && conn.Type != "oracle" && conn.Type != "sqlite" {
 			return fmt.Errorf("unsupported database type for connection %s: %s (must be mysql, postgres, oracle, or sqlite)", conn.ID, conn.Type)
+		}
+		if _, exists := m.configs[conn.ID]; exists {
+			return fmt.Errorf("duplicate database connection ID %q", conn.ID)
 		}
 
 		// SQLite-specific validation
@@ -127,8 +251,11 @@ func (m *Manager) LoadConfig(configJSON []byte) error {
 				return fmt.Errorf("SQLite database %s requires either database_path or name to be specified", conn.ID)
 			}
 		}
+		if err := normalizeOracleConfig(conn); err != nil {
+			return err
+		}
 
-		m.configs[conn.ID] = conn
+		m.configs[conn.ID] = *conn
 	}
 
 	return nil
@@ -178,33 +305,45 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 		dbConfig.Options = cfg.Options
 		dbConfig.ReadOnly = cfg.ReadOnly
 	case "oracle":
-		// Extract Oracle-specific options from Options map
-		if serviceName, ok := cfg.Options["service_name"]; ok {
-			dbConfig.ServiceName = serviceName
+		// Prefer the canonical fields; LoadConfig has already promoted legacy
+		// options and rejected conflicting string values.
+		dbConfig.ServiceName = cfg.ServiceName
+		dbConfig.SID = cfg.SID
+		dbConfig.WalletLocation = cfg.WalletLocation
+		dbConfig.TNSAdmin = cfg.TNSAdmin
+		dbConfig.TNSEntry = cfg.TNSEntry
+		dbConfig.Edition = cfg.Edition
+		dbConfig.Pooling = cfg.Pooling
+		dbConfig.StandbySessions = cfg.StandbySessions
+		dbConfig.NLSLang = cfg.NLSLang
+		// Keep direct buildDatabaseConfig callers compatible with the legacy
+		// options map; LoadConfig normally promotes these values first.
+		if dbConfig.ServiceName == "" {
+			dbConfig.ServiceName = cfg.Options["service_name"]
 		}
-		if sid, ok := cfg.Options["sid"]; ok {
-			dbConfig.SID = sid
+		if dbConfig.SID == "" {
+			dbConfig.SID = cfg.Options["sid"]
 		}
-		if walletLoc, ok := cfg.Options["wallet_location"]; ok {
-			dbConfig.WalletLocation = walletLoc
+		if dbConfig.WalletLocation == "" {
+			dbConfig.WalletLocation = cfg.Options["wallet_location"]
 		}
-		if tnsAdmin, ok := cfg.Options["tns_admin"]; ok {
-			dbConfig.TNSAdmin = tnsAdmin
+		if dbConfig.TNSAdmin == "" {
+			dbConfig.TNSAdmin = cfg.Options["tns_admin"]
 		}
-		if tnsEntry, ok := cfg.Options["tns_entry"]; ok {
-			dbConfig.TNSEntry = tnsEntry
+		if dbConfig.TNSEntry == "" {
+			dbConfig.TNSEntry = cfg.Options["tns_entry"]
 		}
-		if edition, ok := cfg.Options["edition"]; ok {
-			dbConfig.Edition = edition
+		if dbConfig.Edition == "" {
+			dbConfig.Edition = cfg.Options["edition"]
 		}
-		if pooling, ok := cfg.Options["pooling"]; ok {
-			dbConfig.Pooling = pooling == "true"
+		if !dbConfig.Pooling {
+			dbConfig.Pooling = cfg.Options["pooling"] == "true"
 		}
-		if standby, ok := cfg.Options["standby_sessions"]; ok {
-			dbConfig.StandbySessions = standby == "true"
+		if !dbConfig.StandbySessions {
+			dbConfig.StandbySessions = cfg.Options["standby_sessions"] == "true"
 		}
-		if nlsLang, ok := cfg.Options["nls_lang"]; ok {
-			dbConfig.NLSLang = nlsLang
+		if dbConfig.NLSLang == "" {
+			dbConfig.NLSLang = cfg.Options["nls_lang"]
 		}
 		dbConfig.ConnectTimeout = cfg.ConnectTimeout
 		dbConfig.QueryTimeout = cfg.QueryTimeout
@@ -219,6 +358,9 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 		// Set SQLite-specific options
 		dbConfig.DatabasePath = cfg.DatabasePath
 		dbConfig.EncryptionKey = cfg.EncryptionKey
+		dbConfig.ConnectTimeout = cfg.ConnectTimeout
+		dbConfig.QueryTimeout = cfg.QueryTimeout
+		dbConfig.Options = cfg.Options
 		dbConfig.ReadOnly = cfg.ReadOnly
 		dbConfig.CacheSize = cfg.CacheSize
 		if cfg.JournalMode != "" {

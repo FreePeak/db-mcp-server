@@ -2,105 +2,150 @@ package mcp
 
 import (
 	"bytes"
-	"io"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"strconv"
 	"testing"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func newTestHandler() *StreamableHTTPHandler {
-	return &StreamableHTTPHandler{
-		sessions: make(map[string]bool),
-	}
+	return NewStreamableHTTPHandler(sdkmcp.NewServer(&sdkmcp.Implementation{
+		Name:    "test-server",
+		Version: "1.0.0",
+	}, nil))
 }
 
-// TestStreamableHTTPHandler_RejectsNonPost ensures the streamable HTTP
-// transport only accepts POST per the MCP specification. FreePeak/db-mcp-server
-// issue #34 asks for this transport; the contract is documented at
-// https://modelcontextprotocol.io/docs/concepts/architecture#transport-layer.
-func TestStreamableHTTPHandler_RejectsNonPost(t *testing.T) {
-	h := newTestHandler()
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
-}
-
-// TestStreamableHTTPHandler_RejectsInvalidJSON covers the JSON validation
-// step. The streamable transport must reject bodies that are not
-// well-formed JSON-RPC so the underlying MCP server never sees garbage.
-func TestStreamableHTTPHandler_RejectsInvalidJSON(t *testing.T) {
-	h := newTestHandler()
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte("not json")))
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Contains(t, rec.Body.String(), "JSON-RPC")
-}
-
-// TestStreamableHTTPHandler_QueuesJSONResponse exercises the non-streaming
-// path: when the client only accepts application/json, the handler responds
-// with a tiny JSON envelope acknowledging that the message was received.
-// Real streaming responses require a long-lived MCP session; the smoke test
-// here only verifies the entry point is wired correctly.
-func TestStreamableHTTPHandler_QueuesJSONResponse(t *testing.T) {
-	h := newTestHandler()
-
-	rec := httptest.NewRecorder()
-	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
-	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
-	req.Header.Set("Accept", "application/json")
-	h.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusAccepted, rec.Code)
-	assert.Contains(t, rec.Header().Get("Content-Type"), "application/json")
-	respBody, err := io.ReadAll(rec.Body)
-	require.NoError(t, err)
-	assert.Contains(t, string(respBody), `"queued":true`)
-}
-
-// TestStreamableHTTPHandler_StreamsWhenEventStreamAccepted verifies the
-// streaming path emits text/event-stream frames that contain the original
-// JSON-RPC body so consumers can read the response incrementally.
-func TestStreamableHTTPHandler_StreamsWhenEventStreamAccepted(t *testing.T) {
-	h := newTestHandler()
-
-	rec := httptest.NewRecorder()
-	body := []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
-	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+func postStreamable(t *testing.T, handler http.Handler, body string, sessionID string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(body))
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	h.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
-	out, err := io.ReadAll(rec.Body)
-	require.NoError(t, err)
-	frame := string(out)
-	assert.True(t, strings.HasPrefix(frame, "event: message\ndata: "),
-		"expected SSE-style framing, got: %q", frame)
-	assert.Contains(t, frame, `"method":"tools/list"`)
+	req.Header.Set("Content-Type", "application/json")
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
 }
 
-// TestStreamableHTTPHandler_PropagatesSessionID ensures the Mcp-Session-Id
-// header is echoed back when supplied so clients can correlate requests.
-func TestStreamableHTTPHandler_PropagatesSessionID(t *testing.T) {
-	h := newTestHandler()
+func initializeBody(id int) string {
+	return `{"jsonrpc":"2.0","id":` + strconv.Itoa(id) + `,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+}
 
+func TestStreamableHTTPHandler_RejectsInvalidJSON(t *testing.T) {
+	rec := postStreamable(t, newTestHandler(), "not json", "")
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestStreamableHTTPHandler_RejectsDisallowedOrigin(t *testing.T) {
+	t.Setenv("MCP_ALLOWED_ORIGINS", "https://allowed.example")
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(initializeBody(1)))
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Origin", "https://evil.example")
 	rec := httptest.NewRecorder()
-	body := []byte(`{"jsonrpc":"2.0","id":3,"method":"ping"}`)
-	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Mcp-Session-Id", "session-abc-123")
-	h.ServeHTTP(rec, req)
+	newTestHandler().ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
 
-	require.Equal(t, http.StatusAccepted, rec.Code)
-	assert.Equal(t, "session-abc-123", rec.Header().Get("Mcp-Session-Id"))
+func TestStreamableHTTPHandler_AllowsConfiguredOrigin(t *testing.T) {
+	t.Setenv("MCP_ALLOWED_ORIGINS", "https://allowed.example")
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(initializeBody(1)))
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://allowed.example")
+	rec := httptest.NewRecorder()
+	newTestHandler().ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestStreamableHTTPHandler_RejectsOversizedBody(t *testing.T) {
+	body := append([]byte(`{"jsonrpc":"2.0","id":1,"method":"`), bytes.Repeat([]byte("a"), maxStreamableRequestBody+1)...)
+	rec := postStreamable(t, newTestHandler(), string(body), "")
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+}
+
+func TestStreamableHTTPHandler_InitializeCreatesSession(t *testing.T) {
+	rec := postStreamable(t, newTestHandler(), initializeBody(1), "")
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+	assert.NotEmpty(t, rec.Header().Get("Mcp-Session-Id"))
+
+	var response struct {
+		Result struct {
+			ProtocolVersion string `json:"protocolVersion"`
+			ServerInfo      struct {
+				Name string `json:"name"`
+			} `json:"serverInfo"`
+		} `json:"result"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+	assert.Equal(t, "2025-06-18", response.Result.ProtocolVersion)
+	assert.Equal(t, "test-server", response.Result.ServerInfo.Name)
+}
+
+func TestStreamableHTTPHandler_InitializedNotificationReturnsAccepted(t *testing.T) {
+	handler := newTestHandler()
+	initialize := postStreamable(t, handler, initializeBody(1), "")
+	require.Equal(t, http.StatusOK, initialize.Code)
+	sessionID := initialize.Header().Get("Mcp-Session-Id")
+	require.NotEmpty(t, sessionID)
+
+	rec := postStreamable(t, handler, `{"jsonrpc":"2.0","method":"notifications/initialized"}`, sessionID)
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	assert.Empty(t, rec.Body.Bytes())
+}
+
+func TestStreamableHTTPHandler_RejectsNonJSONContentType(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(initializeBody(1)))
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Content-Type", "text/plain")
+	rec := httptest.NewRecorder()
+	newTestHandler().ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusUnsupportedMediaType, rec.Code)
+}
+
+func TestStreamableHTTPHandler_APIKeyMiddlewareRejectsMissingKey(t *testing.T) {
+	handler := APIKeyAuth("secret")(newTestHandler())
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(initializeBody(1)))
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestStreamableHTTPHandler_RequiresBothAcceptTypes(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(initializeBody(1)))
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	newTestHandler().ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestStreamableHTTPHandler_DeleteSession(t *testing.T) {
+	handler := newTestHandler()
+	initialize := postStreamable(t, handler, initializeBody(1), "")
+	require.Equal(t, http.StatusOK, initialize.Code)
+	sessionID := initialize.Header().Get("Mcp-Session-Id")
+	require.NotEmpty(t, sessionID)
+
+	req := httptest.NewRequest(http.MethodDelete, "/mcp", nil)
+	req.Header.Set("Mcp-Session-Id", sessionID)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+func TestStreamableHTTPHandler_RejectsUnknownSession(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/mcp", nil)
+	req.Header.Set("Mcp-Session-Id", "unknown-session")
+	rec := httptest.NewRecorder()
+	newTestHandler().ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
