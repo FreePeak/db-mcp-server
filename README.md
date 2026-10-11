@@ -24,6 +24,10 @@
   <a href="#contributing">Contributing</a>
 </div>
 
+<div align="center">
+  <a href="docs/PRD.md"><b>📄 Product Requirements — current capabilities, roadmap & decisions</b></a>
+</div>
+
 </div>
 
 ## Overview
