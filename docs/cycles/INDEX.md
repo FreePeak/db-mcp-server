@@ -82,6 +82,10 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | Postgres MCP Pro (CrystalDBA) | ~3.1k | Plan analysis + hypothetical-index tuning; restricted mode = read-only + time caps |
 | Bytebase MCP | ~14k | Governance: identity, masking, review, audit |
 
+> **Single source of truth:** current capabilities, architecture, decisions, roadmap
+> and milestones live in **[docs/PRD.md](../PRD.md)**. This index is the historical
+> work log that fed them; archived runbooks live in [docs/archive/](../archive/).
+
 ## Standing Backlog (fed by each cycle)
 
 1. Oracle engine-level read-only — fully done (cycle 44: fail-closed privilege audit + native oracle-free image)

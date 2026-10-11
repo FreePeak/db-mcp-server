@@ -14,10 +14,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -66,9 +69,10 @@ func main() {
 	// Parse command-line arguments
 	configFile := flag.String("c", "config.json", "Database configuration file")
 	configPath := flag.String("config", "config.json", "Database configuration file (alternative)")
-	transportMode := flag.String("t", "sse", "Transport mode (stdio, sse, or streamable)")
-	serverPort := flag.Int("p", 9092, "Server port for SSE transport")
-	serverHost := flag.String("h", "localhost", "Server host for SSE transport")
+	transportMode := flag.String("t", "", "Transport mode (stdio, sse, or streamable; defaults to TRANSPORT_MODE or stdio)")
+	serverPort := flag.Int("p", 9092, "Server port for HTTP transports")
+	serverHost := flag.String("h", "127.0.0.1", "Bind host for HTTP transports")
+	allowInsecureSSE := flag.Bool("allow-insecure-sse", false, "Allow legacy SSE without a trusted reverse proxy; never use for shared deployments")
 	dbConfigJSON := flag.String("db-config", "", "JSON string with database configuration")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	lazyLoading := flag.Bool("lazy-loading", false, "Enable lazy loading: connections established on first use (recommended for 10+ databases)")
@@ -104,10 +108,13 @@ func main() {
 			logger.Warn("Warning: failed to set CONFIG_PATH env: %v", err)
 		}
 	}
-	if *transportMode != "sse" {
-		if err := os.Setenv("TRANSPORT_MODE", *transportMode); err != nil {
-			logger.Warn("Warning: failed to set TRANSPORT_MODE env: %v", err)
+	if *transportMode == "" {
+		*transportMode = os.Getenv("TRANSPORT_MODE")
+		if *transportMode == "" {
+			*transportMode = "stdio"
 		}
+	} else if err := os.Setenv("TRANSPORT_MODE", *transportMode); err != nil {
+		logger.Warn("Warning: failed to set TRANSPORT_MODE env: %v", err)
 	}
 	if finalServerPort != 9092 {
 		if err := os.Setenv("SERVER_PORT", fmt.Sprintf("%d", finalServerPort)); err != nil {
@@ -124,19 +131,16 @@ func main() {
 	// Load configuration after environment variables are set
 	cfg, err := config.LoadConfig(*logDir)
 	if err != nil {
-		logger.Warn("Warning: Failed to load configuration: %v", err)
-		// Create a default config if loading fails
-		cfg = &config.Config{
-			ServerPort:    finalServerPort,
-			TransportMode: *transportMode,
-			ConfigPath:    finalConfigPath,
-		}
+		logger.Error("Failed to load configuration: %v", err)
+		os.Exit(1)
 	}
 
-	// Initialize database connection from config
+	// Pass the already-validated canonical object through unchanged. In
+	// particular, result guardrails and resolved SQLite paths must not be
+	// reconstructed by a second parser here.
 	dbConfig := &dbtools.Config{
-		ConfigFile:  cfg.ConfigPath,
-		LazyLoading: *lazyLoading,
+		MultiDBConfig: cfg.MultiDBConfig,
+		LazyLoading:   *lazyLoading,
 	}
 
 	// Ensure database configuration exists
@@ -145,9 +149,9 @@ func main() {
 		logger.Info("Lazy loading enabled: database connections will be established on first use")
 	}
 
-	// Try to initialize database from config
 	if err := dbtools.InitDatabase(dbConfig); err != nil {
-		logger.Warn("Warning: Failed to initialize database: %v", err)
+		logger.Error("Failed to initialize database: %v", err)
+		os.Exit(1)
 	}
 
 	// Set up signal handling for clean shutdown
@@ -164,6 +168,7 @@ func main() {
 	// Set up Clean Architecture layers
 	dbRepo := repository.NewDatabaseRepository()
 	dbUseCase := usecase.NewDatabaseUseCase(dbRepo)
+	defer dbUseCase.CloseTransactions()
 	toolRegistry := mcp.NewToolRegistry(mcpServer, *unifiedTools)
 
 	// Set the database use case in the tool registry
@@ -178,14 +183,11 @@ func main() {
 		logger.Info("No database connections detected")
 	}
 
-	// Register tools
+	// Register tools. Do not fall back to mock tools: a server with no real
+	// database configuration is not a safe runnable state.
 	if err := toolRegistry.RegisterAllTools(ctx, dbUseCase); err != nil {
-		logger.Warn("Warning: error registering tools: %v", err)
-		// If there was an error registering tools, register mock tools as fallback
-		logger.Info("Registering mock tools as fallback due to error...")
-		if err := toolRegistry.RegisterMockTools(ctx); err != nil {
-			logger.Warn("Warning: error registering mock tools: %v", err)
-		}
+		logger.Error("Error registering tools: %v", err)
+		os.Exit(1)
 	}
 	logger.Info("Finished registering tools")
 
@@ -215,29 +217,20 @@ func main() {
 		}
 	}
 
-	// If no database connections, register mock tools to ensure at least some tools are available
-	if len(dbIDs) == 0 {
-		logger.Info("No database connections available. Adding mock tools...")
-		if err := toolRegistry.RegisterMockTools(ctx); err != nil {
-			logger.Warn("Warning: error registering mock tools: %v", err)
-		}
-	}
-
-	// Create a session store to track valid sessions
-	sessions := make(map[string]bool)
-
-	// Create a default session for easier testing
-	defaultSessionID := "default-session"
-	sessions[defaultSessionID] = true
-	logger.Info("Created default session: %s", defaultSessionID)
-
 	// Handle transport mode
 	switch cfg.TransportMode {
 	case "sse":
+		if !*allowInsecureSSE {
+			logger.Error("Legacy SSE is disabled by default because it has no built-in authentication; use STDIO or implement the Streamable transport, or pass -allow-insecure-sse only behind a trusted private proxy")
+			os.Exit(1)
+		}
+		if *apiKey != "" {
+			logger.Warn("DB_MCP_API_KEY is not applied to the legacy Cortex SSE transport; enforce authentication at the trusted proxy")
+		}
 		logger.Info("Starting SSE server on port %d", cfg.ServerPort)
 
 		// Configure base URL with explicit protocol
-		baseURL := fmt.Sprintf("http://%s:%d", *serverHost, cfg.ServerPort)
+		baseURL := fmt.Sprintf("http://%s", net.JoinHostPort(*serverHost, strconv.Itoa(cfg.ServerPort)))
 		logger.Info("Using base URL: %s", baseURL)
 
 		// Set logging mode based on configuration
@@ -250,7 +243,7 @@ func main() {
 			}
 		}
 		// Set the server address
-		mcpServer.SetAddress(fmt.Sprintf(":%d", cfg.ServerPort))
+		mcpServer.SetAddress(net.JoinHostPort(*serverHost, strconv.Itoa(cfg.ServerPort)))
 
 		// Start the dedicated /health HTTP endpoint on a separate port so the
 		// MCP SSE server is not blocked by container/orchestrator probes.
@@ -269,7 +262,7 @@ func main() {
 				}
 			})
 			healthServer = &http.Server{
-				Addr:              fmt.Sprintf(":%d", *healthPort),
+				Addr:              net.JoinHostPort(*serverHost, strconv.Itoa(*healthPort)),
 				Handler:           mux,
 				ReadHeaderTimeout: 5 * time.Second,
 			}
@@ -311,7 +304,8 @@ func main() {
 				}
 			}
 
-			// Close database connections
+			// Roll back agent-owned transactions before closing their pools.
+			dbUseCase.CloseTransactions()
 			if err := dbtools.CloseDatabase(); err != nil {
 				logger.Error("Error closing database connections: %v", err)
 			}
@@ -356,19 +350,58 @@ func main() {
 			fmt.Fprintf(os.Stderr, "STDIO server error: %v\n", err)
 			os.Exit(1)
 		}
+		dbUseCase.CloseTransactions()
+		if err := dbtools.CloseDatabase(); err != nil {
+			logger.Error("Error closing database connections: %v", err)
+		}
 
 	case "streamable":
 		logger.Info("Starting streamable HTTP server on port %d", cfg.ServerPort)
 
-		streamableHandler := mcp.APIKeyAuth(*apiKey)(mcp.NewStreamableHTTPHandler(mcpServer))
+		apiScopes := make([]string, 0)
+		for _, scope := range strings.Split(os.Getenv("DB_MCP_API_SCOPES"), ",") {
+			if scope = strings.TrimSpace(scope); scope != "" {
+				apiScopes = append(apiScopes, scope)
+			}
+		}
+		if len(apiScopes) == 0 {
+			apiScopes = []string{"db:read"}
+		}
+
+		var authMiddleware func(http.Handler) http.Handler
+		oidcIssuer := strings.TrimSpace(os.Getenv("DB_MCP_OIDC_ISSUER"))
+		if oidcIssuer != "" {
+			oidcAudience := strings.TrimSpace(os.Getenv("DB_MCP_OIDC_AUDIENCE"))
+			if oidcAudience == "" {
+				logger.Error("DB_MCP_OIDC_AUDIENCE is required when DB_MCP_OIDC_ISSUER is configured")
+				os.Exit(1)
+			}
+			oidcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			verifier, err := mcp.NewOIDCVerifier(oidcCtx, oidcIssuer, oidcAudience)
+			cancel()
+			if err != nil {
+				logger.Error("Failed to initialize OIDC verifier: %v", err)
+				os.Exit(1)
+			}
+			authMiddleware = mcp.OIDCBearerAuth(verifier, apiScopes)
+		} else {
+			if *apiKey == "" {
+				logger.Error("Streamable HTTP requires OIDC configuration or DB_MCP_API_KEY; refusing to start unauthenticated")
+				os.Exit(1)
+			}
+			authMiddleware = mcp.APIKeyAuthWithScopes(*apiKey, apiScopes)
+		}
+		streamableHandler := authMiddleware(mcp.NewStreamableHTTPHandler(toolRegistry.ServerAdapter().SDKServer()))
 
 		mux := http.NewServeMux()
 		mux.Handle("/mcp", streamableHandler)
 
 		streamableServer := &http.Server{
-			Addr:              fmt.Sprintf(":%d", cfg.ServerPort),
+			Addr:              net.JoinHostPort(*serverHost, strconv.Itoa(cfg.ServerPort)),
 			Handler:           mux,
 			ReadHeaderTimeout: 5 * time.Second,
+			IdleTimeout:       60 * time.Second,
+			MaxHeaderBytes:    1 << 20,
 		}
 
 		go func() {
@@ -387,6 +420,7 @@ func main() {
 		if err := streamableServer.Shutdown(shutdownCtx); err != nil {
 			logger.Error("Error during streamable HTTP shutdown: %v", err)
 		}
+		dbUseCase.CloseTransactions()
 		if err := dbtools.CloseDatabase(); err != nil {
 			logger.Error("Error closing database connections: %v", err)
 		}

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	sdkAuth "github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -87,6 +88,38 @@ func TestAPIKeyAuth_AcceptsMatchingKey(t *testing.T) {
 
 // TestAPIKeyAuth_RejectsMalformedHeader covers a malformed Authorization
 // header that lacks the "Bearer " prefix.
+func TestAPIKeyAuthWithScopes_InjectsTokenInfo(t *testing.T) {
+	called := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		info := sdkAuth.TokenInfoFromContext(r.Context())
+		if info == nil {
+			t.Fatal("expected token info in request context")
+		}
+		if info.UserID != "api-key" || len(info.Scopes) != 2 {
+			t.Fatalf("unexpected token info: %#v", info)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	h := APIKeyAuthWithScopes("secret-key", []string{"db:read", "db:write"})(next)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer secret-key")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.True(t, called)
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+func TestAPIKeyAuthWithScopes_RejectsMissingToken(t *testing.T) {
+	h := APIKeyAuthWithScopes("secret-key", []string{"db:read"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler must not run")
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
 func TestAPIKeyAuth_RejectsMalformedHeader(t *testing.T) {
 	h := APIKeyAuth("secret-key")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 

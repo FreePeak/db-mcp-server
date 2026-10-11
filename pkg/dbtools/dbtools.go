@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -32,53 +33,22 @@ const (
 	Postgres DatabaseType = "postgres"
 )
 
-// Config represents database configuration
+// Config controls database manager initialization. MultiDBConfig is the
+// canonical runtime configuration; ConfigFile and Connections remain as
+// compatibility inputs for callers outside cmd/server.
 type Config struct {
-	ConfigFile  string
-	Connections []ConnectionConfig
-	LazyLoading bool // Enable lazy loading: connections established on first use
+	ConfigFile    string
+	Connections   []ConnectionConfig
+	MultiDBConfig *db.MultiDBConfig
+	LazyLoading   bool
 }
 
-// ConnectionConfig represents a single database connection configuration
-type ConnectionConfig struct {
-	ID       string       `json:"id"`
-	Type     DatabaseType `json:"type"`
-	Host     string       `json:"host"`
-	Port     int          `json:"port"`
-	Name     string       `json:"name"`
-	User     string       `json:"user"`
-	Password string       `json:"password"`
+// ConnectionConfig is kept as an alias for source compatibility. The database
+// package owns the wire schema so configuration cannot diverge between layers.
+type ConnectionConfig = db.DatabaseConnectionConfig
 
-	// PostgreSQL specific options
-	SSLMode            string            `json:"ssl_mode,omitempty"`
-	SSLCert            string            `json:"ssl_cert,omitempty"`
-	SSLKey             string            `json:"ssl_key,omitempty"`
-	SSLRootCert        string            `json:"ssl_root_cert,omitempty"`
-	ApplicationName    string            `json:"application_name,omitempty"`
-	ConnectTimeout     int               `json:"connect_timeout,omitempty"`
-	QueryTimeout       int               `json:"query_timeout,omitempty"` // in seconds
-	TargetSessionAttrs string            `json:"target_session_attrs,omitempty"`
-	Options            map[string]string `json:"options,omitempty"`
-
-	// SQLite specific options
-	DatabasePath     string `json:"database_path,omitempty"`      // Path to SQLite database file
-	EncryptionKey    string `json:"encryption_key,omitempty"`     // Key for SQLCipher encryption
-	ReadOnly         bool   `json:"read_only,omitempty"`          // Open database in read-only mode
-	CacheSize        int    `json:"cache_size,omitempty"`         // SQLite cache size (in pages)
-	JournalMode      string `json:"journal_mode,omitempty"`       // Journal mode for SQLite
-	UseModerncDriver bool   `json:"use_modernc_driver,omitempty"` // Use modernc.org/sqlite driver instead of mattn/go-sqlite3
-
-	// Connection pool settings
-	MaxOpenConns    int `json:"max_open_conns,omitempty"`
-	MaxIdleConns    int `json:"max_idle_conns,omitempty"`
-	ConnMaxLifetime int `json:"conn_max_lifetime_seconds,omitempty"`  // in seconds
-	ConnMaxIdleTime int `json:"conn_max_idle_time_seconds,omitempty"` // in seconds
-}
-
-// MultiDBConfig represents configuration for multiple database connections
-type MultiDBConfig struct {
-	Connections []ConnectionConfig `json:"connections"`
-}
+// MultiDBConfig is kept as an alias for source compatibility.
+type MultiDBConfig = db.MultiDBConfig
 
 // Database connection manager (singleton)
 var (
@@ -96,126 +66,122 @@ type DatabaseConnectionInfo struct {
 	Latency string       `json:"latency,omitempty"`
 }
 
-// InitDatabase initializes the database connections
+// InitDatabase initializes the database connections from the canonical config
+// object. The legacy fields remain supported for external callers, but the
+// server path passes the already-validated object and never re-parses a file.
 func InitDatabase(cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("no database configuration provided")
+	}
+
 	// Create database manager
 	dbManager = db.NewDBManager()
 
-	var multiDBConfig *MultiDBConfig
+	multiDBConfig := cfg.MultiDBConfig
+	if multiDBConfig == nil && len(cfg.Connections) > 0 {
+		multiDBConfig = &db.MultiDBConfig{Connections: cfg.Connections}
+		logger.Info("Using database connections from direct configuration")
+	}
 
-	// If config file is provided, load it
-	if cfg != nil && cfg.ConfigFile != "" {
-		// Read config file
+	// Compatibility path for callers that still pass ConfigFile directly.
+	if multiDBConfig == nil && cfg.ConfigFile != "" {
 		configData, err := os.ReadFile(cfg.ConfigFile)
 		if err != nil {
-			logger.Warn("Warning: failed to read config file %s: %v", cfg.ConfigFile, err)
-			// Don't return error, try other methods
-		} else {
-			// Parse config
-			multiDBConfig = &MultiDBConfig{}
-			if err := json.Unmarshal(configData, multiDBConfig); err != nil {
-				logger.Warn("Warning: failed to parse config file %s: %v", cfg.ConfigFile, err)
-				// Don't return error, try other methods
-			} else {
-				logger.Info("Loaded database config from file: %s", cfg.ConfigFile)
+			return fmt.Errorf("failed to read config file %s: %w", cfg.ConfigFile, err)
+		}
+		multiDBConfig = &db.MultiDBConfig{}
+		if err := json.Unmarshal(configData, multiDBConfig); err != nil {
+			return fmt.Errorf("failed to parse config file %s: %w", cfg.ConfigFile, err)
+		}
+		logger.Info("Loaded database config from file: %s", cfg.ConfigFile)
+	}
+
+	// Compatibility path for callers that still pass inline JSON directly.
+	if multiDBConfig == nil {
+		if dbConfigJSON := os.Getenv("DB_CONFIG"); dbConfigJSON != "" {
+			multiDBConfig = &db.MultiDBConfig{}
+			if err := json.Unmarshal([]byte(dbConfigJSON), multiDBConfig); err != nil {
+				return fmt.Errorf("failed to parse DB_CONFIG environment variable: %w", err)
 			}
+			logger.Info("Loaded database config from DB_CONFIG environment variable")
 		}
 	}
 
-	// If config was not loaded from file, try direct connections config
-	if multiDBConfig == nil || len(multiDBConfig.Connections) == 0 {
-		if cfg != nil && len(cfg.Connections) > 0 {
-			// Use connections from direct config
-			multiDBConfig = &MultiDBConfig{
-				Connections: cfg.Connections,
-			}
-			logger.Info("Using database connections from direct configuration")
-		} else {
-			// Try to load from environment variable
-			dbConfigJSON := os.Getenv("DB_CONFIG")
-			if dbConfigJSON != "" {
-				multiDBConfig = &MultiDBConfig{}
-				if err := json.Unmarshal([]byte(dbConfigJSON), multiDBConfig); err != nil {
-					logger.Warn("Warning: failed to parse DB_CONFIG environment variable: %v", err)
-					// Don't return error, try legacy method
-				} else {
-					logger.Info("Loaded database config from DB_CONFIG environment variable")
-				}
-			}
-		}
-	}
-
-	// If no config loaded yet, try legacy single connection from environment
-	if multiDBConfig == nil || len(multiDBConfig.Connections) == 0 {
-		// Create a single connection from environment variables
+	// Last-resort compatibility path for the legacy single connection.
+	if multiDBConfig == nil {
 		dbType := os.Getenv("DB_TYPE")
 		if dbType == "" {
-			dbType = "mysql" // Default type
+			dbType = "mysql"
 		}
-
 		dbHost := os.Getenv("DB_HOST")
 		dbPortStr := os.Getenv("DB_PORT")
 		dbUser := os.Getenv("DB_USER")
 		dbPassword := os.Getenv("DB_PASSWORD")
 		dbName := os.Getenv("DB_NAME")
-
-		// If we have basic connection details, create a config
 		if dbHost != "" && dbUser != "" {
 			dbPort, err := strconv.Atoi(dbPortStr)
 			if err != nil || dbPort == 0 {
-				dbPort = 3306 // Default MySQL port
+				dbPort = 3306
 			}
-
-			multiDBConfig = &MultiDBConfig{
-				Connections: []ConnectionConfig{
-					{
-						ID:       "default",
-						Type:     DatabaseType(dbType),
-						Host:     dbHost,
-						Port:     dbPort,
-						Name:     dbName,
-						User:     dbUser,
-						Password: dbPassword,
-					},
-				},
+			multiDBConfig = &db.MultiDBConfig{
+				Connections: []db.DatabaseConnectionConfig{{
+					ID:       "default",
+					Type:     dbType,
+					Host:     dbHost,
+					Port:     dbPort,
+					Name:     dbName,
+					User:     dbUser,
+					Password: dbPassword,
+				}},
 			}
 			logger.Info("Created database config from environment variables")
 		}
 	}
 
-	// If still no config, return error
 	if multiDBConfig == nil || len(multiDBConfig.Connections) == 0 {
 		return fmt.Errorf("no database configuration provided")
 	}
 
-	// Convert config to JSON for loading
+	secretBaseDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to resolve secret file paths: %w", err)
+	}
+	if cfg.ConfigFile != "" {
+		secretBaseDir = filepath.Dir(cfg.ConfigFile)
+		if !filepath.IsAbs(secretBaseDir) {
+			secretBaseDir, err = filepath.Abs(secretBaseDir)
+			if err != nil {
+				return fmt.Errorf("failed to resolve secret file paths: %w", err)
+			}
+		}
+	}
+	for i := range multiDBConfig.Connections {
+		if err := db.ResolveSecretReferences(&multiDBConfig.Connections[i], secretBaseDir); err != nil {
+			return err
+		}
+	}
+
 	configJSON, err := json.Marshal(multiDBConfig)
 	if err != nil {
 		return fmt.Errorf("failed to marshal database config: %w", err)
 	}
-
 	if err := dbManager.LoadConfig(configJSON); err != nil {
 		return fmt.Errorf("failed to load database config: %w", err)
 	}
 
-	// Enable lazy loading if requested
-	if cfg != nil && cfg.LazyLoading {
+	if cfg.LazyLoading {
 		dbManager.SetLazyLoading(true)
 	}
-
-	// Connect to all databases (unless lazy loading is enabled)
 	if err := dbManager.Connect(); err != nil {
 		return fmt.Errorf("failed to connect to databases: %w", err)
 	}
 
-	// Log database configuration
 	dbs := dbManager.ListDatabases()
-	if cfg != nil && cfg.LazyLoading {
+	if cfg.LazyLoading {
 		logger.Info("Configured %d databases with lazy loading enabled", len(dbs))
 	} else {
 		logger.Info("Connected to %d databases: %v", len(dbs), dbs)
 	}
-
 	return nil
 }
 

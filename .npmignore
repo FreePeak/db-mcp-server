@@ -4,8 +4,8 @@ go.mod
 go.sum
 
 # Build artifacts
-bin/
 *.exe
+release/
 *.out
 *.test
 

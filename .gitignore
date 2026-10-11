@@ -4,6 +4,9 @@
 /multidb
 /multidb-linux
 /bin/*
+!/bin/run.js
+!/bin/run.cmd
+!/bin/install.js
 
 # Build & test output
 *.out

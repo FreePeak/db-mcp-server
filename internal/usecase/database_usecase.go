@@ -3,6 +3,8 @@ package usecase
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -129,47 +131,150 @@ func executeQueriesWithFallback(ctx context.Context, db domain.Database, queries
 	return nil, fmt.Errorf("all queries failed: %w", lastErr)
 }
 
+const (
+	defaultTransactionTTL = 5 * time.Minute
+	maxActiveTransactions = 128
+)
+
+type transactionRecord struct {
+	tx         domain.Tx
+	dbID       string
+	lastUsed   time.Time
+	timer      *time.Timer
+	generation uint64
+}
+
 // DatabaseUseCase defines operations for managing database functionality
 type DatabaseUseCase struct {
 	repo domain.DatabaseRepository
 
-	// transactions holds live transactions keyed by their generated
-	// transaction ID so begin/execute/commit/rollback act on the same
-	// underlying transaction instead of stubbed no-ops.
-	txMu         sync.Mutex
-	transactions map[string]domain.Tx
+	// transactions holds live transactions keyed by their generated IDs.
+	// Each record is bound to its database and expires when idle so an
+	// abandoned MCP session cannot hold a pooled connection indefinitely.
+	txMu           sync.Mutex
+	transactions   map[string]*transactionRecord
+	transactionTTL time.Duration
 }
 
 // NewDatabaseUseCase creates a new database use case
 func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 	return &DatabaseUseCase{
-		repo:         repo,
-		transactions: make(map[string]domain.Tx),
+		repo:           repo,
+		transactions:   make(map[string]*transactionRecord),
+		transactionTTL: defaultTransactionTTL,
 	}
 }
 
-func (uc *DatabaseUseCase) storeTx(id string, tx domain.Tx) {
+func (uc *DatabaseUseCase) storeTx(id, dbID string, tx domain.Tx) error {
 	uc.txMu.Lock()
 	defer uc.txMu.Unlock()
-	uc.transactions[id] = tx
+	if len(uc.transactions) >= maxActiveTransactions {
+		return fmt.Errorf("maximum active transactions (%d) reached", maxActiveTransactions)
+	}
+	record := &transactionRecord{tx: tx, dbID: dbID, lastUsed: time.Now()}
+	uc.transactions[id] = record
+	uc.scheduleExpiryLocked(id, record)
+	return nil
 }
 
-func (uc *DatabaseUseCase) getTx(id string) (domain.Tx, bool) {
+func (uc *DatabaseUseCase) scheduleExpiryLocked(id string, record *transactionRecord) {
+	record.generation++
+	generation := record.generation
+	ttl := uc.transactionTTL
+	if ttl <= 0 {
+		ttl = defaultTransactionTTL
+	}
+	record.timer = time.AfterFunc(ttl, func() {
+		uc.expireTx(id, generation)
+	})
+}
+
+func (uc *DatabaseUseCase) touchTxLocked(id string, record *transactionRecord) {
+	record.lastUsed = time.Now()
+	if record.timer != nil {
+		record.timer.Stop()
+	}
+	uc.scheduleExpiryLocked(id, record)
+}
+
+func (uc *DatabaseUseCase) expireTx(id string, generation uint64) {
+	uc.txMu.Lock()
+	record, ok := uc.transactions[id]
+	if !ok || record.generation != generation {
+		uc.txMu.Unlock()
+		return
+	}
+	delete(uc.transactions, id)
+	uc.txMu.Unlock()
+
+	if err := record.tx.Rollback(); err != nil {
+		logger.Warn("expired transaction %s rollback failed: %v", id, err)
+	}
+}
+
+func (uc *DatabaseUseCase) getTx(id, dbID string) (domain.Tx, error) {
 	uc.txMu.Lock()
 	defer uc.txMu.Unlock()
-	tx, ok := uc.transactions[id]
-	return tx, ok
+	record, ok := uc.transactions[id]
+	if !ok {
+		return nil, fmt.Errorf("unknown transaction ID %q; use the transactionId returned by a previous begin action", id)
+	}
+	if record.dbID != dbID {
+		return nil, fmt.Errorf("transaction %q belongs to database %q, not %q", id, record.dbID, dbID)
+	}
+	uc.touchTxLocked(id, record)
+	return record.tx, nil
 }
 
 // takeTx removes and returns the transaction registered under id.
-func (uc *DatabaseUseCase) takeTx(id string) (domain.Tx, bool) {
+func (uc *DatabaseUseCase) takeTx(id, dbID string) (domain.Tx, error) {
 	uc.txMu.Lock()
-	defer uc.txMu.Unlock()
-	tx, ok := uc.transactions[id]
-	if ok {
-		delete(uc.transactions, id)
+	record, ok := uc.transactions[id]
+	if !ok {
+		uc.txMu.Unlock()
+		return nil, fmt.Errorf("unknown transaction ID %q; use the transactionId returned by a previous begin action", id)
 	}
-	return tx, ok
+	if record.dbID != dbID {
+		uc.txMu.Unlock()
+		return nil, fmt.Errorf("transaction %q belongs to database %q, not %q", id, record.dbID, dbID)
+	}
+	delete(uc.transactions, id)
+	if record.timer != nil {
+		record.timer.Stop()
+	}
+	record.generation++
+	uc.txMu.Unlock()
+	return record.tx, nil
+}
+
+// CloseTransactions rolls back every live transaction. It is safe to call
+// during shutdown and prevents pooled connections from being held by an
+// in-flight agent session.
+func (uc *DatabaseUseCase) CloseTransactions() {
+	uc.txMu.Lock()
+	records := uc.transactions
+	uc.transactions = make(map[string]*transactionRecord)
+	for _, record := range records {
+		if record.timer != nil {
+			record.timer.Stop()
+		}
+		record.generation++
+	}
+	uc.txMu.Unlock()
+
+	for id, record := range records {
+		if err := record.tx.Rollback(); err != nil {
+			logger.Warn("shutdown rollback for transaction %s failed: %v", id, err)
+		}
+	}
+}
+
+func newTransactionID(dbID string) (string, error) {
+	var randomBytes [16]byte
+	if _, err := rand.Read(randomBytes[:]); err != nil {
+		return "", fmt.Errorf("failed to generate transaction ID: %w", err)
+	}
+	return fmt.Sprintf("tx_%s_%s", dbID, hex.EncodeToString(randomBytes[:])), nil
 }
 
 // ListDatabases returns a list of available databases
@@ -543,15 +648,26 @@ func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action 
 			return "", nil, fmt.Errorf("failed to start transaction: %w", err)
 		}
 
-		newTxID := fmt.Sprintf("tx_%s_%d", dbID, timeNowUnixNano())
-		uc.storeTx(newTxID, tx)
+		newTxID, err := newTransactionID(dbID)
+		if err != nil {
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				return "", nil, fmt.Errorf("%w; rollback failed: %v", err, rollbackErr)
+			}
+			return "", nil, err
+		}
+		if err := uc.storeTx(newTxID, dbID, tx); err != nil {
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				return "", nil, fmt.Errorf("%w; rollback failed: %v", err, rollbackErr)
+			}
+			return "", nil, err
+		}
 
 		return "Transaction started", map[string]interface{}{"transactionId": newTxID}, nil
 
 	case "commit":
-		tx, ok := uc.takeTx(txID)
-		if !ok {
-			return "", nil, fmt.Errorf("unknown transaction ID %q; use the transactionId returned by a previous begin action", txID)
+		tx, err := uc.takeTx(txID, dbID)
+		if err != nil {
+			return "", nil, err
 		}
 		if err := tx.Commit(); err != nil {
 			return "", nil, fmt.Errorf("failed to commit transaction %q: %w", txID, err)
@@ -559,9 +675,9 @@ func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action 
 		return "Transaction committed", map[string]interface{}{"transactionId": txID}, nil
 
 	case "rollback":
-		tx, ok := uc.takeTx(txID)
-		if !ok {
-			return "", nil, fmt.Errorf("unknown transaction ID %q; use the transactionId returned by a previous begin action", txID)
+		tx, err := uc.takeTx(txID, dbID)
+		if err != nil {
+			return "", nil, err
 		}
 		if err := tx.Rollback(); err != nil {
 			return "", nil, fmt.Errorf("failed to roll back transaction %q: %w", txID, err)
@@ -573,9 +689,9 @@ func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action 
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to get database: %w", err)
 		}
-		tx, ok := uc.getTx(txID)
-		if !ok {
-			return "", nil, fmt.Errorf("unknown transaction ID %q; use the transactionId returned by a previous begin action", txID)
+		tx, err := uc.getTx(txID, dbID)
+		if err != nil {
+			return "", nil, err
 		}
 
 		// Defense-in-depth read-only guard for engines that do not enforce
@@ -604,12 +720,6 @@ func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action 
 	default:
 		return "", nil, fmt.Errorf("invalid transaction action: %s", action)
 	}
-}
-
-// Helper function to get a nanosecond-resolution timestamp for unique
-// transaction IDs under rapid successive calls.
-func timeNowUnixNano() int64 {
-	return time.Now().UnixNano()
 }
 
 // GetDatabaseType returns the type of a database by ID

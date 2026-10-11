@@ -2,6 +2,7 @@ package dbtools
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 )
@@ -62,6 +63,36 @@ func TestPerformanceAnalyzer(t *testing.T) {
 		if foundMetrics.AvgDuration < time.Millisecond {
 			t.Errorf("Expected average duration to be at least 1ms, got %v", foundMetrics.AvgDuration)
 		}
+	}
+}
+
+func TestPerformanceAnalyzerConcurrentTrackingAndReads(t *testing.T) {
+	analyzer := NewPerformanceAnalyzer()
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = analyzer.TrackQuery(context.Background(), "SELECT ?", []interface{}{1}, func() (interface{}, error) {
+				return nil, nil
+			})
+		}()
+	}
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 25; j++ {
+				_ = analyzer.GetAllMetrics()
+				_ = analyzer.SlowQueries()
+			}
+		}()
+	}
+	wg.Wait()
+
+	metrics := analyzer.GetAllMetrics()
+	if len(metrics) != 1 || metrics[0].Count != 100 {
+		t.Fatalf("expected 100 normalized query metrics, got %#v", metrics)
 	}
 }
 

@@ -1,14 +1,14 @@
-name: NPM Publish & Release
+name: Release artifacts
 
 on:
   push:
-    branches: [ main ]
-    paths:
-      - 'package.json'
-      - 'go.mod'
-      - '**.go'
-      - 'Makefile'
+    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (for example 1.12.0)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -16,71 +16,76 @@ permissions:
 
 jobs:
   get-version:
-    name: Get Version
+    name: Validate version
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-
-      - name: Get version from package.json
+      - name: Read and validate package version
         id: version
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION='${{ inputs.version }}'
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          test "$VERSION" = "$PACKAGE_VERSION" || {
+            echo "Tag/input version $VERSION does not match package.json $PACKAGE_VERSION" >&2
+            exit 1
+          }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION"
 
-  build-and-release:
-    name: Build & Release
+  verify:
+    name: Verify source
     needs: get-version
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: "1.23.0"
           check-latest: true
+      - name: Download Go modules
+        run: go mod download
+      - name: Test and vet
+        run: |
+          go test -short ./...
+          go vet ./...
+      - name: Validate npm launchers
+        run: node --check bin/run.js && node --check bin/install.js
 
+  build-and-release:
+    name: Build and release
+    needs: [get-version, verify]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.0"
+          check-latest: true
       - name: Install dependencies
         run: go mod download
-
-      - name: Build for all platforms
+      - name: Build release binaries
         run: |
           VERSION=${{ needs.get-version.outputs.version }}
           mkdir -p release
-
-          # macOS amd64
-          GOOS=darwin GOARCH=amd64 go build -o release/db-mcp-server-darwin-amd64 -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
-
-          # macOS arm64
-          GOOS=darwin GOARCH=arm64 go build -o release/db-mcp-server-darwin-arm64 -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
-
-          # Linux amd64
-          GOOS=linux GOARCH=amd64 go build -o release/db-mcp-server-linux-amd64 -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
-
-          # Linux arm64
-          GOOS=linux GOARCH=arm64 go build -o release/db-mcp-server-linux-arm64 -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
-
-          # Windows amd64
-          GOOS=windows GOARCH=amd64 go build -o release/db-mcp-server-windows-amd64.exe -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
-
-      - name: Check if release already exists
-        id: check_release
-        run: |
-          VERSION=${{ needs.get-version.outputs.version }}
-          if git ls-remote --tags origin | grep -q "refs/tags/v$VERSION"; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Release v$VERSION already exists, skipping release creation"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Create Release
-        if: steps.check_release.outputs.exists == 'false'
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -o release/db-mcp-server-darwin-amd64 -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o release/db-mcp-server-darwin-arm64 -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o release/db-mcp-server-linux-amd64 -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o release/db-mcp-server-linux-arm64 -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o release/db-mcp-server-windows-amd64.exe -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
+          GOOS=windows GOARCH=arm64 CGO_ENABLED=0 go build -o release/db-mcp-server-windows-arm64.exe -ldflags="-s -w -X main.version=$VERSION" ./cmd/server
+          sha256sum release/db-mcp-server-* > release/SHA256SUMS
+      - name: Create release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.get-version.outputs.version }}
@@ -93,47 +98,38 @@ jobs:
             release/db-mcp-server-linux-amd64
             release/db-mcp-server-linux-arm64
             release/db-mcp-server-windows-amd64.exe
+            release/db-mcp-server-windows-arm64.exe
+            release/SHA256SUMS
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-npm:
-    name: Publish to NPM
-    needs: [get-version, build-and-release]
+    name: Publish npm package
+    needs: [get-version, verify, build-and-release]
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-
+          node-version: "20"
+          registry-url: https://registry.npmjs.org
       - name: Check npm credentials
-        # Fail fast with an actionable message instead of ENEEDAUTH
-        # (the package has never published — see issue #83 discussion).
-        run: |
-          if [ -z "${NPM_TOKEN:-}" ]; then
-            echo "::error::NPM_TOKEN repository secret is not set. Create a granular access token at https://www.npmjs.com/settings/~/tokens (Read & Write), add it under Settings → Secrets and variables → Actions, then re-run this workflow."
-            exit 1
-          fi
+        run: test -n "${NPM_TOKEN:-}"
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish to NPM
+      - name: Inspect package contents
+        run: npm pack --dry-run --json > package-manifest.json
+      - name: Publish package
         run: |
           VERSION=${{ needs.get-version.outputs.version }}
           PKG_NAME=$(node -p "require('./package.json').name")
-          
-          echo "Preparing to publish $PKG_NAME@$VERSION to npm..."
-          
-          if npm view "$PKG_NAME@$VERSION" version > /dev/null 2>&1; then
-            echo "Version $VERSION of $PKG_NAME is already published on npm. Skipping publish."
+          if npm view "$PKG_NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$PKG_NAME@$VERSION is already published; skipping"
             exit 0
           fi
-          
-          npm publish --access public
+          npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
