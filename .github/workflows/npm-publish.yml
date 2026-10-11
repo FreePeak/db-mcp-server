@@ -112,17 +112,31 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Check npm credentials
+        id: npmcreds
         # Fail fast with an actionable message instead of ENEEDAUTH
         # (the package has never published — see issue #83 discussion).
+        # On a branch push with no token the npm channel cannot publish,
+        # so warn and skip the publish step (issue #86); a manual
+        # dispatch is an explicit publish and still fails hard.
         run: |
-          if [ -z "${NPM_TOKEN:-}" ]; then
-            echo "::error::NPM_TOKEN repository secret is not set. Create a granular access token at https://www.npmjs.com/settings/~/tokens (Read & Write), add it under Settings → Secrets and variables → Actions, then re-run this workflow."
-            exit 1
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          msg="NPM_TOKEN repository secret is not set. Create a granular access token at https://www.npmjs.com/settings/~/tokens (Read & Write), add it under Settings - Secrets and variables - Actions, then re-run this workflow."
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            echo "::warning::${msg}"
+            echo "::warning::The npm package was not published by this run."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::error::${msg}"
+          exit 1
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish to NPM
+        if: steps.npmcreds.outputs.ready == 'true'
         run: |
           VERSION=${{ needs.get-version.outputs.version }}
           PKG_NAME=$(node -p "require('./package.json').name")

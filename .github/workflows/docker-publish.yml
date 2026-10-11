@@ -43,20 +43,32 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Check Docker Hub credentials
+        id: creds
         # Fail fast with an actionable message instead of a cryptic
-        # login error (root cause of issue #83).
+        # login error (root cause of issue #83). A tag push or a manual
+        # backfill is a real publish, so missing secrets fail the run;
+        # a plain push to main is only a build check (issue #86), so it
+        # warns and skips the push instead of turning the run red.
         if: github.event_name != 'pull_request'
         run: |
-          if [ -z "${DOCKERHUB_USERNAME:-}" ] || [ -z "${DOCKERHUB_TOKEN:-}" ]; then
-            echo "::error::DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repository secrets are not set. Add them under Settings → Secrets and variables → Actions, then re-run this workflow. See issue #83."
+          if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          msg="DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repository secrets are not set. Add them under Settings - Secrets and variables - Actions, then re-run this workflow. See issue #86."
+          if [ "$GITHUB_REF_TYPE" = "tag" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "::error::${msg}"
             exit 1
           fi
+          echo "::warning::${msg}"
+          echo "::warning::Publishing to Docker Hub is skipped for this run; the image is still built to verify the Dockerfile."
+          echo "ready=false" >> "$GITHUB_OUTPUT"
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Log in to Docker Hub
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && steps.creds.outputs.ready == 'true'
         uses: docker/login-action@v4
         with:
           registry: docker.io
@@ -106,7 +118,7 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ steps.creds.outputs.ready == 'true' }}
           tags: ${{ steps.backfill_tags.outputs.tags || steps.meta.outputs.tags }}
           labels: ${{ steps.backfill_tags.outputs.labels || steps.meta.outputs.labels }}
           cache-from: type=gha

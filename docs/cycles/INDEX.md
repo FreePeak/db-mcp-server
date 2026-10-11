@@ -61,6 +61,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 56 | Lazy-loading-safe TimescaleDB registration + runtime extension guard | ✅ Shipped | [cycle-56](cycle-56-timescale-lazy-loading.md) |
 | 57 | TimescaleDB discovery tools: compression/retention/continuous aggregates, read-only-safe | ✅ Shipped | [cycle-57](cycle-57-timescale-discovery-tools.md) |
 | 59 | Live-engine TimescaleDB validation: five catalog queries rewritten for modern information views | ✅ Shipped | [cycle-59](cycle-59-timescale-catalog-fixes.md) |
+| 60 | CI red on every push: secret guards no longer fail a branch build | ✅ Shipped | [cycle-60](cycle-60-ci-secret-guards.md) |
 | 44 | Oracle engine-level read-only via fail-closed privilege audit (backlog #1 done) | ✅ Shipped | [cycle-44](cycle-44-oracle-readonly.md) |
 | 45 | Release readiness: CHANGELOG backfill v1.10/v1.11 + stale backlog sweep (#3/#5 done) | ✅ Shipped | [cycle-45](cycle-45-release-readiness.md) |
 | 46 | Slow-query index advice + MySQL digest backtick fix (backlog #9 done) | ✅ Shipped | [cycle-46](cycle-46-slow-query-advice.md) |
