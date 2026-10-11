@@ -103,20 +103,29 @@ func (a *DatabaseAdapter) Exec(ctx context.Context, statement string, args ...in
 	return &ResultAdapter{result: result}, nil
 }
 
-// Begin starts a new transaction
+// Begin starts a new transaction. The transaction context must outlive this
+// call: database/sql rolls a transaction back when the context passed to
+// BeginTx is canceled. Individual statements are bounded separately below.
 func (a *DatabaseAdapter) Begin(ctx context.Context, opts *domain.TxOptions) (domain.Tx, error) {
 	txOpts := &sql.TxOptions{}
 	if opts != nil {
 		txOpts.ReadOnly = opts.ReadOnly
 	}
-	tctx, cancel := a.timeout(ctx)
-	defer cancel() // only BeginTx consumes this context; later tx ops carry their own
 
-	tx, err := a.db.BeginTx(tctx, txOpts)
+	txCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	tx, err := a.db.BeginTx(txCtx, txOpts)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-	return &TxAdapter{tx: tx}, nil
+	return &TxAdapter{tx: tx, cancel: cancel, timeout: a.queryTimeout()}, nil
+}
+
+func (a *DatabaseAdapter) queryTimeout() time.Duration {
+	if a.QueryTimeout() <= 0 {
+		return 0
+	}
+	return time.Duration(a.QueryTimeout()) * time.Second
 }
 
 // IsReadOnly reports whether the connection was opened in read-only mode.
@@ -223,31 +232,55 @@ func (a *ResultAdapter) LastInsertId() (int64, error) {
 
 // TxAdapter adapts sql.Tx to domain.Tx
 type TxAdapter struct {
-	tx *sql.Tx
+	tx      *sql.Tx
+	cancel  context.CancelFunc
+	timeout time.Duration
 }
 
-// Commit commits the transaction
+// statementContext preserves cancellation for the current MCP request while
+// applying the database's configured statement timeout. The transaction's
+// lifetime context is independent and is released only by commit/rollback.
+func (a *TxAdapter) statementContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if a.timeout > 0 {
+		return context.WithTimeout(ctx, a.timeout)
+	}
+	return ctx, func() {}
+}
+
+// Commit commits the transaction and releases its lifetime context.
 func (a *TxAdapter) Commit() error {
-	return a.tx.Commit()
+	err := a.tx.Commit()
+	if a.cancel != nil {
+		a.cancel()
+	}
+	return err
 }
 
-// Rollback rolls back the transaction
+// Rollback rolls back the transaction and releases its lifetime context.
 func (a *TxAdapter) Rollback() error {
-	return a.tx.Rollback()
+	err := a.tx.Rollback()
+	if a.cancel != nil {
+		a.cancel()
+	}
+	return err
 }
 
 // Query executes a query within the transaction
 func (a *TxAdapter) Query(ctx context.Context, query string, args ...interface{}) (domain.Rows, error) {
-	rows, err := a.tx.QueryContext(ctx, query, args...)
+	stmtCtx, cancel := a.statementContext(ctx)
+	rows, err := a.tx.QueryContext(stmtCtx, query, args...)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-	return &RowsAdapter{rows: rows}, nil
+	return &RowsAdapter{rows: rows, cancel: cancel}, nil
 }
 
 // Exec executes a statement within the transaction
 func (a *TxAdapter) Exec(ctx context.Context, statement string, args ...interface{}) (domain.Result, error) {
-	result, err := a.tx.ExecContext(ctx, statement, args...)
+	stmtCtx, cancel := a.statementContext(ctx)
+	defer cancel()
+	result, err := a.tx.ExecContext(stmtCtx, statement, args...)
 	if err != nil {
 		return nil, err
 	}

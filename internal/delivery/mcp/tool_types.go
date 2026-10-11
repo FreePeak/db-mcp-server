@@ -962,7 +962,6 @@ func NewToolTypeFactory() *ToolTypeFactory {
 	factory.Register(NewHealthTool())
 	factory.Register(NewSchemaTool())
 	factory.Register(NewListDatabasesTool())
-	factory.Register(NewListDirectoryTool())
 	factory.Register(NewFilterTablesTool())
 
 	return factory

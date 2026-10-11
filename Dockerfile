@@ -19,10 +19,10 @@ COPY . .
 RUN make build
 
 # Create a smaller production image
-FROM alpine:latest
+FROM alpine:3.22
 
-# Add necessary runtime packages and network diagnostic tools
-RUN apk add --no-cache ca-certificates tzdata bash netcat-openbsd bind-tools iputils busybox-extras curl
+# Install only the runtime packages needed by the server and health check.
+RUN apk add --no-cache ca-certificates tzdata bash curl
 
 # Set the working directory
 WORKDIR /app
@@ -30,11 +30,12 @@ WORKDIR /app
 # Copy the built binary from the builder stage
 COPY --from=builder /app/bin/server /app/server
 
-# Copy default config file
-COPY config.json /app/config.json
-
-# Create data and logs directories
-RUN mkdir -p /app/data /app/logs
+# Create an unprivileged runtime user and writable application directories.
+# The production image intentionally does not embed config.json; mount a
+# reviewed config or use CONFIG_PATH/secret references at runtime.
+RUN addgroup -S app && adduser -S -G app app \
+    && mkdir -p /app/data /app/logs \
+    && chown -R app:app /app
 
 # OCI image metadata (improves Glama MCP directory listing quality)
 LABEL org.opencontainers.image.title="DB MCP Server" \
@@ -46,21 +47,21 @@ LABEL org.opencontainers.image.title="DB MCP Server" \
 ENV SERVER_PORT=9092
 ENV TRANSPORT_MODE=sse
 ENV CONFIG_PATH=/app/config.json
+ENV HOME=/app
 
-# Expose server port (MCP SSE endpoint and the new /health endpoint)
-EXPOSE 9092
+# Expose the MCP port and the separate health port.
+EXPOSE 9092 9093
 
 # Provide a volume for logs only
 VOLUME ["/app/logs"]
 
-# Healthcheck for container orchestrators and the Glama MCP directory
-# scanner. /health is implemented alongside issue #46; once a 200 is
-# observed the server is ready to accept SSE clients.
+# Healthcheck for container orchestrators. The runtime serves /health on 9093.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -fsS "http://localhost:${SERVER_PORT}/health" || exit 1
+  CMD curl -fsS "http://localhost:9093/health" || exit 1
 
-# Start the MCP server with proper configuration
-CMD ["/bin/bash", "-c", "/app/server -t ${TRANSPORT_MODE} -p ${SERVER_PORT} -c ${CONFIG_PATH}"]
+# Run as the unprivileged application user.
+USER app
 
-# You can override the port by passing it as a command-line argument
-# docker run -p 8080:8080 db-mcp-server -port 8080 
+# Legacy SSE is retained only for this development image. Shared deployments
+# must use STDIO or a real authenticated Streamable HTTP endpoint.
+CMD ["/bin/bash", "-c", "/app/server -t ${TRANSPORT_MODE} -h 0.0.0.0 -allow-insecure-sse -p ${SERVER_PORT} -c ${CONFIG_PATH}"]

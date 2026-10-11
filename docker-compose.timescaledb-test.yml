@@ -27,15 +27,14 @@ services:
     environment:
       - TZ=UTC
     ports:
-      - "9093:9092"
+      - "127.0.0.1:9093:9092"
     volumes:
-      - ./config.timescaledb-test.json:/app/config.json
-      - ./wait-for-it.sh:/app/wait-for-it.sh
+      - ./config.timescaledb-test.json:/app/config.json:ro
     command:
       [
         "/bin/sh",
         "-c",
-        "chmod +x /app/wait-for-it.sh && /app/wait-for-it.sh timescaledb 5432 30 && /app/server -t sse -c /app/config.json",
+        "/app/server -t sse -h 0.0.0.0 -allow-insecure-sse -c /app/config.json",
       ]
     depends_on:
       timescaledb:

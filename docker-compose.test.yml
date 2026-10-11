@@ -6,15 +6,14 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "9092:9092"
+      - "127.0.0.1:9092:9092"
     volumes:
-      - ./config.json:/app/config.json
-      - ./wait-for-it.sh:/app/wait-for-it.sh
+      - ./config.json:/app/config.json:ro
     command:
       [
         "/bin/sh",
         "-c",
-        "chmod +x /app/wait-for-it.sh && /app/wait-for-it.sh mysql1 3306 30 && /app/wait-for-it.sh mysql2 3306 30 && /app/wait-for-it.sh postgres1 5432 30 && /app/wait-for-it.sh postgres2 5432 30 && /app/wait-for-it.sh postgres3 5432 30 && /app/server -t sse -c /app/config.json",
+        "/app/server -t sse -h 0.0.0.0 -allow-insecure-sse -c /app/config.json",
       ]
     depends_on:
       mysql1:

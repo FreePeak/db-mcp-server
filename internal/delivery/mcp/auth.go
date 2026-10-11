@@ -1,8 +1,12 @@
 package mcp
 
 import (
+	"context"
 	"crypto/subtle"
 	"net/http"
+	"time"
+
+	sdkAuth "github.com/modelcontextprotocol/go-sdk/auth"
 )
 
 // APIKeyAuth returns an http.Handler middleware that requires every request
@@ -36,6 +40,34 @@ func APIKeyAuth(apiKey string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// OIDCBearerAuth applies OIDC/JWT verification and required scopes to the
+// official MCP SDK request context.
+func OIDCBearerAuth(verifier sdkAuth.TokenVerifier, scopes []string) func(http.Handler) http.Handler {
+	return sdkAuth.RequireBearerToken(verifier, &sdkAuth.RequireBearerTokenOptions{Scopes: scopes})
+}
+
+// APIKeyAuthWithScopes is the Streamable HTTP authentication boundary. It
+// keeps the static-key deployment simple while producing the same TokenInfo
+// context that an OIDC verifier will provide later, so tool-level scopes and
+// SDK session ownership work consistently.
+func APIKeyAuthWithScopes(apiKey string, scopes []string) func(http.Handler) http.Handler {
+	grantedScopes := append([]string(nil), scopes...)
+	if len(grantedScopes) == 0 {
+		grantedScopes = []string{"db:read"}
+	}
+	verifier := func(_ context.Context, token string, _ *http.Request) (*sdkAuth.TokenInfo, error) {
+		if subtle.ConstantTimeCompare([]byte(token), []byte(apiKey)) != 1 {
+			return nil, sdkAuth.ErrInvalidToken
+		}
+		return &sdkAuth.TokenInfo{
+			UserID:     "api-key",
+			Scopes:     grantedScopes,
+			Expiration: time.Now().Add(10 * 365 * 24 * time.Hour),
+		}, nil
+	}
+	return sdkAuth.RequireBearerToken(verifier, &sdkAuth.RequireBearerTokenOptions{Scopes: grantedScopes})
 }
 
 func unauthorized(w http.ResponseWriter) {

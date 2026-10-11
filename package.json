@@ -8,9 +8,16 @@
     "db-mcp-server-windows": "bin/run.cmd"
   },
   "scripts": {
-    "preinstall": "node bin/install.js",
     "postinstall": "node bin/install.js"
   },
+  "files": [
+    "bin/run.js",
+    "bin/run.cmd",
+    "bin/install.js",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/freepeak/db-mcp-server.git"
@@ -34,7 +41,7 @@
   },
   "homepage": "https://github.com/freepeak/db-mcp-server#readme",
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.0.0"
   },
   "os": [
     "darwin",

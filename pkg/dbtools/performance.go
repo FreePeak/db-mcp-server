@@ -47,13 +47,16 @@ type SQLIssueDetector struct {
 }
 
 // singleton instance
-var performanceAnalyzer *PerformanceAnalyzer
+var (
+	performanceAnalyzer     *PerformanceAnalyzer
+	performanceAnalyzerOnce sync.Once
+)
 
 // GetPerformanceAnalyzer returns the singleton performance analyzer
 func GetPerformanceAnalyzer() *PerformanceAnalyzer {
-	if performanceAnalyzer == nil {
+	performanceAnalyzerOnce.Do(func() {
 		performanceAnalyzer = NewPerformanceAnalyzer()
-	}
+	})
 	return performanceAnalyzer
 }
 
@@ -68,7 +71,10 @@ func NewPerformanceAnalyzer() *PerformanceAnalyzer {
 
 // LogSlowQuery logs a warning if a query takes longer than the slow query threshold
 func (pa *PerformanceAnalyzer) LogSlowQuery(query string, params []interface{}, duration time.Duration) {
-	if duration >= pa.slowThreshold {
+	pa.mu.Lock()
+	threshold := pa.slowThreshold
+	pa.mu.Unlock()
+	if duration >= threshold {
 		paramStr := formatParams(params)
 		logger.Warn("Slow query detected (%.2fms): %s [params: %s]",
 			float64(duration.Microseconds())/1000.0,
@@ -83,31 +89,31 @@ func (pa *PerformanceAnalyzer) TrackQuery(_ context.Context, query string, param
 	result, err := exec()
 	duration := time.Since(startTime)
 
-	// Create query record
+	// Copy the parameter slice so callers cannot mutate the stored history.
 	record := QueryRecord{
 		Query:     query,
-		Params:    params,
+		Params:    append([]interface{}(nil), params...),
 		Duration:  duration,
 		StartTime: startTime,
 	}
 
-	// Check if query is slow
-	if duration >= pa.slowThreshold {
-		pa.LogSlowQuery(query, params, duration)
+	pa.mu.Lock()
+	isSlow := duration >= pa.slowThreshold
+	if isSlow {
 		record.Suggestion = "Query execution time exceeds threshold"
 	}
-
-	// Record error if any
 	if err != nil {
 		record.Error = err.Error()
 	}
-
-	// Add to history (keeping max size)
 	pa.queryHistory = append(pa.queryHistory, record)
 	if len(pa.queryHistory) > pa.maxHistory {
 		pa.queryHistory = pa.queryHistory[1:]
 	}
+	pa.mu.Unlock()
 
+	if isSlow {
+		pa.LogSlowQuery(query, params, duration)
+	}
 	return result, err
 }
 
@@ -231,6 +237,8 @@ func StripComments(input string) string {
 
 // GetAllMetrics returns all collected metrics
 func (pa *PerformanceAnalyzer) GetAllMetrics() []*QueryMetrics { // Group query history by normalized query text
+	pa.mu.Lock()
+	defer pa.mu.Unlock()
 	queryMap := make(map[string]*QueryMetrics)
 
 	for _, record := range pa.queryHistory {
@@ -290,16 +298,22 @@ func (pa *PerformanceAnalyzer) SlowQueries() []QueryRecord {
 
 // Reset clears collected query history
 func (pa *PerformanceAnalyzer) Reset() {
+	pa.mu.Lock()
+	defer pa.mu.Unlock()
 	pa.queryHistory = make([]QueryRecord, 0)
 }
 
 // GetSlowThreshold returns the current slow query threshold
 func (pa *PerformanceAnalyzer) GetSlowThreshold() time.Duration {
+	pa.mu.Lock()
+	defer pa.mu.Unlock()
 	return pa.slowThreshold
 }
 
 // SetSlowThreshold sets the slow query threshold
 func (pa *PerformanceAnalyzer) SetSlowThreshold(threshold time.Duration) {
+	pa.mu.Lock()
+	defer pa.mu.Unlock()
 	pa.slowThreshold = threshold
 }
 

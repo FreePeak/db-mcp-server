@@ -36,6 +36,12 @@ func NewToolRegistry(mcpServer *server.MCPServer, unifiedMode bool) *ToolRegistr
 	}
 }
 
+// ServerAdapter returns the dual Cortex/SDK adapter populated during tool
+// registration.
+func (tr *ToolRegistry) ServerAdapter() *ServerWrapper {
+	return tr.server
+}
+
 // RegisterAllTools registers all tools with the server
 func (tr *ToolRegistry) RegisterAllTools(ctx context.Context, useCase UseCaseProvider) error {
 	tr.databaseUseCase = useCase
@@ -45,8 +51,7 @@ func (tr *ToolRegistry) RegisterAllTools(ctx context.Context, useCase UseCasePro
 	logger.Info("Found %d database connections for tool registration: %v", len(dbList), dbList)
 
 	if len(dbList) == 0 {
-		logger.Info("No databases available, registering mock tools")
-		return tr.RegisterMockTools(ctx)
+		return fmt.Errorf("no database connections available for tool registration")
 	}
 
 	if tr.unifiedMode {
@@ -435,26 +440,12 @@ func extractAndValidateDatabase(request server.ToolCallRequest, dbList []string)
 // registerCommonTools registers tools that are not specific to a database
 func (tr *ToolRegistry) registerCommonTools(ctx context.Context) {
 	// Register the list_databases tool with simple name
-	_, ok := tr.factory.GetToolType("list_databases")
-	if ok {
-		// Use simple name for list_databases tool
+	if _, ok := tr.factory.GetToolType("list_databases"); ok {
 		listDbName := "list_databases"
 		if err := tr.registerTool(ctx, "list_databases", listDbName, ""); err != nil {
 			logger.Error("Error registering %s tool: %v", listDbName, err)
 		} else {
 			logger.Info("Successfully registered tool %s", listDbName)
-		}
-	}
-
-	// Register the list tool with simple name
-	_, ok = tr.factory.GetToolType("list")
-	if ok {
-		// Use simple name for list tool
-		listDirName := "list"
-		if err := tr.registerTool(ctx, "list", listDirName, ""); err != nil {
-			logger.Error("Error registering %s tool: %v", listDirName, err)
-		} else {
-			logger.Info("Successfully registered tool %s", listDirName)
 		}
 	}
 }
