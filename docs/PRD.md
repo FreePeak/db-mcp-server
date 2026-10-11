@@ -9,7 +9,8 @@ Status: **maintained, active** (last substantive feature release v1.12.0,
 2026-08-25; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-11 (unified docs consolidation — single PRD created)*
+*Last updated: 2026-10-11 (cycle 60 — publish-credential guards no longer fail
+branch-push builds)*
 
 ---
 
@@ -174,7 +175,11 @@ Also resolves MCP-client tool-count limits (Claude — issue #18).
 - Distribution: Go binary (linux/macOS), Docker multi-arch image
   (`freepeak/db-mcp-server`), npm launcher package.
 - CI: `go.yml` (build + unit + live-engine integration via Docker services),
-  `docker-publish.yml` (multi-arch on push/tag), `npm-publish.yml`.
+  `docker-publish.yml` (multi-arch on push/tag), `npm-publish.yml`. The two
+  publish workflows gate their credential check on the event: a tag push or
+  manual dispatch with missing secrets fails fast (#86), while a branch push
+  warns and skips the publish/login steps — a code push stays green, and the
+  Dockerfile is still built (`push: false`).
 - /health endpoint on a dedicated port (SSE mode) for orchestrators.
 
 ---
@@ -201,8 +206,10 @@ publish credentials missing — no Docker/npm release has ever published):
    underscore-prefix split (`list_databases` was resolving to the directory
    `list` tool). **Merge after #88** (touches the same file).
 
-Then: cut v1.13.0, land secrets for Docker/npm (#86) so distribution
-channels actually publish.
+Then: cut v1.13.0 and land secrets for Docker/npm (#86) so distribution
+channels actually publish. The CI half of #86 is done (cycle 60): branch
+pushes no longer go red for the missing secrets, so a green/red run now
+means the code, and only a tag/backfill run is blocked on credentials.
 
 ### 4.2 Quick wins (do next, small surface)
 
@@ -283,7 +290,7 @@ differentiator cluster and the natural "next feature to build".
 | v1.10.0 — guardrails pack (#85): read-only bypass fix, max_rows, real transactions, explain/describe/performance, unified surface ancestor | ✅ shipped 2026-08-22 |
 | v1.11.0 — distribution verification tag (Oracle support, SQLite, npm/docker automation) | ✅ shipped 2026-08-22 |
 | v1.12.0 — governance: engine read-only for Oracle, masking, audit trail, hypopg-validated index advice, engine slow queries, health | ✅ shipped 2026-08-25 |
-| **v1.13.0 — merge #88 (hardening) + #89 (tool resolution); publish channels live (#86)** | ⏳ next — see [4.1](#41-release-gate--land-the-two-waiting-prs-0-blockers) |
+| **v1.13.0 — merge #88 (hardening) + #89 (tool resolution); publish channels live (#86)** | ⏳ next (CI guards fixed in cycle 60; still needs the three repo secrets) — see [4.1](#41-release-gate--land-the-two-waiting-prs-0-blockers) |
 | Governance suite (masking content, dry-run, snapshots) ported from hackathon branch | ⏳ backlog — see [4.3](#43-active-terrain--decision-needed-on-the-hackathon-branch) |
 | Table-qualified masking (backlog #11) | ⏳ vision — needs SQL parser |
 
