@@ -9,7 +9,7 @@ Status: **maintained, active** (last substantive feature release v1.13.0,
 2026-10-12; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-12 (Docker Hub publishing live; SQLite PRAGMA gap check closed)*
+*Last updated: 2026-10-12 (npm install path fixed — the packed tarball could never install; cycle 61)*
 
 ## 1. What this is
 
@@ -217,6 +217,19 @@ granular token (Read & Write, `@freepeak` scope) as `NPM_TOKEN` under
 Settings → Secrets and variables → Actions, then re-run that workflow with
 version `1.13.0`.
 
+**The npm channel itself is now known to work end to end** (cycle 61):
+installing the packed tarball used to fail for everyone — the release manifest
+is generated as `sha256sum release/db-mcp-server-*` (entries carry a `release/`
+prefix) while `bin/install.js` compared the whole field, so it threw "no SHA-256
+checksum found" before downloading anything. Fixed by matching the basename
+too, covered by `bin/install.test.js` (8 cases) and by a new end-to-end smoke
+check in `npm-publish.yml` that packs the tarball, installs it and runs it —
+the check whose absence let this ship. That workflow now also triggers on
+`pull_request` (release jobs gated to release events) so launcher regressions
+fail on the PR instead of at tag time. Verified against the real v1.13.0
+release: install succeeds, the downloaded binary matches the published
+checksum, the CLI runs.
+
 ### 4.2 Quick wins (do next, small surface)
 
 - **Env-var doc currency** (backlog #10 re-check): **done 2026-10-12.**
@@ -308,6 +321,7 @@ differentiator cluster and the natural "next feature to build".
 | v1.11.0 — distribution verification tag (Oracle support, SQLite, npm/docker automation) | ✅ shipped 2026-08-22 |
 | v1.12.0 — governance: engine read-only for Oracle, masking, audit trail, hypopg-validated index advice, engine slow queries, health | ✅ shipped 2026-08-25 |
 | **v1.13.0 — hardening (#88) + tool resolution (#92); Docker Hub publishing live** | ✅ shipped 2026-10-12 — npm still blocked on [#86](https://github.com/FreePeak/db-mcp-server/issues/86) |
+| npm install path repaired (checksum prefix + tarball smoke check) — the first real publish will install | ✅ shipped 2026-10-12 (cycle 61) |
 | Governance suite (masking content, dry-run, snapshots) ported from hackathon branch | ⏳ backlog — see [4.3](#43-active-terrain--decision-needed-on-the-hackathon-branch) |
 
 ---
