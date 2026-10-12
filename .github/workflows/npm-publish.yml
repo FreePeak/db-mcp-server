@@ -145,8 +145,10 @@ jobs:
         # "publishes fine, installs for nobody".
         run: |
           VERSION=${{ needs.get-version.outputs.version }}
-          TARBALL=$(npm pack --pack-destination "$RUNNER_TEMP" --silent)
+          # npm pack refuses a --pack-destination that does not exist yet, so
+          # create the directory before packing.
           mkdir -p "$RUNNER_TEMP/npm-smoke"
+          TARBALL=$(npm pack --pack-destination "$RUNNER_TEMP" --silent)
           npm install --prefix "$RUNNER_TEMP/npm-smoke" --no-save "$RUNNER_TEMP/$TARBALL"
           "$RUNNER_TEMP/npm-smoke/node_modules/.bin/db-mcp-server" --help > /dev/null
           echo "Installed and ran db-mcp-server v$VERSION from the packed tarball"

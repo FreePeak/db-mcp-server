@@ -49,6 +49,11 @@ CI verified the tarball's *contents* and never its *behaviour*.
   and adds an **end-to-end install smoke check** to `publish-npm` — pack the
   tarball, `npm install` it, run `db-mcp-server --help`. That is the check that
   would have caught this class of bug.
+- `npm-publish.yml`'s smoke step creates `$RUNNER_TEMP/npm-smoke` **before**
+  `npm pack --pack-destination "$RUNNER_TEMP"` — the runner's `RUNNER_TEMP` does
+  not exist in a `publish-npm` job, and `npm pack` fails with exit 254 when the
+  destination directory is missing. Caught by running the step body verbatim
+  locally, not by reading it.
 - `npm-publish.yml` also now triggers on `pull_request`, with the three release
   jobs (`get-version`, `build-and-release`, `publish-npm`) gated to
   non-PR events. Without that the new tests would only ever run at tag time —
