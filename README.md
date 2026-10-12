@@ -390,6 +390,8 @@ Values in a `.env` file are loaded first; real environment variables take preced
 | `DB_TYPE`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | engine defaults | Single-database fallback when no JSON config exists |
 | `QUERY_TIMEOUT_SECONDS` | unset | Fills connections that don't set their own `query_timeout`; negative disables the cap. JSON configs keep precedence. |
 | `DB_MCP_AUDIT_LOG` | unset | Optional append-only JSONL audit path |
+| `VERBOSE` | unset | `true`/`1` sets the startup log level to `debug` (the default is `error`, i.e. silent unless `LOG_LEVEL` is set) |
+| `MCP_DISABLE_LOGGING` | unset | `true`/`1` discards MCP protocol logs (writer-level switch, independent of `LOG_LEVEL`/`DISABLE_LOGGING`) |
 
 
 ## SQLite Configuration Options
