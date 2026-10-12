@@ -9,7 +9,7 @@ Status: **maintained, active** (last substantive feature release v1.13.0,
 2026-10-12; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-12 (npm install path fixed — the packed tarball could never install; cycle 61)*
+*Last updated: 2026-10-12 (npm install path fixed; Oracle read-only tests now run in CI — they never had)*
 
 ## 1. What this is
 
@@ -238,11 +238,18 @@ checksum, the CLI runs.
   `API_KEY` and `HEALTH_PORT` — neither is read from the environment (the
   code reads `DB_MCP_API_KEY`, already documented, and the health port is a
   flag only), so documenting them would have been wrong.
-- **Oracle engine read-only hardening (gap G-1)**: currently classifier-only;
-  options: `ALTER SESSION SET READ ONLY` on pooled session (mirror the
-  `newReadOnlySessionConnector` pattern used for Oracle today), or extend
-  the fail-closed privilege audit. Closes the "four engines enforce at the
-  engine" claim.
+- **Oracle engine read-only hardening (gap G-1)**: **closed 2026-10-12.**
+  The audit itself already existed (cycle 44: privileges, not a session flag;
+  fail-closed on an unreadable catalog) — what was missing was any proof it
+  ran. `TestReadOnlyEngineEnforcement_Live` and
+  `TestReadOnlyOracleRefusesWritableCredentials` had never executed in CI
+  (`-run TestOracle` does not match either name), and the Oracle init step
+  that was supposed to provision the restricted `mcp_ro` account had never
+  run a statement (`docker exec` without `-i` drops the heredoc, and its
+  connect string was not resolvable anyway). Both fixed in `go.yml`; verified
+  locally against `gvenzl/oracle-free:23-slim` — the Oracle subtest passes,
+  and `mcp_ro` gets `ORA-01031` on `CREATE TABLE`. The engine claim now holds
+  with CI behind it.
 - **SQLite write-classification gap check**: **checked 2026-10-12 — the engine
   holds.** `mode=ro` refuses `PRAGMA user_version=`, `journal_mode=` and
   `incremental_vacuum` outright; `writable_schema=ON`, `optimize`,
