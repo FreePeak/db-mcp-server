@@ -1,5 +1,10 @@
 # Changelog
 ## [Unreleased]
+### Added
+- `db-mcp-server update`: replaces the running binary with the latest published release — resolves the tag, verifies the download against the release's `SHA256SUMS` manifest, and swaps the file atomically; `-check` reports without downloading, `-force` reinstalls, `-version` pins a release
+- `--version` prints the build version, and MCP clients now see the real release version in `serverInfo` instead of a hardcoded `1.0.0`
+### Fixed
+- The release `-ldflags="-X main.version=…"` the Makefile and `npm-publish.yml` pass was a silent no-op (`cmd/server` declared no `version` variable), so every release binary reported `1.0.0`
 
 ## [v1.13.0] - 2026-10-12
 ### Added

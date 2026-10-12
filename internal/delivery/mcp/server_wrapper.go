@@ -11,10 +11,20 @@ import (
 	"github.com/FreePeak/db-mcp-server/internal/logger"
 )
 
-const (
-	serverName    = "DB MCP Server"
-	serverVersion = "1.0.0"
-)
+const serverName = "DB MCP Server"
+
+// serverVersion is what MCP clients are told this server is. Release builds set
+// it from the same -ldflags value main.version carries, so a client never sees
+// a stale hardcoded number.
+var serverVersion = "1.0.0"
+
+// SetServerVersion overrides the advertised server version; empty values are
+// ignored so a plain `go build` keeps the default.
+func SetServerVersion(v string) {
+	if v != "" {
+		serverVersion = v
+	}
+}
 
 // ServerWrapper provides a wrapper around server.MCPServer to handle type assertions
 // and dual-registers tools with the maintained Streamable HTTP SDK.
