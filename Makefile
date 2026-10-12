@@ -2,11 +2,11 @@
 
 # Build the server
 build:
-	CGO_ENABLE=0 go build -o ./bin/server cmd/server/main.go
-	CGO_ENABLE=0 GOOS=linux GOARCH=amd64 go build -o ./bin/server-linux cmd/server/main.go
+	CGO_ENABLE=0 go build -o ./bin/server ./cmd/server
+	CGO_ENABLE=0 GOOS=linux GOARCH=amd64 go build -o ./bin/server-linux ./cmd/server
 
 build-multidb:
-	CGO_ENABLE=0 go build -o ./multidb cmd/server/main.go
+	CGO_ENABLE=0 go build -o ./multidb ./cmd/server
 # Build the example stdio server
 build-example:
 	cd examples && go build -o mcp-example mcp_stdio_example.go
@@ -230,7 +230,7 @@ npm-test-local:
 	@echo "Testing npm package locally..."
 	@echo "Building local binary first..."
 	@mkdir -p bin; \
-	go build -o bin/db-mcp-server ./cmd/server/main.go; \
+	go build -o bin/db-mcp-server ./cmd/server; \
 	rm -rf /tmp/db-mcp-test; \
 	mkdir -p /tmp/db-mcp-test; \
 	npm pack; \
