@@ -1,11 +1,17 @@
 # Changelog
 ## [Unreleased]
+
+## [v1.13.0] - 2026-10-12
 ### Added
-- TimescaleDB discovery tool: `timescaledb_list_hypertables_<db_id>` (and unified `timescaledb_list_hypertables`) listing hypertables with time column and dimensions; auto-detected via the `timescaledb` extension at startup
+- TimescaleDB discovery tools: `timescaledb_list_hypertables_<db_id>` (and unified `timescaledb_list_hypertables`) listing hypertables with time column and dimensions, plus compression settings, retention policy and continuous-aggregate discovery — auto-detected via the `timescaledb` extension at startup
 - Lazy-loading-safe TimescaleDB registration: with `--lazy-loading` the tools register on PostgreSQL config type alone (no startup connection); handlers verify the `timescaledb` extension at call time and degrade with actionable guidance when it is absent or unverifiable
+- Hardening for personal + enterprise use (#88): single canonical config object (fixes `max_rows`/masking/`query_timeout` silently dropped by the second config parser), strict JSON config validation, real transaction lifetimes held server-side, SDK-backed streamable HTTP with Origin allowlisting, bearer API-key auth, and OIDC verification; the container now runs unprivileged
+- CI: `Verify source` job (test + vet) gates the publish workflows; release images carry provenance and SBOM attestations; publish guards are scoped to tag/dispatch events so a plain push to main never fails on missing registry secrets
 ### Fixed
+- Tool-type resolution takes the exact name before the underscore-prefix split (#92, from #89): `list_databases` no longer resolves to the directory `list` tool, with regression coverage for the collision
 - Read-only safety for the wired TimescaleDB tools: `list_hypertables`, `time_series_query`, and `analyze_time_series` executed their SELECTs through the write-classified statement path and failed on `"read_only": true` databases; they now use the query path
-- README TimescaleDB section advertised seven tools when only two were registered; it now documents the three wired tools and states that write-policy operations remain SQL-only
+- TimescaleDB information-view queries rewritten against modern catalogs (live-engine validated); README TimescaleDB section now documents the three wired tools and states that write-policy operations remain SQL-only
+- The arbitrary server-directory `list` tool is no longer registered on MCP clients (#88)
 ## [v1.12.0] - 2026-08-25
 ### Added
 - Engine-level read-only enforcement for Oracle via fail-closed privilege auditing (`read_only` databases refuse credentials holding write privileges; completes the four-engine guarantee started in v1.10.0)

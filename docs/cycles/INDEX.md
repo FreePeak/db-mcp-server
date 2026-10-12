@@ -72,6 +72,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 52 | Oracle statement statistics (v$sqlarea) + digest-ranking test hardening | ✅ Shipped | [cycle-52](cycle-52-oracle-statement-stats.md) |
 | 53 | JSONL audit trail (`DB_MCP_AUDIT_LOG`) — Bytebase governance parity | ✅ Shipped | [cycle-53](cycle-53-audit-log.md) |
 | 54 | Release v1.12.0 (hypopg + Oracle stats + audit trail) | ✅ Shipped | [cycle-54](cycle-54-release-v1.12.md) |
+| 60 | Release v1.13.0: hardening (#88) + tool resolution (#92) + TimescaleDB cycles 55–59 | ✅ Shipped | [cycle-60](cycle-60-release-v1.13.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
