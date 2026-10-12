@@ -9,7 +9,7 @@ Status: **maintained, active** (last substantive feature release v1.13.0,
 2026-10-12; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-12 (release gate cleared: #88 + #92 merged, v1.13.0 cut)*
+*Last updated: 2026-10-12 (Docker Hub publishing live: 1.11–1.13 backfilled, :latest moved off the 2025 build)*
 
 ## 1. What this is
 
@@ -172,7 +172,11 @@ Also resolves MCP-client tool-count limits (Claude — issue #18).
 - Distribution: Go binary (linux/macOS), Docker multi-arch image
   (`freepeak/db-mcp-server`), npm launcher package.
 - CI: `go.yml` (build + unit + live-engine integration via Docker services),
-  `docker-publish.yml` (multi-arch on push/tag), `npm-publish.yml`.
+  `docker-publish.yml` (multi-arch on push/tag), `npm-publish.yml`. The two
+  publish workflows gate their credential check on the event — a tag push or
+  manual dispatch fails fast without secrets, a branch push never attempts a
+  login or push — so a code push to main stays green and only a real publish
+  run is blocked on credentials.
 - /health endpoint on a dedicated port (SSE mode) for orchestrators.
 
 ---
@@ -198,12 +202,20 @@ is sized against the cycle-doc process.
 3. **v1.13.0** cut: CHANGELOG, `package.json` 1.13.0, tag + release
    workflows (cycle 60).
 
-**Still open — issue #86**: the repository has zero Actions secrets, so the
-tag's Docker/npm publish runs fail fast with an actionable `::error` by
-design, and no Docker image or npm package has ever published. Adding
-`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` and `NPM_TOKEN` under
-Settings → Secrets and variables → Actions unblocks it; the backfill
-commands are recorded in #86.
+**Distribution status (2026-10-12).** Docker Hub is live: `DOCKERHUB_USERNAME`
+and `DOCKERHUB_TOKEN` are set, and the channel now carries
+`1.9.0`/`1.9`, `1.10.0`/`1.10`, `1.11.0`/`1.11`, `1.12.0`/`1.12`,
+`1.13.0`/`1.13`, `latest` and a `sha-*` tag — all multi-arch (linux/amd64 +
+linux/arm64) with provenance and SBOM attestations. The v1.13.0 tag push
+(run 38199006601) moved `latest` off the stale 2025-05-09 build. GitHub
+Release v1.13.0 carries all seven platform assets.
+
+**Still open — issue #86 is now npm-only.** `NPM_TOKEN` is unset, so
+`Release artifacts → Publish npm package` fails at its credential check by
+design and `@freepeak/db-mcp-server` still 404s on the registry. Add a
+granular token (Read & Write, `@freepeak` scope) as `NPM_TOKEN` under
+Settings → Secrets and variables → Actions, then re-run that workflow with
+version `1.13.0`.
 
 ### 4.2 Quick wins (do next, small surface)
 
@@ -284,7 +296,7 @@ differentiator cluster and the natural "next feature to build".
 | v1.10.0 — guardrails pack (#85): read-only bypass fix, max_rows, real transactions, explain/describe/performance, unified surface ancestor | ✅ shipped 2026-08-22 |
 | v1.11.0 — distribution verification tag (Oracle support, SQLite, npm/docker automation) | ✅ shipped 2026-08-22 |
 | v1.12.0 — governance: engine read-only for Oracle, masking, audit trail, hypopg-validated index advice, engine slow queries, health | ✅ shipped 2026-08-25 |
-| **v1.13.0 — hardening (#88) + tool resolution (#92); publish guards scoped to tags** | ✅ shipped 2026-10-12 — Docker/npm publish still blocked on [#86 secrets](#41-release-gate--done-v1130-cut-2026-10-12) |
+| **v1.13.0 — hardening (#88) + tool resolution (#92); Docker Hub publishing live** | ✅ shipped 2026-10-12 — npm still blocked on [#86](https://github.com/FreePeak/db-mcp-server/issues/86) |
 | Governance suite (masking content, dry-run, snapshots) ported from hackathon branch | ⏳ backlog — see [4.3](#43-active-terrain--decision-needed-on-the-hackathon-branch) |
 
 ---
