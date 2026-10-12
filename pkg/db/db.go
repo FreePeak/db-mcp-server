@@ -86,6 +86,10 @@ type Config struct {
 	// Result guardrails (all engines)
 	MaxRows int // Maximum rows returned per query; 0 means unlimited
 
+	// MaskPII enforces content-based PII masking on every query against this
+	// database, regardless of per-request parameters.
+	MaskPII bool
+
 	// Result masking: output columns whose name matches a rule's pattern
 	// are masked before results leave this process.
 	MaskingRules []MaskingRule
@@ -752,4 +756,10 @@ func (d *database) MaxRows() int {
 // database. Empty means no masking is applied.
 func (d *database) MaskingRules() []MaskingRule {
 	return d.config.MaskingRules
+}
+
+// MaskPII reports whether content-based PII masking is enforced for this
+// database. True means query results are masked whatever the caller asks for.
+func (d *database) MaskPII() bool {
+	return d.config.MaskPII
 }

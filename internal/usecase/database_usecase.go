@@ -364,7 +364,14 @@ func (uc *DatabaseUseCase) GetDatabaseInfo(dbID string) (map[string]interface{},
 }
 
 // ExecuteQuery executes a SQL query and returns the formatted results
-func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string, params []interface{}) (res string, resErr error) {
+func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string, params []interface{}) (string, error) {
+	return uc.ExecuteQueryMasked(ctx, dbID, query, params, false)
+}
+
+// ExecuteQueryMasked executes a query with optional content-based PII
+// masking. It is the single query path: ExecuteQuery delegates here with
+// mask=false, so there is one scan/format implementation to keep correct.
+func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool) (res string, resErr error) {
 	start := time.Now()
 	defer func() { audit.record("query", dbID, query, time.Since(start), resErr) }()
 
@@ -395,7 +402,7 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 				logger.Error("error closing rows: %v", closeErr)
 			}
 		}()
-		s, ferr := formatQueryResults(rows, db.MaxRows(), databaseMaskingRules(db))
+		s, ferr := formatQueryResults(rows, db.MaxRows(), databaseMaskingRules(db), mask || databaseMaskPII(db))
 		if ferr != nil {
 			return nil, ferr
 		}
@@ -407,6 +414,16 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 	}
 
 	return out, nil
+}
+
+// databaseMaskPII reports whether the operator configured content-based PII
+// masking for this database. Server config is additive-only: it forces
+// masking on, and no per-request parameter can turn it off.
+func databaseMaskPII(d domain.Database) bool {
+	if m, ok := d.(interface{ MaskPII() bool }); ok {
+		return m.MaskPII()
+	}
+	return false
 }
 
 // databaseMaskingRules fetches a database's configured masking rules when
@@ -502,7 +519,7 @@ func maskPartial(rule *db.MaskingRule, val interface{}) string {
 // context window. Values in columns matched by masks are replaced before
 // rendering so sensitive data never leaves this process. The caller owns
 // closing rows.
-func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule) (string, error) {
+func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule, maskPII bool) (string, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return "", fmt.Errorf("failed to get column names: %w", err)
@@ -546,14 +563,22 @@ func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule) (
 			}
 			if val == nil {
 				rowText = append(rowText, "NULL")
-			} else {
-				switch v := val.(type) {
-				case []byte:
-					rowText = append(rowText, string(v))
-				default:
-					rowText = append(rowText, fmt.Sprintf("%v", v))
+				continue
+			}
+			var cell string
+			switch v := val.(type) {
+			case []byte:
+				cell = string(v)
+			default:
+				cell = fmt.Sprintf("%v", v)
+			}
+			if maskPII {
+				if masked := maskPIIInText(cell, columns[i]); masked != cell {
+					cell = masked
+					maskedCells++
 				}
 			}
+			rowText = append(rowText, cell)
 		}
 		resultText.WriteString(strings.Join(rowText, "\t") + "\n")
 	}

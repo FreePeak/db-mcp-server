@@ -85,6 +85,14 @@ type UseCaseProvider interface {
 	RelationshipGraph(ctx context.Context, dbID string) (string, error)
 }
 
+// maskedQueryProvider is implemented by use cases that can redact PII by
+// content shape. Kept separate from UseCaseProvider so existing providers
+// and test doubles stay source-compatible: the query tool falls back to
+// ExecuteQuery when the capability is absent.
+type maskedQueryProvider interface {
+	ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool) (string, error)
+}
+
 // BaseToolType provides common functionality for tool types
 type BaseToolType struct {
 	name        string
@@ -139,6 +147,9 @@ func (t *QueryTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("Query parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
 		),
+		tools.WithBoolean("mask_pii",
+			tools.Description("Redact PII in the results by content shape (emails, phone numbers, card numbers, SSNs, IPs) as well as by configured column rules"),
+		),
 	)
 }
 
@@ -158,6 +169,9 @@ func (t *QueryTool) CreateUnifiedTool(name string, dbList []string) interface{} 
 		tools.WithArray("params",
 			tools.Description("Query parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
+		),
+		tools.WithBoolean("mask_pii",
+			tools.Description("Redact PII in the results by content shape (emails, phone numbers, card numbers, SSNs, IPs) as well as by configured column rules"),
 		),
 	)
 }
@@ -181,7 +195,21 @@ func (t *QueryTool) HandleRequest(ctx context.Context, request server.ToolCallRe
 		}
 	}
 
-	result, err := useCase.ExecuteQuery(ctx, dbID, query, queryParams)
+	// Absent or non-boolean mask_pii means "not requested"; the parameter is
+	// additive only, so a malformed value can never disable masking that the
+	// database config enforces.
+	maskPII := false
+	if requested, ok := request.Parameters["mask_pii"].(bool); ok {
+		maskPII = requested
+	}
+
+	var result string
+	var err error
+	if masked, ok := useCase.(maskedQueryProvider); ok {
+		result, err = masked.ExecuteQueryMasked(ctx, dbID, query, queryParams, maskPII)
+	} else {
+		result, err = useCase.ExecuteQuery(ctx, dbID, query, queryParams)
+	}
 	if err != nil {
 		return nil, err
 	}

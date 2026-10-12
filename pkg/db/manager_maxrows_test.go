@@ -89,3 +89,68 @@ func TestMaxRowsJSONTag(t *testing.T) {
 		t.Errorf("round-trip lost max_rows: got %d", back.MaxRows)
 	}
 }
+
+// TestBuildDatabaseConfig_MaskPII verifies the mask_pii guardrail is carried
+// from the JSON-facing connection config into the engine config for every
+// database type, and surfaces on the connection as MaskPII().
+func TestBuildDatabaseConfig_MaskPII(t *testing.T) {
+	for _, dbType := range []string{"postgres", "mysql", "sqlite", "oracle"} {
+		t.Run(dbType, func(t *testing.T) {
+			cfg := buildDatabaseConfig(DatabaseConnectionConfig{
+				ID:      "t-" + dbType,
+				Type:    dbType,
+				MaskPII: true,
+			})
+			if !cfg.MaskPII {
+				t.Errorf("expected MaskPII true for %s", dbType)
+			}
+		})
+	}
+	if buildDatabaseConfig(DatabaseConnectionConfig{ID: "t", Type: "postgres"}).MaskPII {
+		t.Error("mask_pii must default to false")
+	}
+}
+
+// TestManager_MaskPIIEndToEnd wires a real SQLite database through the
+// manager's JSON config path and confirms MaskPII() surfaces on the
+// connection object the use case asserts against.
+func TestManager_MaskPIIEndToEnd(t *testing.T) {
+	m := NewDBManager()
+	path := filepath.Join(t.TempDir(), "maskpii.db")
+	if werr := os.WriteFile(path, []byte{}, 0o600); werr != nil {
+		t.Fatalf("failed to pre-create sqlite file: %v", werr)
+	}
+
+	cfgJSON := []byte(`{"connections":[{"id":"sqlite-pii","type":"sqlite","database_path":"` + path + `","mask_pii":true,"use_modernc_driver":true}]}`)
+	if err := m.LoadConfig(cfgJSON); err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+	if err := m.Connect(); err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer func() { _ = m.CloseAll() }()
+
+	database, err := m.GetDatabase("sqlite-pii")
+	if err != nil {
+		t.Fatalf("failed to get database: %v", err)
+	}
+	masker, ok := database.(interface{ MaskPII() bool })
+	if !ok {
+		t.Fatal("connection must expose MaskPII()")
+	}
+	if !masker.MaskPII() {
+		t.Error("expected MaskPII() true from JSON config")
+	}
+}
+
+// TestMaskPIIJSONTag locks the wire format so operators can write mask_pii
+// in config.json without a schema surprise.
+func TestMaskPIIJSONTag(t *testing.T) {
+	var cfg DatabaseConnectionConfig
+	if err := json.Unmarshal([]byte(`{"id":"pg1","type":"postgres","mask_pii":true}`), &cfg); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if !cfg.MaskPII {
+		t.Error("expected mask_pii to parse")
+	}
+}
