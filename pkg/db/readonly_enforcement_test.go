@@ -75,10 +75,16 @@ func TestReadOnlyEngineEnforcement_Live(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 
-			// Reads must work on a read-only connection.
-			rows, err := database.Query(ctx, "SELECT 1")
+			// Reads must work on a read-only connection. Oracle has no
+			// bare-SELECT form: "SELECT 1" is ORA-00923 there, which is what
+			// this test hit the first time it ever ran in CI.
+			readProbe := "SELECT 1"
+			if tc.config.Type == "oracle" {
+				readProbe = "SELECT 1 FROM dual"
+			}
+			rows, err := database.Query(ctx, readProbe)
 			if err != nil {
-				t.Fatalf("SELECT failed on read-only %s connection: %v", tc.name, err)
+				t.Fatalf("%q failed on read-only %s connection: %v", readProbe, tc.name, err)
 			}
 			if err := rows.Close(); err != nil {
 				t.Fatalf("failed to close rows: %v", err)

@@ -152,11 +152,32 @@ jobs:
           echo "Error: Oracle container not found"
           exit 1
         fi
-        docker exec $ORACLE_CONTAINER sqlplus -s "sys/oracle@localhost:1521/TESTDB AS SYSDBA" <<EOF
-        GRANT SELECT ON SYS.V_"$"SQLAREA TO testuser;
-        EXIT;
+        # This step had never actually initialized anything. Two separate
+        # reasons, both verified against gvenzl/oracle-free:23-slim locally:
+        #  - `docker exec` without -i does not forward the heredoc to sqlplus,
+        #    so it exited 0 having run nothing (the ORA-12154 lines came from
+        #    the host shell trying to expand the quoted connect spec);
+        #  - "sys/oracle@localhost:1521/TESTDB AS SYSDBA" is not a resolvable
+        #    connect identifier: no EZCONNECT "//", and quoting the whole
+        #    thing makes "AS SYSDBA" part of it.
+        # Use -i, /nolog + CONNECT (the form the image's own entrypoint
+        # scripts use), and fail on any ORA- line — sqlplus exits 0 even when
+        # a statement errors.
+        run_sqlplus() {
+          local out
+          out=$(docker exec -i $ORACLE_CONTAINER sqlplus -s /nolog <<EOF 2>&1
+        $1
         EOF
-        docker exec $ORACLE_CONTAINER sqlplus -s testuser/testpass@TESTDB <<EOF
+        )
+          echo "$out"
+          if echo "$out" | grep -q "ORA-"; then
+            echo "::error::Oracle init failed (see ORA- above); the tests below would run against an uninitialized database"
+            exit 1
+          fi
+        }
+        run_sqlplus "CONNECT sys/oracle@//localhost:1521/TESTDB AS SYSDBA
+        GRANT SELECT ON SYS.V_\$SQLAREA TO testuser;"
+        run_sqlplus "CONNECT testuser/testpass@//localhost:1521/TESTDB
         CREATE TABLE test_users (
             id NUMBER(10) PRIMARY KEY,
             username VARCHAR2(50) NOT NULL,
@@ -167,9 +188,17 @@ jobs:
         INSERT INTO test_users (id, username, email) VALUES (2, 'bob', 'bob@example.com');
         INSERT INTO test_users (id, username, email) VALUES (3, 'charlie', 'charlie@example.com');
         COMMIT;
-        CREATE SEQUENCE test_users_seq START WITH 4 INCREMENT BY 1;
-        EXIT;
-        EOF
+        CREATE SEQUENCE test_users_seq START WITH 4 INCREMENT BY 1;"
+        # Restricted account for the engine-level read-only tests (cycle 44):
+        # CREATE SESSION + SELECT only, so the connector's privilege audit
+        # passes and the engine itself refuses writes (ORA-01031). Mirrors
+        # scripts/oracle-init/02-create-readonly-user.sql, which the compose
+        # stack applies automatically but this CI service container does not.
+        # Ordered after test_users so the SELECT grant does not hit ORA-00942.
+        run_sqlplus "CONNECT sys/oracle@//localhost:1521/TESTDB AS SYSDBA
+        CREATE USER mcp_ro IDENTIFIED BY \"mcp_ro_pass\" QUOTA 0 ON USERS;
+        GRANT CREATE SESSION TO mcp_ro;
+        GRANT SELECT ON testuser.test_users TO mcp_ro;"
 
     - name: Run Integration Tests
       env:
@@ -179,7 +208,11 @@ jobs:
         NLS_LANG: AMERICAN_AMERICA.UTF8
       run: |
         echo "Running database integration tests..."
-        go test -v -race -coverprofile=coverage.txt -covermode=atomic ./pkg/db -run TestOracle
+        # -run 'TestOracle' does not match TestReadOnlyEngineEnforcement_Live or
+        # TestReadOnlyOracleRefusesWritableCredentials, so the engine-level
+        # read-only guarantee — including Oracle's privilege audit — has never
+        # run in CI. Match both.
+        go test -v -race -coverprofile=coverage.txt -covermode=atomic ./pkg/db -run 'TestOracle|TestReadOnly'
         go test -v -race ./pkg/dbtools -run TestOracleIntegration
         go test -v -race ./pkg/db -run TestRegressionAllDatabases
 
