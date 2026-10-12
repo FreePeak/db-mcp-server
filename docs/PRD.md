@@ -9,7 +9,7 @@ Status: **maintained, active** (last substantive feature release v1.13.0,
 2026-10-12; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-12 (Docker Hub publishing live: 1.11–1.13 backfilled; README env-var table made current)*
+*Last updated: 2026-10-12 (Docker Hub publishing live; SQLite PRAGMA gap check closed)*
 
 ## 1. What this is
 
@@ -230,8 +230,15 @@ version `1.13.0`.
   `newReadOnlySessionConnector` pattern used for Oracle today), or extend
   the fail-closed privilege audit. Closes the "four engines enforce at the
   engine" claim.
-- **SQLite write-classification gap check**: SQLite read-only is `mode=ro`
-  enforced at open; confirm the classifier also blocks `PRAGMA`-based writes.
+- **SQLite write-classification gap check**: **checked 2026-10-12 — the engine
+  holds.** `mode=ro` refuses `PRAGMA user_version=`, `journal_mode=` and
+  `incremental_vacuum` outright; `writable_schema=ON`, `optimize`,
+  `auto_vacuum=`, `shrink_memory`, `wal_checkpoint()` and `vacuum` are
+  *accepted in memory* but never reach disk (database file byte-identical
+  after each). The classifier still lists `PRAGMA` as a read-only leading
+  keyword, which is now correct; the residual wart is that a no-op PRAGMA
+  reports success instead of an error. Pinned by
+  `pkg/db/sqlite_readonly_pragma_test.go`.
 - **Pre-commit hooks / golangci in CI**: the repo declares golangci-lint and
   pre-commit conventions (`.pre-commit-config`); wire them into `go.yml` so
   lint debt cannot regress.
