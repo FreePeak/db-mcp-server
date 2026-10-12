@@ -354,6 +354,14 @@ process memory and is not printed by the config loader.
 # Environment variable configuration
 export DB_CONFIG='{"connections":[...]}'
 ./bin/server -t stdio
+
+# Print the build version
+./bin/server --version
+
+# Upgrade to the latest published release (verifies SHA-256, swaps the binary)
+./bin/server update
+./bin/server update -check          # only report whether a newer release exists
+./bin/server update -version 1.13.0 # install a specific release
 ```
 
 **Available Flags:**
@@ -361,14 +369,22 @@ export DB_CONFIG='{"connections":[...]}'
 - `-c, -config`: Path to database configuration file
 - `-p, -port`: HTTP port (default: 9092)
 - `-h, -host`: HTTP bind host (default: `127.0.0.1`)
+- `--version`: Print the build version and exit
 - `-allow-insecure-sse`: Explicitly allow legacy SSE for a private development proxy
 - `-api-key`: Bearer key for the experimental Streamable HTTP entrypoint (or use `DB_MCP_API_KEY`)
-- `-health-port`: HTTP health port (default: 9093; `0` disables it)
 - `-log-level`: Log level (`debug`, `info`, `warn`, `error`)
 - `-log-dir`: Directory for log files (default: `./logs` in current directory)
 - `-db-config`: Inline JSON database configuration
 - `-lazy-loading`: Establish connections on first use
 - `-unified-tools`: Register one tool set with a `database` parameter
+
+**Updating:** `db-mcp-server update` resolves the latest GitHub release, checks
+the download against the release's `SHA256SUMS` manifest, and replaces the
+running binary in place (the previous binary is left untouched if verification
+fails). It installs the asset matching your OS and architecture — restart the
+server afterwards. On Windows a running executable cannot be replaced, so update
+through the npm installer there. `-check` reports without downloading; `-force`
+reinstalls the current version.
 
 ### Environment Variables
 

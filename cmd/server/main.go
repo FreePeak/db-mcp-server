@@ -66,6 +66,12 @@ func findConfigFile() string {
 }
 
 func main() {
+	// The `update` subcommand replaces this binary; it must run before any flag
+	// parsing or configuration loading, and it shares none of the server flags.
+	if len(os.Args) > 1 && os.Args[1] == "update" {
+		os.Exit(runUpdate(os.Args[2:]))
+	}
+
 	// Parse command-line arguments
 	configFile := flag.String("c", "config.json", "Database configuration file")
 	configPath := flag.String("config", "config.json", "Database configuration file (alternative)")
@@ -74,6 +80,7 @@ func main() {
 	serverHost := flag.String("h", "127.0.0.1", "Bind host for HTTP transports")
 	allowInsecureSSE := flag.Bool("allow-insecure-sse", false, "Allow legacy SSE without a trusted reverse proxy; never use for shared deployments")
 	dbConfigJSON := flag.String("db-config", "", "JSON string with database configuration")
+	showVersion := flag.Bool("version", false, "Print the version and exit")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	lazyLoading := flag.Bool("lazy-loading", false, "Enable lazy loading: connections established on first use (recommended for 10+ databases)")
 	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
@@ -81,6 +88,11 @@ func main() {
 	healthPort := flag.Int("health-port", 9093, "Port for the /health HTTP endpoint (0 to disable; only used in SSE mode)")
 	apiKey := flag.String("api-key", os.Getenv("DB_MCP_API_KEY"), "API key required to authenticate HTTP/SSE clients (Authorization: Bearer <key>); empty disables auth. Applied to the streamable HTTP transport; compose with mcp.APIKeyAuth in your own reverse proxy for the SSE transport.")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	// Initialize logger with custom log directory
 	logger.Initialize(logger.Config{Level: *logLevel, LogDir: *logDir})
@@ -158,10 +170,12 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	// Create mcp-go server with our logger's standard logger (compatibility layer)
+	// Advertise the release version (ldflags main.version) instead of a stale
+	// literal, so MCP clients and `update` agree on what is installed.
+	mcp.SetServerVersion(version)
 	mcpServer := server.NewMCPServer(
 		"DB MCP Server", // Server name
-		"1.0.0",         // Server version
+		version,         // Server version
 		nil,             // Use default logger
 	)
 

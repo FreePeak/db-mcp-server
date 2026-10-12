@@ -9,7 +9,7 @@ Status: **maintained, active** (last substantive feature release v1.13.0,
 2026-10-12; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-12 (Oracle read-only tests now run in CI; lint config actually lints; unit suite under -race)*
+*Last updated: 2026-10-12 (self-update command + a real `--version`; Oracle read-only tests now run in CI; lint config actually lints)*
 
 ## 1. What this is
 
@@ -171,6 +171,10 @@ Also resolves MCP-client tool-count limits (Claude — issue #18).
   per-database fields for pool sizing, per-engine options, masking, guardrails.
 - Distribution: Go binary (linux/macOS), Docker multi-arch image
   (`freepeak/db-mcp-server`), npm launcher package.
+- Upgrading: `db-mcp-server update` (resolve the latest release → SHA-256
+  verify against `SHA256SUMS` → atomic swap) plus `--version`; the release
+  version is injected by `-ldflags -X main.version` and reported to MCP clients
+  as `serverInfo.version`.
 - CI: `go.yml` (build + unit + live-engine integration via Docker services),
   `docker-publish.yml` (multi-arch on push/tag), `npm-publish.yml`. The two
   publish workflows gate their credential check on the event — a tag push or
@@ -335,6 +339,7 @@ differentiator cluster and the natural "next feature to build".
 | v1.11.0 — distribution verification tag (Oracle support, SQLite, npm/docker automation) | ✅ shipped 2026-08-22 |
 | v1.12.0 — governance: engine read-only for Oracle, masking, audit trail, hypopg-validated index advice, engine slow queries, health | ✅ shipped 2026-08-25 |
 | **v1.13.0 — hardening (#88) + tool resolution (#92); Docker Hub publishing live** | ✅ shipped 2026-10-12 — npm still blocked on [#86](https://github.com/FreePeak/db-mcp-server/issues/86) |
+| Self-update (`db-mcp-server update`) + real `--version`; the `-X main.version` ldflag was a silent no-op | ✅ shipped 2026-10-12 (cycle 62) |
 | npm install path repaired (checksum prefix + tarball smoke check) — the first real publish will install | ✅ shipped 2026-10-12 (cycle 61) |
 | Governance suite (masking content, dry-run, snapshots) ported from hackathon branch | ⏳ backlog — see [4.3](#43-active-terrain--decision-needed-on-the-hackathon-branch) |
 
