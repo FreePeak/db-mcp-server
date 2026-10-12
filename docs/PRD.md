@@ -5,13 +5,11 @@ is built, and where it is going. Every other document (README quick-start,
 `docs/cycles/` narratives, engine deep-dives) is linked from here, never
 duplicated.
 
-Status: **maintained, active** (last substantive feature release v1.12.0,
-2026-08-25; period-review 2026-10) · License MIT · Repo
+Status: **maintained, active** (last substantive feature release v1.13.0,
+2026-10-12; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-11 (unified docs consolidation — single PRD created)*
-
----
+*Last updated: 2026-10-12 (release gate cleared: #88 + #92 merged, v1.13.0 cut)*
 
 ## 1. What this is
 
@@ -100,7 +98,7 @@ per-database registration (`query_<db_id>`) and unified registration
 | `docs/TIMESCALEDB_*` | TimescaleDB integration PRD, functions reference, tool docs (mirrored in README) |
 | `docs/TESTING.md`, `docs/ORACLE_*`, `docs/NPM_RELEASE_TESTING.md` | Historical runbooks — see [archive](#7-document-hygiene) |
 | `docs/benchmark-token-efficiency.md` | Token-cost numbers behind unified mode |
-| `CHANGELOG.md` | Release notes (v1.8.0 → v1.12.0) |
+| `CHANGELOG.md` | Release notes (v1.8.0 → v1.13.0) |
 
 ---
 
@@ -184,25 +182,28 @@ Also resolves MCP-client tool-count limits (Claude — issue #18).
 Where the product goes next, highest value first. Owner-agnostic; each item
 is sized against the cycle-doc process.
 
-### 4.1 Release gate — land the two waiting PRs (0 blockers)
+### 4.1 Release gate — DONE (v1.13.0 cut 2026-10-12)
 
-**Status: PRIMARY, do first.** Two substantial, already-written branches sit
-unmerged while main has sat untouched since 2026-08-25 (open issue #86 = CI
-publish credentials missing — no Docker/npm release has ever published):
+**Status: landed.** The release gate is cleared:
 
-1. **PR #88 `dsh/enterprise-personal-readiness`** — hardens the server for
-   personal + enterprise use: single canonical config object (fixes
-   max_rows/masking/timeout loss in the second parser), strict JSON
-   validation, real transaction lifetimes, SDK-backed streamable HTTP with
-   Origin allowlisting + API-key auth + OIDC, removes the arbitrary
-   server-directory `list` tool, unprivileged container. **Review + merge
-   first** — it is the foundation everything else needs.
-2. **PR #89** — one-line tool-type resolution fix: exact-name lookup before
-   underscore-prefix split (`list_databases` was resolving to the directory
-   `list` tool). **Merge after #88** (touches the same file).
+1. **PR #88** (hardening: canonical config, strict validation, real
+   transaction lifetimes, streamable HTTP auth, unprivileged container)
+   merged 2026-10-11 after a rebase onto main; build/integration/lint/verify
+   all green. It also fixed the publish red-runs by scoping the credential
+   guards to tag/dispatch events, superseding PR #91.
+2. **Tool resolution fix** landed as **PR #92** (superseding #89, whose fork
+   branch could not run CI here): exact-name lookup before underscore-prefix
+   split, plus the regression test #89 shipped without. Authorship preserved
+   in the history; #89 closed with credit.
+3. **v1.13.0** cut: CHANGELOG, `package.json` 1.13.0, tag + release
+   workflows (cycle 60).
 
-Then: cut v1.13.0, land secrets for Docker/npm (#86) so distribution
-channels actually publish.
+**Still open — issue #86**: the repository has zero Actions secrets, so the
+tag's Docker/npm publish runs fail fast with an actionable `::error` by
+design, and no Docker image or npm package has ever published. Adding
+`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` and `NPM_TOKEN` under
+Settings → Secrets and variables → Actions unblocks it; the backfill
+commands are recorded in #86.
 
 ### 4.2 Quick wins (do next, small surface)
 
@@ -283,9 +284,8 @@ differentiator cluster and the natural "next feature to build".
 | v1.10.0 — guardrails pack (#85): read-only bypass fix, max_rows, real transactions, explain/describe/performance, unified surface ancestor | ✅ shipped 2026-08-22 |
 | v1.11.0 — distribution verification tag (Oracle support, SQLite, npm/docker automation) | ✅ shipped 2026-08-22 |
 | v1.12.0 — governance: engine read-only for Oracle, masking, audit trail, hypopg-validated index advice, engine slow queries, health | ✅ shipped 2026-08-25 |
-| **v1.13.0 — merge #88 (hardening) + #89 (tool resolution); publish channels live (#86)** | ⏳ next — see [4.1](#41-release-gate--land-the-two-waiting-prs-0-blockers) |
+| **v1.13.0 — hardening (#88) + tool resolution (#92); publish guards scoped to tags** | ✅ shipped 2026-10-12 — Docker/npm publish still blocked on [#86 secrets](#41-release-gate--done-v1130-cut-2026-10-12) |
 | Governance suite (masking content, dry-run, snapshots) ported from hackathon branch | ⏳ backlog — see [4.3](#43-active-terrain--decision-needed-on-the-hackathon-branch) |
-| Table-qualified masking (backlog #11) | ⏳ vision — needs SQL parser |
 
 ---
 
