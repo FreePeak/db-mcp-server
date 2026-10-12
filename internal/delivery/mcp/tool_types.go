@@ -974,19 +974,22 @@ func (f *ToolTypeFactory) Register(toolType ToolType) {
 
 // GetToolType returns a tool type by name
 func (f *ToolTypeFactory) GetToolType(name string) (ToolType, bool) {
-	// Handle new simpler format: <tooltype>_<dbID> or just the tool type name
+	// Exact lookup first: names such as "list_databases" must resolve to
+	// their own tool type instead of being shadowed by a prefix match
+	// (e.g. splitting on "_" would wrongly map "list_databases" to "list").
+	if toolType, ok := f.toolTypes[name]; ok {
+		return toolType, true
+	}
+
+	// Fall back to <tooltype>_<dbID> format, using the first segment.
 	parts := strings.Split(name, "_")
 	if len(parts) > 0 {
-		// First part is the tool type name
-		toolType, ok := f.toolTypes[parts[0]]
-		if ok {
+		if toolType, ok := f.toolTypes[parts[0]]; ok {
 			return toolType, true
 		}
 	}
 
-	// Direct tool type lookup
-	toolType, ok := f.toolTypes[name]
-	return toolType, ok
+	return nil, false
 }
 
 // GetToolTypeForSourceName finds the appropriate tool type for a source name
