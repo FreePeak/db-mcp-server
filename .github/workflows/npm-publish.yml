@@ -3,6 +3,11 @@ name: Release artifacts
 on:
   push:
     tags: ["v*"]
+  # The release jobs below are gated to release events; this entry exists so the
+  # launcher tests (Validate npm launchers, checksum parser) run on every PR
+  # instead of only at tag time. Nothing is published from a pull_request.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       version:
@@ -17,6 +22,7 @@ permissions:
 jobs:
   get-version:
     name: Validate version
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -39,9 +45,12 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION"
 
+  # Runs on every event (including pull_request) so launcher regressions are
+  # caught before a release tag, not during one.
   verify:
     name: Verify source
-    needs: get-version
+    needs: [get-version]
+    if: always() && (github.event_name != 'pull_request' || needs.get-version.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -59,9 +68,16 @@ jobs:
           go vet ./...
       - name: Validate npm launchers
         run: node --check bin/run.js && node --check bin/install.js
+      - name: Test the installer checksum parser
+        # The release manifest is generated as `sha256sum release/db-mcp-server-*`,
+        # so entries carry a release/ prefix. A parser that only compares the whole
+        # field makes every install fail — the tarball check below catches it end
+        # to end, this catches it in seconds.
+        run: node --test bin/install.test.js
 
   build-and-release:
     name: Build and release
+    if: github.event_name != 'pull_request'
     needs: [get-version, verify]
     runs-on: ubuntu-latest
     steps:
@@ -106,6 +122,7 @@ jobs:
 
   publish-npm:
     name: Publish npm package
+    if: github.event_name != 'pull_request'
     needs: [get-version, verify, build-and-release]
     runs-on: ubuntu-latest
     steps:
@@ -122,6 +139,19 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Inspect package contents
         run: npm pack --dry-run --json > package-manifest.json
+      - name: Install the packed tarball end to end
+        # The tarball's postinstall downloads the release binary and verifies it
+        # against SHA256SUMS, so this is the only check that would have caught
+        # "publishes fine, installs for nobody".
+        run: |
+          VERSION=${{ needs.get-version.outputs.version }}
+          # npm pack refuses a --pack-destination that does not exist yet, so
+          # create the directory before packing.
+          mkdir -p "$RUNNER_TEMP/npm-smoke"
+          TARBALL=$(npm pack --pack-destination "$RUNNER_TEMP" --silent)
+          npm install --prefix "$RUNNER_TEMP/npm-smoke" --no-save "$RUNNER_TEMP/$TARBALL"
+          "$RUNNER_TEMP/npm-smoke/node_modules/.bin/db-mcp-server" --help > /dev/null
+          echo "Installed and ran db-mcp-server v$VERSION from the packed tarball"
       - name: Publish package
         run: |
           VERSION=${{ needs.get-version.outputs.version }}

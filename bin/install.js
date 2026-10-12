@@ -64,12 +64,16 @@ function download(url, redirects = 0) {
   });
 }
 
+// The release workflow writes SHA256SUMS with `sha256sum release/db-mcp-server-*`,
+// so entries carry a `release/` prefix while the downloaded asset is the bare
+// file name. Compare basenames too, or every install fails on a release that
+// has a perfectly valid manifest.
 function findChecksum(checksums, asset) {
   for (const line of checksums.toString("utf8").split(/\r?\n/)) {
     const fields = line.trim().split(/\s+/);
     if (fields.length < 2) continue;
     const name = fields[fields.length - 1].replace(/^\*/, "");
-    if (name === asset) return fields[0].toLowerCase();
+    if (name === asset || name.split("/").pop() === asset) return fields[0].toLowerCase();
   }
   throw new Error(`no SHA-256 checksum found for ${asset}`);
 }
@@ -100,7 +104,11 @@ async function install() {
   console.log(`Installed db-mcp-server to ${destination}`);
 }
 
-install().catch((error) => {
-  console.error(`Failed to install db-mcp-server: ${error.message}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  install().catch((error) => {
+    console.error(`Failed to install db-mcp-server: ${error.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = { findChecksum, getAssetName, getPlatform };
