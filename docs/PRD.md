@@ -9,7 +9,7 @@ Status: **maintained, active** (last substantive feature release v1.13.0,
 2026-10-12; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-12 (Docker Hub publishing live: 1.11–1.13 backfilled, :latest moved off the 2025 build)*
+*Last updated: 2026-10-12 (Docker Hub publishing live: 1.11–1.13 backfilled; README env-var table made current)*
 
 ## 1. What this is
 
@@ -219,8 +219,12 @@ version `1.13.0`.
 
 ### 4.2 Quick wins (do next, small surface)
 
-- **Env-var doc currency** (backlog #10 re-check): `API_KEY`, `HEALTH_PORT`,
-  `AUDIT_LOG` are in code but not in the README env table.
+- **Env-var doc currency** (backlog #10 re-check): **done 2026-10-12.**
+  `VERBOSE` and `MCP_DISABLE_LOGGING` were read by the server and missing
+  from the README env table; both are now documented. The item also named
+  `API_KEY` and `HEALTH_PORT` — neither is read from the environment (the
+  code reads `DB_MCP_API_KEY`, already documented, and the health port is a
+  flag only), so documenting them would have been wrong.
 - **Oracle engine read-only hardening (gap G-1)**: currently classifier-only;
   options: `ALTER SESSION SET READ ONLY` on pooled session (mirror the
   `newReadOnlySessionConnector` pattern used for Oracle today), or extend
