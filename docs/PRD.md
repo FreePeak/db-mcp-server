@@ -9,7 +9,7 @@ Status: **maintained, active** (last substantive feature release v1.13.0,
 2026-10-12; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-12 (self-update command + a real `--version`; Oracle read-only tests now run in CI — they never had)*
+*Last updated: 2026-10-12 (self-update command + a real `--version`; Oracle read-only tests now run in CI; lint config actually lints)*
 
 ## 1. What this is
 
@@ -263,9 +263,16 @@ checksum, the CLI runs.
   keyword, which is now correct; the residual wart is that a no-op PRAGMA
   reports success instead of an error. Pinned by
   `pkg/db/sqlite_readonly_pragma_test.go`.
-- **Pre-commit hooks / golangci in CI**: the repo declares golangci-lint and
-  pre-commit conventions (`.pre-commit-config`); wire them into `go.yml` so
-  lint debt cannot regress.
+- **Pre-commit hooks / golangci in CI**: **done 2026-10-12, and the item was
+  wrong about the problem.** CI already ran golangci-lint v1.64.8; the config
+  was the bug — `.golangci.yml` declared `gofmt`/`goimports` under a v2-only
+  `formatters:` key, which a v1 binary silently ignores, so formatting had
+  never been checked on a pull request. Rewritten in v1 syntax and verified by
+  making v1.64.8 flag a deliberately unformatted function. The unit-test step
+  also gained `-race` (only `./pkg/db` and `./internal/usecase` had it). No
+  pre-commit job was added: the repo has no `.pre-commit-config.yaml` (the
+  hook is a local, untracked `.git/hooks/pre-commit`), and the two commands it
+  runs are what the lint job now actually does.
 
 ### 4.3 Active terrain — decision needed on the hackathon branch
 

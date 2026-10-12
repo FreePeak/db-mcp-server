@@ -16,19 +16,17 @@ linters:
     - unused
     - misspell
     - revive
-
-formatters:
-  enable:
     - gofmt
     - goimports
-  settings:
-    gofmt:
-      simplify: true
-    goimports:
-      local-prefixes: github.com/FreePeak/db-mcp-server
 
+# gofmt/goimports are declared under linters (v1 syntax) because CI pins
+# golangci-lint v1.64.8: the v2-only "formatters" block was silently ignored,
+# so formatting was never checked on a pull request.
 linters-settings:
-  govet:
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/FreePeak/db-mcp-server
   revive:
     rules:
       - name: var-naming
