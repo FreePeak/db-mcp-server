@@ -49,6 +49,13 @@ CI verified the tarball's *contents* and never its *behaviour*.
   and adds an **end-to-end install smoke check** to `publish-npm` — pack the
   tarball, `npm install` it, run `db-mcp-server --help`. That is the check that
   would have caught this class of bug.
+- `npm-publish.yml` also now triggers on `pull_request`, with the three release
+  jobs (`get-version`, `build-and-release`, `publish-npm`) gated to
+  non-PR events. Without that the new tests would only ever run at tag time —
+  i.e. after the mistake had already been committed to a release. `verify` runs
+  on every event (the PR path skips `get-version` via `needs.get-version.result
+  == 'skipped'`), and nothing publishes from a pull_request. The smoke step
+  stays release-only, because it needs a published release to download.
 
 ## Verification
 
