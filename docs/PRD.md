@@ -5,8 +5,8 @@ is built, and where it is going. Every other document (README quick-start,
 `docs/cycles/` narratives, engine deep-dives) is linked from here, never
 duplicated.
 
-Status: **maintained, active** (last substantive feature release v1.13.0,
-2026-10-12; period-review 2026-10) · License MIT · Repo
+Status: **maintained, active** (last substantive feature release v1.14.0,
+2026-10-13; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
 *Last updated: 2026-10-13 (governance trio ported: content-based PII masking #101, dry_run + risk advisories #102, mutation snapshots #103; self-update command + a real `--version`; Oracle read-only tests now run in CI; lint config actually lints; unit suite under -race)*
@@ -341,7 +341,8 @@ differentiator cluster and the natural "next feature to build".
 | **v1.13.0 — hardening (#88) + tool resolution (#92); Docker Hub publishing live** | ✅ shipped 2026-10-12 — npm still blocked on [#86](https://github.com/FreePeak/db-mcp-server/issues/86) |
 | Self-update (`db-mcp-server update`) + real `--version`; the `-X main.version` ldflag was a silent no-op | ✅ shipped 2026-10-12 (cycle 62) |
 | npm install path repaired (checksum prefix + tarball smoke check) — the first real publish will install | ✅ shipped 2026-10-12 (cycle 61) |
-| Governance suite (masking content, dry-run, snapshots) ported from hackathon branch | ⏳ backlog — see [4.3](#43-active-terrain--decision-needed-on-the-hackathon-branch) |
+| Governance suite (masking content, dry-run, snapshots) ported from hackathon branch | ✅ shipped 2026-10-13 (cycles 63–65, PRs #101/#102/#103) — all three items of §4.3's high-value cluster |
+| **v1.14.0 — the governance release: content-based PII masking, `dry_run` + risk advisories, mutation snapshots + `rollback_snapshot`** | ⏳ cutting — npm publish still blocked on [#86](https://github.com/FreePeak/db-mcp-server/issues/86) |
 
 ---
 

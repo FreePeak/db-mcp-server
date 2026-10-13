@@ -1,10 +1,18 @@
 # Changelog
 ## [Unreleased]
+
+## [v1.14.0] - 2026-10-13
 ### Added
+- **Content-based PII masking** (`"mask_pii": true` per connection, optional `mask_pii` per query): redacts emails, phone numbers, Luhn-checked card numbers, SSNs, IPv4 addresses and long numeric identifiers by *content shape* — including inside free-text columns no rule covers — plus whole-cell redaction for columns named like PII carriers. Operator-controlled: once enabled, the per-query parameter can only add masking, never remove it
+- **`dry_run` pre-flight on the execute tool**: classifies a statement offline (kind, risk level, advisories) and executes nothing; works even when the database is unreachable
+- **Post-execution risk advisories**: a statement that runs and classifies at or above the warning threshold (default high) carries a `⚠ Risk notice` in its result — DROP targets, TRUNCATE, UPDATE/DELETE with no top-level WHERE, column drops and type-change rewrites (with the engine's live row estimate)
+- **Pre-mutation snapshots + `rollback_snapshot`**: every `DELETE`/`UPDATE` through the execute tool captures the rows it will affect (bounded ring of 25 per database) and reports the snapshot ID; the transaction tool gains `list_snapshots` and `rollback_snapshot` for agent-driven undo
 - `db-mcp-server update`: replaces the running binary with the latest published release — resolves the tag, verifies the download against the release's `SHA256SUMS` manifest, and swaps the file atomically; `-check` reports without downloading, `-force` reinstalls, `-version` pins a release
 - `--version` prints the build version, and MCP clients now see the real release version in `serverInfo` instead of a hardcoded `1.0.0`
 ### Fixed
 - The release `-ldflags="-X main.version=…"` the Makefile and `npm-publish.yml` pass was a silent no-op (`cmd/server` declared no `version` variable), so every release binary reported `1.0.0`
+- Tool-type resolution takes the exact name before the underscore-prefix split, so a multi-word tool type is never shadowed by a shorter registered prefix
+- `TestWorkloadIndexSuggestions_EndToEnd` depended on test ordering: the process-global performance analyzer was not reset, so a stale tracker window could drop the composite suggestion (~1 run in 8)
 
 ## [v1.13.0] - 2026-10-12
 ### Added
