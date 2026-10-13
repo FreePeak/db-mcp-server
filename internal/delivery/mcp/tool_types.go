@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/FreePeak/cortex/pkg/server"
 	"github.com/FreePeak/cortex/pkg/tools"
@@ -100,6 +101,14 @@ type maskedQueryProvider interface {
 // dry_run explicitly rather than silently executing.
 type dryRunCapable interface {
 	ExecuteStatementDryRun(ctx context.Context, dbID, statement string) (*usecase.RiskReport, error)
+}
+
+// snapshotCapable is implemented by use cases that keep pre-mutation row
+// captures, so an agent can undo a DELETE/UPDATE through the transaction
+// tool. Optional: providers without it report the action as unsupported.
+type snapshotCapable interface {
+	ListSnapshots(dbID string) []usecase.MutationSnapshot
+	RollbackSnapshot(ctx context.Context, dbID, snapshotID string) (string, error)
 }
 
 // BaseToolType provides common functionality for tool types
@@ -393,7 +402,7 @@ func (t *TransactionTool) CreateTool(name string, dbID string) interface{} {
 		name,
 		tools.WithDescription(t.GetDescription(dbID)),
 		tools.WithString("action",
-			tools.Description("Transaction action (begin, commit, rollback, execute)"),
+			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot)"),
 			tools.Required(),
 		),
 		tools.WithString("transactionId",
@@ -405,6 +414,9 @@ func (t *TransactionTool) CreateTool(name string, dbID string) interface{} {
 		tools.WithArray("params",
 			tools.Description("Statement parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
+		),
+		tools.WithString("snapshot_id",
+			tools.Description("Snapshot ID to restore (required for the rollback_snapshot action)"),
 		),
 		tools.WithBoolean("readOnly",
 			tools.Description("Whether the transaction is read-only (for begin)"),
@@ -422,7 +434,7 @@ func (t *TransactionTool) CreateUnifiedTool(name string, dbList []string) interf
 			tools.Required(),
 		),
 		tools.WithString("action",
-			tools.Description("Transaction action (begin, commit, rollback, execute)"),
+			tools.Description("Transaction action (begin, commit, rollback, execute, list_snapshots, rollback_snapshot)"),
 			tools.Required(),
 		),
 		tools.WithString("transactionId",
@@ -434,6 +446,9 @@ func (t *TransactionTool) CreateUnifiedTool(name string, dbList []string) interf
 		tools.WithArray("params",
 			tools.Description("Statement parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
+		),
+		tools.WithString("snapshot_id",
+			tools.Description("Snapshot ID to restore (required for the rollback_snapshot action)"),
 		),
 		tools.WithBoolean("readOnly",
 			tools.Description("Whether the transaction is read-only (for begin)"),
@@ -485,6 +500,42 @@ func (t *TransactionTool) HandleRequest(ctx context.Context, request server.Tool
 		if !ok {
 			return nil, fmt.Errorf("readOnly parameter must be a boolean")
 		}
+	}
+
+	// Snapshot actions are capability-detected so existing providers and test
+	// doubles stay source-compatible.
+	if action == "list_snapshots" || action == "rollback_snapshot" {
+		sc, capable := useCase.(snapshotCapable)
+		if !capable {
+			return nil, fmt.Errorf("%s is not supported by this provider", action)
+		}
+		if action == "list_snapshots" {
+			snaps := sc.ListSnapshots(dbID)
+			var b strings.Builder
+			fmt.Fprintf(&b, "Snapshots for %s: %d\n", dbID, len(snaps))
+			for _, sn := range snaps {
+				fmt.Fprintf(&b, "- %s  %s on %s (%d rows) at %s\n",
+					sn.ID, sn.Kind, sn.Table, len(sn.Rows), sn.Timestamp.Format(time.RFC3339))
+			}
+			if len(snaps) == 0 {
+				b.WriteString("(none yet — a DELETE or UPDATE through the execute tool records one)\n")
+			}
+			return createTextResponse(b.String()), nil
+		}
+		// Absent or non-string snapshot_id is reported below rather than
+		// silently rolling back something else.
+		snapshotID := ""
+		if id, ok := request.Parameters["snapshot_id"].(string); ok {
+			snapshotID = id
+		}
+		if snapshotID == "" {
+			return nil, fmt.Errorf("snapshot_id parameter is required for rollback_snapshot")
+		}
+		msg, rerr := sc.RollbackSnapshot(ctx, dbID, snapshotID)
+		if rerr != nil {
+			return nil, rerr
+		}
+		return createTextResponse(msg), nil
 	}
 
 	message, metadata, err := useCase.ExecuteTransaction(ctx, dbID, action, txID, statement, params, readOnly)

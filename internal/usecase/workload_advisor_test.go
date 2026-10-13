@@ -13,6 +13,13 @@ import (
 // several statements against unindexed columns and checks that merged
 // suggestions report per-statement coverage.
 func TestWorkloadIndexSuggestions_EndToEnd(t *testing.T) {
+	// The performance analyzer is process-global and every test in this
+	// package that executes a statement feeds it. Without this reset the
+	// merged-workload assertion below depends on which other tests ran
+	// first (and on whether the run happened to be cached): the composite
+	// suggestion only appears when the sort-bearing statement is still in
+	// the tracker's window. Found as a flaky failure in CI.
+	dbtools.GetPerformanceAnalyzer().Reset()
 	raw := openSQLiteForTest(t)
 	// :memory: SQLite gives every pooled connection its own empty database;
 	// pin to one connection so DDL and tracked queries share it.
