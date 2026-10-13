@@ -9,7 +9,7 @@ Status: **maintained, active** (last substantive feature release v1.14.0,
 2026-10-13; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-13 (governance trio ported: content-based PII masking #101, dry_run + risk advisories #102, mutation snapshots #103; self-update command + a real `--version`; Oracle read-only tests now run in CI; lint config actually lints; unit suite under -race)*
+*Last updated: 2026-10-13 (governance trio ported and merged: content-based PII masking #101, dry_run + risk advisories #102, mutation snapshots #103 — verified end to end against the built binary on main; hackathon branch #87 superseded and kept as archive; self-update command + a real `--version`; Oracle read-only tests now run in CI; lint config actually lints; unit suite under -race)*
 
 ## 1. What this is
 
@@ -93,7 +93,7 @@ per-database registration (`query_<db_id>`) and unified registration
 | Doc | What it is |
 |-----|-----------|
 | `README.md` | Quick start: install, transports, config reference, per-tool docs, testing. The PRD is linked from it. |
-| [docs/cycles/INDEX.md](cycles/INDEX.md) | 59 product-cycle narratives (research → ship → verify). Historical work log + competitive baseline; keep as the changelog-with-reasoning |
+| [docs/cycles/INDEX.md](cycles/INDEX.md) | 63 product-cycle entries (research → ship → verify). Historical work log + competitive baseline; keep as the changelog-with-reasoning |
 | [docs/design/column-masking-scoping.md](design/column-masking-scoping.md) | Design record: why masking v1 is name-based (no SQL parser) |
 | `docs/TIMESCALEDB_*` | TimescaleDB integration PRD, functions reference, tool docs (mirrored in README) |
 | `docs/TESTING.md`, `docs/ORACLE_*`, `docs/NPM_RELEASE_TESTING.md` | Historical runbooks — see [archive](#7-document-hygiene) |
@@ -274,11 +274,16 @@ checksum, the CLI runs.
   hook is a local, untracked `.git/hooks/pre-commit`), and the two commands it
   runs are what the lint job now actually does.
 
-### 4.3 Active terrain — decision needed on the hackathon branch
+### 4.3 Active terrain — hackathon branch (decision taken: port, don't merge)
+
+**Status: decided and executed 2026-10-13.** The branch is superseded, not
+merged: its high-value governance trio was ported forward as three small
+reviewable PRs and all three are on main. `origin/hackathon` stays as the
+archive for the medium/low items still listed below.
 
 `origin/hackathon` (PR #87) carries ~66 more cycles' worth of features —
-**verified NOT on main** (main = 120 Go files; branch = 396). The valuable,
-read-only/safe subset worth porting forward:
+**verified NOT on main** (main = 143 Go files after the trio landed; branch =
+397). The valuable, read-only/safe subset worth porting forward:
 
 | Feature (branch) | What it adds | Value |
 |---|---|---|
@@ -293,11 +298,20 @@ read-only/safe subset worth porting forward:
 | Schema drift + `check_schema_drift`; cross-DB `schema format=compare` | Diff between states/DBs | Medium |
 | The TARDIS pack (wal_level, xid wraparound...) | Postgres ops telemetry | Low — pickup on demand |
 
-**Recommendation**: do not merge the branch wholesale — it is one giant diff
-(28k insertions) that rewrites files main has since touched. Rebase PR #88
-first, then port the high/medium read-only-safe items as small PRs, TDD
-style, so each lands reviewable. The masking/dry-run/snapshot trio is the
-differentiator cluster and the natural "next feature to build".
+**Decision (taken, not pending)**: do not merge the branch wholesale — it is
+one giant diff (28k insertions, 508 files) that rewrites files main has since
+touched, and it now conflicts at 21 sites. Port the read-only-safe items as
+small PRs, TDD style, so each lands reviewable.
+
+The masking/dry-run/snapshot trio — the differentiator cluster — is **done**:
+#101, #102 and #103 all merged 2026-10-12/13, each rebased onto current main
+and green on build/integration/lint/verify. Driven end to end against the
+built binary on main: `mask_pii` redacts `alice@example.com` to `[EMAIL]` from
+config alone, `dry_run` on a `DROP` reports Critical and executes nothing, a
+`DELETE` reports `snap_1`, and `rollback_snapshot snap_1` restores the row.
+
+The remaining rows below are unported; the next highest-value one is
+**Auto-LIMIT** injection.
 
 ### 4.4 Vision list (from the cycle backlog, still valued)
 
@@ -341,8 +355,8 @@ differentiator cluster and the natural "next feature to build".
 | **v1.13.0 — hardening (#88) + tool resolution (#92); Docker Hub publishing live** | ✅ shipped 2026-10-12 — npm still blocked on [#86](https://github.com/FreePeak/db-mcp-server/issues/86) |
 | Self-update (`db-mcp-server update`) + real `--version`; the `-X main.version` ldflag was a silent no-op | ✅ shipped 2026-10-12 (cycle 62) |
 | npm install path repaired (checksum prefix + tarball smoke check) — the first real publish will install | ✅ shipped 2026-10-12 (cycle 61) |
-| Governance suite (masking content, dry-run, snapshots) ported from hackathon branch | ✅ shipped 2026-10-13 (cycles 63–65, PRs #101/#102/#103) — all three items of §4.3's high-value cluster |
-| **v1.14.0 — the governance release: content-based PII masking, `dry_run` + risk advisories, mutation snapshots + `rollback_snapshot`** | ⏳ cutting — npm publish still blocked on [#86](https://github.com/FreePeak/db-mcp-server/issues/86) |
+| Governance suite (masking content #101, dry-run #102, snapshots #103) ported from hackathon branch | ✅ shipped 2026-10-13 — trio merged and verified against the built binary; #87 superseded (see [4.3](#43-active-terrain--hackathon-branch-decision-taken-port-dont-merge)) |
+| **v1.14.0 — the governance release: content-based PII masking, `dry_run` + risk advisories, mutation snapshots + `rollback_snapshot`** | ✅ shipped 2026-10-13 (tag pushed; GitHub Release with all seven platform binaries) — npm publish still blocked on [#86](https://github.com/FreePeak/db-mcp-server/issues/86) |
 
 ---
 

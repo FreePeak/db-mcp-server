@@ -1,6 +1,6 @@
 # Column Masking — Scoping Document
 
-**Status:** Scoped (cycle 35) · **Origin:** backlog #5, "Bytebase differentiator" · **Deferred since:** cycle 21
+**Status:** Shipped — name-based v1 in cycles 36/37, content-based layer added in cycle 63 (PR #101) · **Origin:** backlog #5, "Bytebase differentiator" · **Deferred since:** cycle 21 (un-blocked cycle 35)
 
 ## Problem
 
@@ -10,6 +10,15 @@ numbers). Read-only mode protects the database from the client; nothing
 protects sensitive data from the client. Bytebase's governance story
 includes exactly this gap, which is why it was named a differentiator in
 the competitive review.
+
+> **Update (cycle 63, PR #101).** Cycle C below was taken: content-based
+> masking (`"mask_pii": true` per connection, optional `mask_pii` per query)
+> redacts by *shape* — emails, phones, Luhn-checked cards, SSNs, IPv4, long
+> numeric ids — wherever they appear, including inside free-text columns no
+> rule covers, plus whole-cell redaction for columns named like PII carriers.
+> It is additive to `masking_rules`, and the per-database flag is
+> operator-controlled: a per-query parameter can turn masking on, never off.
+> Table-qualified policies remain the unbuilt phase.
 
 ## The Insight That Un-blocks Scoping
 
