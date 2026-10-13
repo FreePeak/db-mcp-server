@@ -9,7 +9,7 @@ Status: **maintained, active** (last substantive feature release v1.13.0,
 2026-10-12; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-13 (governance cluster ported: content-based PII masking #101, dry_run + risk advisories #102; self-update command + a real `--version`; Oracle read-only tests now run in CI; lint config actually lints; unit suite under -race)*
+*Last updated: 2026-10-13 (governance trio ported: content-based PII masking #101, dry_run + risk advisories #102, mutation snapshots #103; self-update command + a real `--version`; Oracle read-only tests now run in CI; lint config actually lints; unit suite under -race)*
 
 ## 1. What this is
 
@@ -284,7 +284,7 @@ read-only/safe subset worth porting forward:
 |---|---|---|
 | Column masking **content-based + enforced** (`mask_pii` config, Luhn cards) | Real PII protection beyond name-regex v1 | ✅ **ported 2026-10-12** (PR #101) — content patterns + column heuristics, per-query opt-in, per-database enforcement the agent cannot opt out of |
 | `dry_run` + risk advisories + `-risk-warn-at` | Offline statement risk analysis before execution | ✅ **ported 2026-10-13** (PR #102) — `dry_run` classifies without executing; executed high-risk statements carry a `⚠ Risk notice`; threshold configurable via `SetRiskWarnAt` (the `-risk-warn-at` flag is not wired yet) |
-| DELETE/UPDATE **snapshots + rollback_snapshot** | Undo for mutations done through the server | High |
+| DELETE/UPDATE **snapshots + rollback_snapshot** | Undo for mutations done through the server | ✅ **ported 2026-10-13** (PR #103) — pre-mutation row capture on every DELETE/UPDATE (bounded ring of 25/db), `list_snapshots` + `rollback_snapshot` actions on the transaction tool |
 | **Auto-LIMIT** injection (Oracle via ROWNUM wrap) | Default unbounded SELECTs get a server-side cap | Medium |
 | **Verbosity modes** (minimal/normal truncation) | 60–95% context savings on results | Medium |
 | `generate_schema` → Go/TS code; `format=csv/json/inserts` | Schema-to-code + data export | Medium |

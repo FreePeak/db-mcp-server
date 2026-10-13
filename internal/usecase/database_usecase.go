@@ -159,6 +159,9 @@ type DatabaseUseCase struct {
 	// advisory (default high).
 	riskWarnMu sync.Mutex
 	riskWarnAt string
+
+	// snapshots holds pre-mutation row captures for agent-driven undo.
+	snapshots *snapshotStore
 }
 
 // NewDatabaseUseCase creates a new database use case
@@ -168,6 +171,7 @@ func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 		transactions:   make(map[string]*transactionRecord),
 		transactionTTL: defaultTransactionTTL,
 		riskWarnAt:     "high",
+		snapshots:      newSnapshotStore(),
 	}
 }
 
@@ -621,6 +625,18 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 		return "", fmt.Errorf("database %q is configured as read-only; write statements are not allowed", dbID)
 	}
 
+	// Pre-mutation safety net: capture the rows a DELETE/UPDATE is about to
+	// affect so the mutation can be reversed. Best-effort — an introspection
+	// failure must never block the mutation the operator asked for.
+	snapshotID := ""
+	if mutKindRe.MatchString(strings.TrimSpace(stripSQLLiterals(statement))) {
+		if sid, snapErr := uc.captureMutationSnapshot(ctx, db, dbID, statement); snapErr == nil {
+			snapshotID = sid
+		} else {
+			logger.Warn("pre-mutation snapshot for %s failed (execution continues): %v", dbID, snapErr)
+		}
+	}
+
 	var out string
 	_, trackErr := dbtools.GetPerformanceAnalyzer().TrackQuery(ctx, statement, params, func() (interface{}, error) {
 		result, xerr := db.Exec(ctx, statement, params...)
@@ -641,6 +657,9 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 		}
 
 		out = fmt.Sprintf("Statement executed successfully.\nRows affected: %d\nLast insert ID: %d", rowsAffected, lastInsertID)
+		if snapshotID != "" {
+			out += fmt.Sprintf("\nSnapshot: %s (undo with the transaction tool's rollback_snapshot action)", snapshotID)
+		}
 		return nil, nil
 	})
 	if trackErr != nil {
