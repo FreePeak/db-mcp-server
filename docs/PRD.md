@@ -9,7 +9,7 @@ Status: **maintained, active** (last substantive feature release v1.13.0,
 2026-10-12; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-12 (self-update command + a real `--version`; Oracle read-only tests now run in CI; lint config actually lints)*
+*Last updated: 2026-10-12 (content-based PII masking ported from hackathon; self-update command + a real `--version`; Oracle read-only tests now run in CI; lint config actually lints; unit suite under -race)*
 
 ## 1. What this is
 
@@ -282,7 +282,7 @@ read-only/safe subset worth porting forward:
 
 | Feature (branch) | What it adds | Value |
 |---|---|---|
-| Column masking **content-based + enforced** (`mask_pii` config, Luhn cards) | Real PII protection beyond name-regex v1 | High |
+| Column masking **content-based + enforced** (`mask_pii` config, Luhn cards) | Real PII protection beyond name-regex v1 | ✅ **ported 2026-10-12** (PR #101) — content patterns + column heuristics, per-query opt-in, per-database enforcement the agent cannot opt out of |
 | `dry_run` + risk advisories + `-risk-warn-at` | Offline statement risk analysis before execution | High |
 | DELETE/UPDATE **snapshots + rollback_snapshot** | Undo for mutations done through the server | High |
 | **Auto-LIMIT** injection (Oracle via ROWNUM wrap) | Default unbounded SELECTs get a server-side cap | Medium |

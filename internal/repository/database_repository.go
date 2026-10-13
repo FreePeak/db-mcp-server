@@ -153,6 +153,16 @@ func (a *DatabaseAdapter) QueryTimeout() int {
 	return 0
 }
 
+// MaskPII reports whether content-based PII masking is enforced for this
+// database, mirroring MaxRows/QueryTimeout. Absent on fakes and engines that
+// do not implement it, which means "not enforced".
+func (a *DatabaseAdapter) MaskPII() bool {
+	if m, ok := a.db.(interface{ MaskPII() bool }); ok {
+		return m.MaskPII()
+	}
+	return false
+}
+
 // MaskingRules returns the configured result-masking rules for this
 // database, mirroring MaxRows/QueryTimeout so guardrails are observable
 // above the repository layer.

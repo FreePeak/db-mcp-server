@@ -118,6 +118,7 @@ Protect agent sessions against runaway queries and accidental writes:
 | `"read_only": true` | per database | Blocks write statements (`INSERT`, `UPDATE`, `DELETE`, DDL, data-modifying CTEs, stacked writes) through **both** query and execute tools, **and** enforces rejection at the database engine itself on PostgreSQL/TimescaleDB (`default_transaction_read_only=on`) and MySQL (`transaction_read_only=1`); SQLite opens `mode=ro`. Classification strips comments and string literals and defaults to deny for unrecognized statements. |
 | `"max_rows": 1000` | per database | Truncates result sets at N rows and appends an explicit `[Truncated]` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. |
 | `"masking_rules": [...]` | per database | Masks values of result columns whose **name** matches a rule's regex before they leave the server — applies to every query shape including `SELECT *`. Strategies: `"fixed_string"` (replace with `value`), `"null"`, and `"partial"` (`keep_last` trailing characters visible; shorter values fully masked). First matching rule wins; invalid patterns or unknown strategies abort config load (fail closed); masked-cell counts are reported in the result footer. Renaming a column with an alias bypasses name matching by design. See [docs/design/column-masking-scoping.md](docs/design/column-masking-scoping.md). |
+| `"mask_pii": true` | per database | Redacts PII in query results by **content shape**, not just column name: emails, phone numbers, credit-card numbers (Luhn-checked), SSNs, IPv4 addresses and 19+ digit identifiers are replaced with `[EMAIL]`/`[PHONE]`/`[CREDIT_CARD]`/`[SSN]`/`[IP_ADDRESS]`/`[LONG_NUMBER]` wherever they appear — including inside free-text columns no rule covers. Column names like `email`/`card_number`/`iban` are redacted whole. Operator-controlled: once set, an agent **cannot** turn it off (the per-query `mask_pii` parameter is additive only). Composes with `masking_rules`. |
 | `"query_timeout": 30` | per database | Cancels statements that exceed the timeout in seconds; enforced at the repository layer for every tool (queries, statements, transactions, explain, schema inspection). Unset defaults to 30s; `-1` disables. Env-only deployments can set `QUERY_TIMEOUT_SECONDS` to fill connections without an explicit value (JSON keeps precedence). |
 
 | `DB_MCP_AUDIT_LOG=/path/audit.jsonl` | process | Appends one JSONL record per executed statement — timestamp, op (`query`/`execute`/`tx_*`), database, statement (capped at 10k chars), duration, error. Includes rejected attempts against read-only databases. Best-effort writes never fail a query; file is created with `0600`. |
@@ -593,7 +594,7 @@ For each connected database, DB MCP Server automatically generates these special
 
 | Tool Name | Description |
 |-----------|-------------|
-| `query_<db_id>` | Execute SELECT queries and get results as a tabular dataset |
+| `query_<db_id>` | Execute SELECT queries and get results as a tabular dataset. Optional `mask_pii` boolean redacts PII by content shape (see the guardrails table); it is additive — a database configured with `"mask_pii": true` masks regardless. |
 | `execute_<db_id>` | Run data manipulation statements (INSERT, UPDATE, DELETE) |
 | `transaction_<db_id>` | Begin, commit, and rollback transactions |
 
