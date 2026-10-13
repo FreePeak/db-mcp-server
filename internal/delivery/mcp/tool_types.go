@@ -7,6 +7,8 @@ import (
 
 	"github.com/FreePeak/cortex/pkg/server"
 	"github.com/FreePeak/cortex/pkg/tools"
+
+	"github.com/FreePeak/db-mcp-server/internal/usecase"
 )
 
 // createTextResponse creates a simple response with a text content
@@ -91,6 +93,13 @@ type UseCaseProvider interface {
 // ExecuteQuery when the capability is absent.
 type maskedQueryProvider interface {
 	ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool) (string, error)
+}
+
+// dryRunCapable is implemented by use cases that can classify a statement
+// offline. Optional, like maskedQueryProvider: a provider without it rejects
+// dry_run explicitly rather than silently executing.
+type dryRunCapable interface {
+	ExecuteStatementDryRun(ctx context.Context, dbID, statement string) (*usecase.RiskReport, error)
 }
 
 // BaseToolType provides common functionality for tool types
@@ -257,6 +266,9 @@ func (t *ExecuteTool) CreateTool(name string, dbID string) interface{} {
 			tools.Description("SQL statement to execute (INSERT, UPDATE, DELETE, etc.)"),
 			tools.Required(),
 		),
+		tools.WithBoolean("dry_run",
+			tools.Description("Classify the statement offline and report its risk without executing anything"),
+		),
 		tools.WithArray("params",
 			tools.Description("Statement parameters"),
 			tools.Items(map[string]interface{}{"type": "string"}),
@@ -276,6 +288,9 @@ func (t *ExecuteTool) CreateUnifiedTool(name string, dbList []string) interface{
 		tools.WithString("statement",
 			tools.Description("SQL statement to execute (INSERT, UPDATE, DELETE, etc.)"),
 			tools.Required(),
+		),
+		tools.WithBoolean("dry_run",
+			tools.Description("Classify the statement offline and report its risk without executing anything"),
 		),
 		tools.WithArray("params",
 			tools.Description("Statement parameters"),
@@ -303,12 +318,54 @@ func (t *ExecuteTool) HandleRequest(ctx context.Context, request server.ToolCall
 		}
 	}
 
+	dryRun := false
+	if requested, ok := request.Parameters["dry_run"].(bool); ok {
+		dryRun = requested
+	}
+	if dryRun {
+		capable, ok := useCase.(dryRunCapable)
+		if !ok {
+			return nil, fmt.Errorf("dry_run is not supported by this provider")
+		}
+		report, rerr := capable.ExecuteStatementDryRun(ctx, dbID, statement)
+		if rerr != nil {
+			return nil, rerr
+		}
+		return createTextResponse(formatRiskReport(report)), nil
+	}
+
 	result, err := useCase.ExecuteStatement(ctx, dbID, statement, statementParams)
 	if err != nil {
 		return nil, err
 	}
 
 	return createTextResponse(result), nil
+}
+
+// formatRiskReport renders a RiskReport as compact agent-readable text.
+func formatRiskReport(r *usecase.RiskReport) string {
+	var b strings.Builder
+	b.WriteString("DRY RUN — nothing was executed.\n")
+	fmt.Fprintf(&b, "Kind: %s  Risk: %s  Statements: %d\n",
+		titleCase(r.Kind), titleCase(r.Risk), r.Statements)
+	if r.MissingWhere {
+		b.WriteString("Missing WHERE clause on an UPDATE/DELETE.\n")
+	}
+	if len(r.Notes) > 0 {
+		b.WriteString("\nAdvisories:\n")
+		for _, n := range r.Notes {
+			fmt.Fprintf(&b, "- %s\n", n)
+		}
+	}
+	b.WriteString("\nRe-run without dry_run to execute.")
+	return b.String()
+}
+
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 //------------------------------------------------------------------------------

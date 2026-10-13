@@ -154,6 +154,11 @@ type DatabaseUseCase struct {
 	txMu           sync.Mutex
 	transactions   map[string]*transactionRecord
 	transactionTTL time.Duration
+
+	// riskWarnMu guards riskWarnAt, the minimum level for a post-execution
+	// advisory (default high).
+	riskWarnMu sync.Mutex
+	riskWarnAt string
 }
 
 // NewDatabaseUseCase creates a new database use case
@@ -162,6 +167,7 @@ func NewDatabaseUseCase(repo domain.DatabaseRepository) *DatabaseUseCase {
 		repo:           repo,
 		transactions:   make(map[string]*transactionRecord),
 		transactionTTL: defaultTransactionTTL,
+		riskWarnAt:     "high",
 	}
 }
 
@@ -641,7 +647,49 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 		return "", trackErr
 	}
 
+	// Post-execution advisory: a destructive statement that DID run must be
+	// visible in the result, not only in the audit log. Never blocks and
+	// never changes the outcome.
+	if notice := uc.postExecutionRiskNotice(ctx, dbID, statement); notice != "" {
+		out += notice
+	}
+
 	return out, nil
+}
+
+// SetRiskWarnAt configures the minimum post-execution advisory level
+// (low|medium|high|critical). An invalid value falls back to the default
+// (high) rather than silently disabling advisories.
+func (uc *DatabaseUseCase) SetRiskWarnAt(level string) {
+	valid := map[string]bool{"low": true, "medium": true, "high": true, "critical": true}
+	uc.riskWarnMu.Lock()
+	defer uc.riskWarnMu.Unlock()
+	if !valid[level] {
+		level = "high"
+	}
+	uc.riskWarnAt = level
+}
+
+func (uc *DatabaseUseCase) currentRiskWarnAt() string {
+	uc.riskWarnMu.Lock()
+	defer uc.riskWarnMu.Unlock()
+	return uc.riskWarnAt
+}
+
+// postExecutionRiskNotice renders the advisory appended after a successful
+// execution: the static classification upgraded with live rewrite-size
+// estimates. Empty when the statement's risk is below the configured level.
+func (uc *DatabaseUseCase) postExecutionRiskNotice(ctx context.Context, dbID, statement string) string {
+	risk := AnalyzeStatementRisk(statement)
+	if riskOrder[strings.ToLower(risk.Risk)] < riskOrder[uc.currentRiskWarnAt()] {
+		return ""
+	}
+	uc.enrichWithRewriteSizes(ctx, dbID, stripSQLLiterals(statement), &risk)
+	out := "\n\n\u26a0 Risk notice: this statement was " + strings.ToUpper(risk.Risk[:1]) + risk.Risk[1:] + " risk"
+	for _, n := range risk.Notes {
+		out += "\n- " + n
+	}
+	return out
 }
 
 // ExecuteTransaction executes operations in a transaction. Actions:

@@ -595,7 +595,7 @@ For each connected database, DB MCP Server automatically generates these special
 | Tool Name | Description |
 |-----------|-------------|
 | `query_<db_id>` | Execute SELECT queries and get results as a tabular dataset. Optional `mask_pii` boolean redacts PII by content shape (see the guardrails table); it is additive — a database configured with `"mask_pii": true` masks regardless. |
-| `execute_<db_id>` | Run data manipulation statements (INSERT, UPDATE, DELETE) |
+| `execute_<db_id>` | Run data manipulation statements (INSERT, UPDATE, DELETE). Optional `dry_run` boolean classifies the statement offline — kind, risk level, advisories — and executes nothing; destructive statements that do run carry a `⚠ Risk notice` in their result. |
 | `transaction_<db_id>` | Begin, commit, and rollback transactions |
 
 ### Schema Tools
