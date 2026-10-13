@@ -75,7 +75,7 @@ what shipped, verification evidence, and artifacts (PRs, commits, issues).
 | 60 | Release v1.13.0: hardening (#88) + tool resolution (#92) + TimescaleDB cycles 55–59 | ✅ Shipped | [cycle-60](cycle-60-release-v1.13.md) |
 | 61 | npm install path was broken for every user: SHA256SUMS prefix mismatch + no tarball smoke check | ✅ Shipped | [cycle-61](cycle-61-npm-install-checksum.md) |
 | 62 | Self-update: `db-mcp-server update` (resolve → SHA-256 verify → atomic swap) + a real `--version` | ✅ Shipped | [cycle-62](cycle-62-self-update-command.md) |
-| 63 | Governance trio ported from hackathon: content-based PII masking, `dry_run` + risk advisories, mutation snapshots + `rollback_snapshot` | ✅ Shipped | [cycle-63](cycle-63-governance-trio.md) |
+| 63 | Governance trio ported from hackathon: content PII masking (#101), dry_run + risk advisories (#102), mutation snapshots + rollback_snapshot (#103) | ✅ Shipped | [cycle-63](cycle-63-governance-trio.md) |
 
 ## Competitive Baseline (researched 2026-08)
 
