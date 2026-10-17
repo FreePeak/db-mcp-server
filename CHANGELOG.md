@@ -1,5 +1,7 @@
 # Changelog
 ## [Unreleased]
+### Fixed
+- Special characters in credentials no longer corrupt connection strings (#106): Oracle DSNs are assembled through URL userinfo encoding, so a password like `pa#ss` (or any `# @ / % ? :` character) connects instead of failing with an invalid-port or escape parse error; PostgreSQL key=value values (host, user, password, dbname, SSL cert/key/CA paths) containing spaces, single quotes or backslashes are quoted per lib/pq's parser rules — passwords like `pa ss`, `'pass` and `pa\ss` previously truncated or corrupted the DSN. MySQL DSN building was verified already correct and now has regression coverage
 
 ## [v1.14.0] - 2026-10-13
 ### Added

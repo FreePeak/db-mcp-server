@@ -206,36 +206,51 @@ type database struct {
 	dsn        string
 }
 
+// pqValue renders a value for the lib/pq key=value connection string format.
+// Values are left bare when safe; otherwise they are single-quoted with
+// backslashes and single quotes escaped, as required by lib/pq's parser
+// (see parseOpts in lib/pq conn.go). Bare values break on spaces (the value
+// is truncated), quotes (misparsed or rejected) and backslashes (escape
+// sequences), so passwords or paths containing them corrupt the DSN.
+// See issue #106 for the Oracle variant of this bug class.
+func pqValue(value string) string {
+	if !strings.ContainsAny(value, " '\\") {
+		return value
+	}
+	escaped := strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(value)
+	return "'" + escaped + "'"
+}
+
 // buildPostgresConnStr builds a PostgreSQL connection string with all options
 func buildPostgresConnStr(config Config) string {
 	params := make([]string, 0)
 
 	// Required parameters
-	params = append(params, fmt.Sprintf("host=%s", config.Host))
+	params = append(params, fmt.Sprintf("host=%s", pqValue(config.Host)))
 	params = append(params, fmt.Sprintf("port=%d", config.Port))
-	params = append(params, fmt.Sprintf("user=%s", config.User))
+	params = append(params, fmt.Sprintf("user=%s", pqValue(config.User)))
 
 	if config.Password != "" {
-		params = append(params, fmt.Sprintf("password=%s", config.Password))
+		params = append(params, fmt.Sprintf("password=%s", pqValue(config.Password)))
 	}
 
 	if config.Name != "" {
-		params = append(params, fmt.Sprintf("dbname=%s", config.Name))
+		params = append(params, fmt.Sprintf("dbname=%s", pqValue(config.Name)))
 	}
 
 	// SSL configuration
 	params = append(params, fmt.Sprintf("sslmode=%s", config.SSLMode))
 
 	if config.SSLCert != "" {
-		params = append(params, fmt.Sprintf("sslcert=%s", config.SSLCert))
+		params = append(params, fmt.Sprintf("sslcert=%s", pqValue(config.SSLCert)))
 	}
 
 	if config.SSLKey != "" {
-		params = append(params, fmt.Sprintf("sslkey=%s", config.SSLKey))
+		params = append(params, fmt.Sprintf("sslkey=%s", pqValue(config.SSLKey)))
 	}
 
 	if config.SSLRootCert != "" {
-		params = append(params, fmt.Sprintf("sslrootcert=%s", config.SSLRootCert))
+		params = append(params, fmt.Sprintf("sslrootcert=%s", pqValue(config.SSLRootCert)))
 	}
 
 	// Connection timeout
@@ -271,14 +286,20 @@ func buildPostgresConnStr(config Config) string {
 	return strings.Join(params, " ")
 }
 
+// oracleUserInfo returns the "user:password" userinfo section of an Oracle DSN,
+// percent-encoding both parts so special characters (for example '#' in a
+// password, see issue #106) cannot corrupt the URL that go-ora parses.
+func oracleUserInfo(user, password string) string {
+	return url.UserPassword(user, password).String()
+}
+
 // buildOracleConnStr builds an Oracle connection string from the config
 func buildOracleConnStr(config Config) string {
 	// Priority 1: TNS Entry (tnsnames.ora)
 	if config.TNSEntry != "" && config.TNSAdmin != "" {
 		// Use TNS alias with admin directory
-		connStr := fmt.Sprintf("oracle://%s:%s@%s",
-			config.User,
-			config.Password,
+		connStr := fmt.Sprintf("oracle://%s@%s",
+			oracleUserInfo(config.User, config.Password),
 			config.TNSEntry)
 
 		connStr += fmt.Sprintf("?tns admin=%s", config.TNSAdmin)
@@ -294,9 +315,8 @@ func buildOracleConnStr(config Config) string {
 			serviceName = config.Name
 		}
 
-		connStr := fmt.Sprintf("oracle://%s:%s@%s",
-			config.User,
-			config.Password,
+		connStr := fmt.Sprintf("oracle://%s@%s",
+			oracleUserInfo(config.User, config.Password),
 			serviceName)
 
 		connStr += fmt.Sprintf("?wallet location=%s", config.WalletLocation)
@@ -320,9 +340,8 @@ func buildOracleConnStr(config Config) string {
 	}
 
 	// EZ Connect format: oracle://user:password@host:port/service_name
-	connStr := fmt.Sprintf("oracle://%s:%s@%s:%d/%s",
-		config.User,
-		config.Password,
+	connStr := fmt.Sprintf("oracle://%s@%s:%d/%s",
+		oracleUserInfo(config.User, config.Password),
 		host,
 		port,
 		databaseIdentifier)
