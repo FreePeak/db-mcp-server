@@ -2,10 +2,12 @@ package db
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/sijms/go-ora/v2/configurations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -462,4 +464,158 @@ func TestOracleConnectionString(t *testing.T) {
 			assert.Equal(t, tt.expected, connStr)
 		})
 	}
+}
+
+// TestOracleUserInfoEncoding verifies oracleUserInfo percent-encodes the
+// userinfo section so URL delimiters in credentials cannot corrupt the DSN
+// (see issue #106, "Cannot connect to oracle db when '#' is in password").
+func TestOracleUserInfoEncoding(t *testing.T) {
+	tests := []struct {
+		name     string
+		user     string
+		password string
+		expected string
+	}{
+		{
+			name:     "plain password stays byte-identical",
+			user:     "testuser",
+			password: "testpass",
+			expected: "testuser:testpass",
+		},
+		{
+			name:     "hash in password",
+			user:     "scott",
+			password: "pa#ss",
+			expected: "scott:pa%23ss",
+		},
+		{
+			name:     "at sign, slash, percent and question mark",
+			user:     "scott",
+			password: "p@ss/w%rd?x",
+			expected: "scott:p%40ss%2Fw%25rd%3Fx",
+		},
+		{
+			name:     "space and colon",
+			user:     "scott",
+			password: "sp ace:8",
+			expected: "scott:sp%20ace%3A8",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, oracleUserInfo(tt.user, tt.password))
+		})
+	}
+}
+
+// TestOracleConnStrSpecialCharPasswordStandard verifies that the standard
+// host:port/service Oracle DSN round-trips through go-ora's own parser when
+// the password contains characters that are special in a URL.
+func TestOracleConnStrSpecialCharPasswordStandard(t *testing.T) {
+	tests := []struct {
+		name     string
+		password string
+	}{
+		{name: "hash", password: "pa#ss"},
+		{name: "at sign, slash, percent and question mark", password: "p@ss/w%rd?x"},
+		{name: "space and colon", password: "sp ace:8"},
+		{name: "plain", password: "testpass"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := Config{
+				Type:        "oracle",
+				Host:        "localhost",
+				Port:        1521,
+				User:        "scott",
+				Password:    tt.password,
+				ServiceName: "ORCL",
+			}
+
+			connStr := buildOracleConnStr(config)
+
+			cfg, err := configurations.ParseConfig(connStr)
+			require.NoError(t, err, "go-ora must accept the generated DSN: %s", connStr)
+			assert.Equal(t, "scott", cfg.UserID)
+			assert.Equal(t, tt.password, cfg.Password)
+			assert.Equal(t, "ORCL", cfg.ServiceName)
+			require.Len(t, cfg.Servers, 1)
+			assert.Equal(t, "localhost", cfg.Servers[0].Addr)
+			assert.Equal(t, 1521, cfg.Servers[0].Port)
+		})
+	}
+}
+
+// TestOracleConnStrSpecialCharPasswordTNSAndWallet verifies the TNS and
+// wallet DSN variants keep credentials and query options intact when the
+// password contains special characters. These variants have a port-less
+// host, which go-ora's ParseConfig rejects for unrelated reasons, so the
+// assertions are made against net/url instead.
+func TestOracleConnStrSpecialCharPasswordTNSAndWallet(t *testing.T) {
+	const specialPassword = "pa#ss@1/2?3"
+
+	t.Run("TNS entry", func(t *testing.T) {
+		config := Config{
+			Type:     "oracle",
+			User:     "scott",
+			Password: specialPassword,
+			TNSEntry: "PROD_DB",
+			TNSAdmin: "/opt/oracle/admin",
+		}
+
+		connStr := buildOracleConnStr(config)
+
+		u, err := url.Parse(connStr)
+		require.NoError(t, err, "generated DSN must be a valid URL: %s", connStr)
+		password, ok := u.User.Password()
+		require.True(t, ok)
+		assert.Equal(t, specialPassword, password)
+		assert.Equal(t, "scott", u.User.Username())
+		assert.Equal(t, "PROD_DB", u.Host)
+		assert.Equal(t, "/opt/oracle/admin", u.Query().Get("tns admin"))
+	})
+
+	t.Run("wallet", func(t *testing.T) {
+		config := Config{
+			Type:           "oracle",
+			User:           "ADMIN",
+			Password:       specialPassword,
+			ServiceName:    "mydb_high",
+			WalletLocation: "/app/wallet",
+		}
+
+		connStr := buildOracleConnStr(config)
+
+		u, err := url.Parse(connStr)
+		require.NoError(t, err, "generated DSN must be a valid URL: %s", connStr)
+		password, ok := u.User.Password()
+		require.True(t, ok)
+		assert.Equal(t, specialPassword, password)
+		assert.Equal(t, "ADMIN", u.User.Username())
+		assert.Equal(t, "mydb_high", u.Host)
+		assert.Equal(t, "/app/wallet", u.Query().Get("wallet location"))
+	})
+}
+
+// TestOracleSpecialCharPasswordRegression pins the failure mode fixed for
+// issue #106: a DSN assembled by raw string concatenation cannot survive a
+// '#' in the password, while the generated one parses cleanly.
+func TestOracleSpecialCharPasswordRegression(t *testing.T) {
+	// Deliberately invalid: the raw unencoded DSN is the regression subject.
+	_, err := url.Parse("oracle://scott:pa#ss@localhost:1521/ORCL") //nolint:staticcheck // testing that this exact malformed URL fails
+	require.Error(t, err, "raw unencoded '#' DSN is expected to be unparseable")
+
+	config := Config{
+		Type:        "oracle",
+		Host:        "localhost",
+		Port:        1521,
+		User:        "scott",
+		Password:    "pa#ss",
+		ServiceName: "ORCL",
+	}
+
+	_, err = configurations.ParseConfig(buildOracleConnStr(config))
+	require.NoError(t, err, "generated DSN with '#' password must parse")
 }
