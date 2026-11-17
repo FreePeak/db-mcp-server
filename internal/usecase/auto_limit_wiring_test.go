@@ -170,6 +170,19 @@ func TestAutoLimit_SQLiteExactlyMaxRowsIsNotTruncated(t *testing.T) {
 	}
 }
 
+func TestAutoLimit_SQLiteCompoundEndingInValuesRuns(t *testing.T) {
+	db := cappedSQLite{sqliteDB: &sqliteDB{db: openSQLiteForTest(t)}, maxRows: 10}
+	uc := NewDatabaseUseCase(&fakeRepo{db: db, dbType: "sqlite"})
+
+	out, err := uc.ExecuteQueryMasked(context.Background(), "db", "SELECT 1 AS n UNION ALL VALUES (2)", nil, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := dataRowCount(out); got != 2 {
+		t.Fatalf("data rows: got %d, want 2\n%s", got, out)
+	}
+}
+
 // dataRowCount counts the rows printed under the result header, i.e. the
 // non-empty lines between the dash separator and the first blank line.
 func dataRowCount(out string) int {

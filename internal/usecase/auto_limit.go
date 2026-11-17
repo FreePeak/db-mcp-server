@@ -5,10 +5,12 @@ import (
 	"strings"
 )
 
-// rowBoundingWords are top-level keywords that already bound a result set or
-// lock its rows, so a server-side cap must not be added on top of them.
+// rowBoundingWords are top-level words after which no LIMIT is appended: they
+// already bound or lock the rows, or (VALUES) end a compound arm that SQLite
+// rejects a trailing LIMIT after.
 var rowBoundingWords = map[string]bool{
 	"LIMIT": true, "OFFSET": true, "FETCH": true, "FOR": true, "INTO": true, "LOCK": true,
+	"VALUES": true,
 }
 
 // rowCappedQuery returns query with a server-side row cap of limit rows, so
