@@ -6,10 +6,10 @@ is built, and where it is going. Every other document (README quick-start,
 duplicated.
 
 Status: **maintained, active** (last substantive feature release v1.14.0,
-2026-10-13; period-review 2026-10) · License MIT · Repo
+2026-10-13; latest patch v1.14.1, 2026-11-17; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-10-13 (governance trio ported and merged: content-based PII masking #101, dry_run + risk advisories #102, mutation snapshots #103 — verified end to end against the built binary on main; hackathon branch #87 superseded and kept as archive; self-update command + a real `--version`; Oracle read-only tests now run in CI; lint config actually lints; unit suite under -race)*
+*Last updated: 2026-11-17 (v1.14.1 patch release: special characters in database credentials no longer corrupt Oracle or PostgreSQL connection strings, #106 / PR #107)*
 
 ## 1. What this is
 
@@ -98,7 +98,7 @@ per-database registration (`query_<db_id>`) and unified registration
 | `docs/TIMESCALEDB_*` | TimescaleDB integration PRD, functions reference, tool docs (mirrored in README) |
 | `docs/TESTING.md`, `docs/ORACLE_*`, `docs/NPM_RELEASE_TESTING.md` | Historical runbooks — see [archive](#7-document-hygiene) |
 | `docs/benchmark-token-efficiency.md` | Token-cost numbers behind unified mode |
-| `CHANGELOG.md` | Release notes (v1.8.0 → v1.13.0) |
+| `CHANGELOG.md` | Release notes (v1.8.0 → v1.14.1) |
 
 ---
 
@@ -357,6 +357,7 @@ The remaining rows below are unported; the next highest-value one is
 | npm install path repaired (checksum prefix + tarball smoke check) — the first real publish will install | ✅ shipped 2026-10-12 (cycle 61) |
 | Governance suite (masking content #101, dry-run #102, snapshots #103) ported from hackathon branch | ✅ shipped 2026-10-13 — trio merged and verified against the built binary; #87 superseded (see [4.3](#43-active-terrain--hackathon-branch-decision-taken-port-dont-merge)) |
 | **v1.14.0 — the governance release: content-based PII masking, `dry_run` + risk advisories, mutation snapshots + `rollback_snapshot`** | ✅ shipped 2026-10-13 (tag pushed; GitHub Release with all seven platform binaries) — npm publish still blocked on [#86](https://github.com/FreePeak/db-mcp-server/issues/86) |
+| v1.14.1 — patch: special characters in database credentials no longer corrupt Oracle/PostgreSQL connection strings (#106, PR #107) | ✅ shipped 2026-11-17 (tag v1.14.1) — npm publish still blocked on [#86](https://github.com/FreePeak/db-mcp-server/issues/86) |
 
 ---
 
