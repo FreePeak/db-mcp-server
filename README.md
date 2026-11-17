@@ -422,7 +422,7 @@ When using SQLite databases, you can leverage these additional configuration opt
 | `database_path` | string | Required | Path to SQLite database file or `:memory:` for in-memory |
 | `encryption_key` | string | - | Key for SQLCipher encrypted databases |
 | `read_only` | boolean | false | Open database in read-only mode |
-| `max_rows` | integer | unlimited | Maximum rows returned per query; larger results are truncated with an explicit notice. Works on all database types |
+| `max_rows` | integer | unlimited | Maximum rows returned per query; larger results are truncated with an explicit notice. Works on all database types. On PostgreSQL, MySQL, SQLite and TimescaleDB the query tool also appends `LIMIT max_rows+1` to SELECT/WITH statements that have no limit of their own, so the database stops at the cap; Oracle results are truncated client-side only. |
 | `cache_size` | integer | 2000 | SQLite cache size in pages |
 | `journal_mode` | string | "WAL" | Journal mode: DELETE, TRUNCATE, PERSIST, WAL, OFF |
 | `use_modernc_driver` | boolean | true | Use modernc.org/sqlite (CGO-free) or mattn/go-sqlite3 |

@@ -1,6 +1,9 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+- **Server-side row cap (Auto-LIMIT)**: when a connection sets `max_rows`, SELECT and WITH statements sent through the query tool get `LIMIT max_rows+1` appended, so the database stops producing rows past the cap instead of streaming the whole result to be truncated client-side; the existing `Truncated: showing first N rows` notice still fires. Statements that already bound or lock their rows (`LIMIT`, `OFFSET`, `FETCH`, `FOR UPDATE`, `LOCK`, `INTO`), multi-statement input and non-SELECT statements are left unchanged, internal tool queries are never rewritten, and Oracle queries are not rewritten (client-side truncation still applies there)
+
 ## [v1.14.1] - 2026-11-17
 ### Fixed
 - Special characters in credentials no longer corrupt connection strings (#106): Oracle DSNs are assembled through URL userinfo encoding, so a password like `pa#ss` (or any `# @ / % ? :` character) connects instead of failing with an invalid-port or escape parse error; PostgreSQL key=value values (host, user, password, dbname, SSL cert/key/CA paths) containing spaces, single quotes or backslashes are quoted per lib/pq's parser rules — passwords like `pa ss`, `'pass` and `pa\ss` previously truncated or corrupted the DSN. MySQL DSN building was verified already correct and now has regression coverage
