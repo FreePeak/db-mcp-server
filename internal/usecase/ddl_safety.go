@@ -56,13 +56,19 @@ func splitStatements(stripped string) []string {
 	return out
 }
 
+// leadingKeyword returns the first keyword of an upper-cased statement: the
+// text before the first space, tab, newline or opening parenthesis.
+func leadingKeyword(upper string) string {
+	if i := strings.IndexAny(upper, " \t\n("); i >= 0 {
+		return upper[:i]
+	}
+	return upper
+}
+
 // classifySingle maps one statement's leading keyword to kind + base risk.
 func classifySingle(stmt string) (kind, risk string, notes []string) {
 	upper := strings.ToUpper(stmt)
-	first := upper
-	if i := strings.IndexAny(upper, " \t\n("); i >= 0 {
-		first = upper[:i]
-	}
+	first := leadingKeyword(upper)
 	switch first {
 	case "SELECT", "WITH", "SHOW", "EXPLAIN", "DESCRIBE", "PRAGMA":
 		return "read", "low", nil
