@@ -381,7 +381,7 @@ func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string,
 
 // ExecuteQueryMasked is the agent-facing query entry: it applies the
 // server-side row cap and optional content-based PII masking.
-func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool) (res string, resErr error) {
+func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool) (string, error) {
 	return uc.runQuery(ctx, dbID, query, params, mask, true)
 }
 
@@ -408,9 +408,13 @@ func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, par
 	// Server-side row cap: ask the engine for one row past max_rows so
 	// formatQueryResults still detects truncation and prints its notice.
 	execQuery := query
+	cappedNote := ""
 	if capRows && db.MaxRows() > 0 {
 		if dbType, typeErr := uc.GetDatabaseType(dbID); typeErr == nil {
 			execQuery = rowCappedQuery(dbType, query, db.MaxRows()+1)
+			if execQuery != query {
+				cappedNote = fmt.Sprintf(" (max_rows appended LIMIT %d; add an explicit LIMIT to send the query unchanged)", db.MaxRows()+1)
+			}
 		}
 	}
 
@@ -421,7 +425,7 @@ func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, par
 	_, trackErr := dbtools.GetPerformanceAnalyzer().TrackQuery(ctx, query, params, func() (interface{}, error) {
 		rows, qerr := db.Query(ctx, execQuery, params...)
 		if qerr != nil {
-			return nil, fmt.Errorf("query execution failed: %w", qerr)
+			return nil, fmt.Errorf("query execution failed%s: %w", cappedNote, qerr)
 		}
 		defer func() {
 			if closeErr := rows.Close(); closeErr != nil {

@@ -13,18 +13,32 @@ var rowBoundingWords = map[string]bool{
 
 // rowCappedQuery returns query with a server-side row cap of limit rows, so
 // the database stops producing rows past the cap; limit+1 rows lets the caller
-// detect truncation. LIMIT is appended for non-Oracle engines. Oracle is never
-// rewritten: wrapping a SELECT in an inline view raises ORA-00918 when the select
-// list repeats a column name, and FETCH FIRST needs 12c+ while the README lists
-// 10g+, so client-side truncation still applies. The query is returned unchanged
-// when limit <= 0, when it is not a single SELECT or WITH statement, when it is
-// a data-modifying statement, or when it already bounds or locks its rows.
+// detect truncation. Only PostgreSQL (TimescaleDB connections are postgres),
+// MySQL and SQLite are rewritten. Oracle is never rewritten: wrapping a SELECT
+// in an inline view raises ORA-00918 when the select list repeats a column name,
+// and FETCH FIRST needs 12c+ while the README lists 10g+, so client-side
+// truncation still applies. The query is returned unchanged when limit <= 0,
+// when it is not a single SELECT or WITH statement, when it is a data-modifying
+// statement, when it already bounds or locks its rows, or when it contains a
+// backslash, '#' or MySQL '/*!' comment that the literal stripper cannot model.
 func rowCappedQuery(dbType, query string, limit int) string {
-	if strings.EqualFold(dbType, "oracle") || limit <= 0 {
+	if limit <= 0 {
+		return query
+	}
+	switch dbType {
+	case "postgres", "mysql", "sqlite":
+	default:
 		return query
 	}
 	body := strings.TrimRight(strings.TrimSpace(query), "; \t\r\n")
 	if body == "" {
+		return query
+	}
+	// stripSQLLiterals does not model backslash escapes, MySQL '#' comments or
+	// MySQL '/*!' executable comments, so a bound hidden behind one of them
+	// would go unseen and a second LIMIT would be appended. Leave such SQL
+	// unchanged; client-side truncation still applies.
+	if strings.ContainsAny(body, `\#`) || strings.Contains(body, "/*!") {
 		return query
 	}
 	stripped := stripSQLLiterals(body)
