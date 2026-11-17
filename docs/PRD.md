@@ -9,7 +9,7 @@ Status: **maintained, active** (last substantive feature release v1.14.0,
 2026-10-13; latest patch v1.14.1, 2026-11-17; period-review 2026-10) · License MIT · Repo
 `github.com/FreePeak/db-mcp-server`
 
-*Last updated: 2026-11-17 (v1.14.1 patch release: special characters in database credentials no longer corrupt Oracle or PostgreSQL connection strings, #106 / PR #107)*
+*Last updated: 2026-11-17 (Auto-LIMIT: query-tool SELECTs get a server-side LIMIT max_rows+1 on PostgreSQL/MySQL/SQLite/TimescaleDB, Oracle deferred; v1.14.1 patch release shipped the #106 credentials fix)*
 
 ## 1. What this is
 
@@ -290,7 +290,7 @@ archive for the medium/low items still listed below.
 | Column masking **content-based + enforced** (`mask_pii` config, Luhn cards) | Real PII protection beyond name-regex v1 | ✅ **ported 2026-10-12** (PR #101) — content patterns + column heuristics, per-query opt-in, per-database enforcement the agent cannot opt out of |
 | `dry_run` + risk advisories + `-risk-warn-at` | Offline statement risk analysis before execution | ✅ **ported 2026-10-13** (PR #102) — `dry_run` classifies without executing; executed high-risk statements carry a `⚠ Risk notice`; threshold configurable via `SetRiskWarnAt` (the `-risk-warn-at` flag is not wired yet) |
 | DELETE/UPDATE **snapshots + rollback_snapshot** | Undo for mutations done through the server | ✅ **ported 2026-10-13** (PR #103) — pre-mutation row capture on every DELETE/UPDATE (bounded ring of 25/db), `list_snapshots` + `rollback_snapshot` actions on the transaction tool |
-| **Auto-LIMIT** injection (Oracle via ROWNUM wrap) | Default unbounded SELECTs get a server-side cap | Medium |
+| **Auto-LIMIT** injection | Default unbounded SELECTs get a server-side cap | ✅ **ported 2026-11-17** — query tool appends `LIMIT max_rows+1` on PostgreSQL/MySQL/SQLite/TimescaleDB so the truncation notice still fires; internal tool SQL is never rewritten; Oracle deferred (a ROWNUM inline-view wrap raises ORA-00918 on joins with duplicate column names, and FETCH FIRST needs 12c+ while 10g+ is supported) |
 | **Verbosity modes** (minimal/normal truncation) | 60–95% context savings on results | Medium |
 | `generate_schema` → Go/TS code; `format=csv/json/inserts` | Schema-to-code + data export | Medium |
 | Query history ring + durable sink; session report | Observability | Medium |
@@ -310,8 +310,8 @@ built binary on main: `mask_pii` redacts `alice@example.com` to `[EMAIL]` from
 config alone, `dry_run` on a `DROP` reports Critical and executes nothing, a
 `DELETE` reports `snap_1`, and `rollback_snapshot snap_1` restores the row.
 
-The remaining rows below are unported; the next highest-value one is
-**Auto-LIMIT** injection.
+The remaining rows below are unported; Auto-LIMIT landed 2026-11-17 with
+Oracle deferred, and the next highest-value one is **verbosity modes**.
 
 ### 4.4 Vision list (from the cycle backlog, still valued)
 
@@ -328,6 +328,9 @@ The remaining rows below are unported; the next highest-value one is
   query caps per database.
 - **`workload_suggestions` engine parity**: currently PG/MySQL/Oracle
   ranking; extend composite synthesis depth.
+- **Oracle server-side row cap** — needs version-aware `FETCH FIRST` (12c+) or
+  select-list aliasing; until then Oracle relies on client-side `max_rows`
+  truncation.
 
 ---
 

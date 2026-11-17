@@ -373,15 +373,22 @@ func (uc *DatabaseUseCase) GetDatabaseInfo(dbID string) (map[string]interface{},
 	return result, nil
 }
 
-// ExecuteQuery executes a SQL query and returns the formatted results
+// ExecuteQuery executes a SQL query and returns the formatted results. It is
+// used by internal tools and never rewrites the SQL.
 func (uc *DatabaseUseCase) ExecuteQuery(ctx context.Context, dbID, query string, params []interface{}) (string, error) {
-	return uc.ExecuteQueryMasked(ctx, dbID, query, params, false)
+	return uc.runQuery(ctx, dbID, query, params, false, false)
 }
 
-// ExecuteQueryMasked executes a query with optional content-based PII
-// masking. It is the single query path: ExecuteQuery delegates here with
-// mask=false, so there is one scan/format implementation to keep correct.
-func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool) (res string, resErr error) {
+// ExecuteQueryMasked is the agent-facing query entry: it applies the
+// server-side row cap and optional content-based PII masking.
+func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query string, params []interface{}, mask bool) (string, error) {
+	return uc.runQuery(ctx, dbID, query, params, mask, true)
+}
+
+// runQuery is the single scan/format path behind both query entries. capRows
+// applies the database's max_rows cap to the SQL sent to the engine; audit and
+// performance tracking always record the original query text.
+func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, params []interface{}, mask, capRows bool) (res string, resErr error) {
 	start := time.Now()
 	defer func() { audit.record("query", dbID, query, time.Since(start), resErr) }()
 
@@ -398,14 +405,27 @@ func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query s
 		return "", fmt.Errorf("database %q is configured as read-only; write statements are not allowed via queries", dbID)
 	}
 
+	// Server-side row cap: ask the engine for one row past max_rows so
+	// formatQueryResults still detects truncation and prints its notice.
+	execQuery := query
+	cappedNote := ""
+	if capRows && db.MaxRows() > 0 {
+		if dbType, typeErr := uc.GetDatabaseType(dbID); typeErr == nil {
+			execQuery = rowCappedQuery(dbType, query, db.MaxRows()+1)
+			if execQuery != query {
+				cappedNote = fmt.Sprintf(" (max_rows appended LIMIT %d; add an explicit LIMIT to send the query unchanged)", db.MaxRows()+1)
+			}
+		}
+	}
+
 	// Execute query with performance tracking so the in-process tracker
 	// (slow_queries, stats, workload_suggestions fallback) reflects real
 	// traffic instead of staying empty on the primary execution path.
 	var out string
 	_, trackErr := dbtools.GetPerformanceAnalyzer().TrackQuery(ctx, query, params, func() (interface{}, error) {
-		rows, qerr := db.Query(ctx, query, params...)
+		rows, qerr := db.Query(ctx, execQuery, params...)
 		if qerr != nil {
-			return nil, fmt.Errorf("query execution failed: %w", qerr)
+			return nil, fmt.Errorf("query execution failed%s: %w", cappedNote, qerr)
 		}
 		defer func() {
 			if closeErr := rows.Close(); closeErr != nil {
