@@ -2,7 +2,7 @@
 ## [Unreleased]
 
 ### Added
-- **Server-side row cap (Auto-LIMIT)**: when a connection sets `max_rows`, SELECT and WITH statements sent through the query tool get `LIMIT max_rows+1` appended, so the database stops producing rows past the cap instead of streaming the whole result to be truncated client-side; the existing `Truncated: showing first N rows` notice still fires. Statements that already bound or lock their rows (`LIMIT`, `OFFSET`, `FETCH`, `FOR UPDATE`, `LOCK`, `INTO`), multi-statement input and non-SELECT statements are left unchanged, internal tool queries are never rewritten, and Oracle queries are not rewritten (client-side truncation still applies there)
+- **Server-side row cap (Auto-LIMIT)**: when a connection sets `max_rows`, a single SELECT or WITH statement sent through the query tool gets `LIMIT max_rows+1` appended on PostgreSQL (including TimescaleDB), MySQL and SQLite, so the database stops producing rows past the cap instead of streaming the whole result to be truncated client-side; the existing `Truncated: showing first N rows` notice still fires. Statements that already bound or lock their rows (`LIMIT`, `OFFSET`, `FETCH`, `FOR`, `INTO`, `LOCK`), multi-statement input and non-SELECT statements are left unchanged, as are statements containing a backslash, `#` or a MySQL `/*!` comment, which the literal stripper cannot model. Select-list functions with side effects (for example `nextval()`) run for at most max_rows+1 rows. Internal tool queries are never rewritten, Oracle is not rewritten (client-side truncation still applies there), and when a capped query fails the error names the appended LIMIT so an explicit LIMIT can be added
 
 ## [v1.14.1] - 2026-11-17
 ### Fixed
