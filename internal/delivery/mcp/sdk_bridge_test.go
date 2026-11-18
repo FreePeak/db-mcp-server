@@ -9,10 +9,11 @@ import (
 
 	cortexServer "github.com/FreePeak/cortex/pkg/server"
 	cortexTools "github.com/FreePeak/cortex/pkg/tools"
-	"github.com/FreePeak/db-mcp-server/internal/usecase"
 	sdkAuth "github.com/modelcontextprotocol/go-sdk/auth"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/FreePeak/db-mcp-server/internal/usecase"
 )
 
 func TestServerWrapperSDKStreamableRoundTrip(t *testing.T) {

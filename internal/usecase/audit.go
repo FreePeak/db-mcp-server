@@ -51,7 +51,10 @@ func WithCaller(ctx context.Context, caller Caller) context.Context {
 
 // CallerFromContext returns the caller set by WithCaller, or the zero Caller.
 func CallerFromContext(ctx context.Context) Caller {
-	caller, _ := ctx.Value(callerKey{}).(Caller)
+	caller, ok := ctx.Value(callerKey{}).(Caller)
+	if !ok {
+		return Caller{}
+	}
 	return caller
 }
 
