@@ -7,10 +7,13 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/FreePeak/db-mcp-server/internal/logger"
 )
 
 const maxStreamableRequestBody = 1 << 20
@@ -29,11 +32,25 @@ func NewStreamableHTTPHandler(sdkServer *sdkmcp.Server) *StreamableHTTPHandler {
 		handler: sdkmcp.NewStreamableHTTPHandler(
 			func(*http.Request) *sdkmcp.Server { return sdkServer },
 			&sdkmcp.StreamableHTTPOptions{
-				JSONResponse:   true,
-				SessionTimeout: 5 * time.Minute,
+				JSONResponse:          true,
+				SessionTimeout:        5 * time.Minute,
+				CrossOriginProtection: crossOriginProtection(),
 			},
 		),
 	}
+}
+
+// crossOriginProtection makes the SDK trust the same browser origins that
+// originAllowed admits. Without it, SDK 1.4.1 rejects allowed cross-origin
+// POSTs with 403. Invalid entries are left untrusted (fail closed).
+func crossOriginProtection() *http.CrossOriginProtection {
+	protection := &http.CrossOriginProtection{}
+	for _, origin := range allowedOrigins() {
+		if err := protection.AddTrustedOrigin(origin); err != nil {
+			logger.Warn("Ignoring MCP_ALLOWED_ORIGINS entry '%s': %v", origin, err)
+		}
+	}
+	return protection
 }
 
 func (h *StreamableHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +69,9 @@ func (h *StreamableHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 			http.Error(w, "content type must be application/json", http.StatusUnsupportedMediaType)
 			return
 		}
+		// SDK 1.4.1 compares Content-Type byte-for-byte, so drop parameters
+		// such as charset=utf-8 that the check above has already accepted.
+		r.Header.Set("Content-Type", "application/json")
 		if r.Body != nil {
 			body, readErr := io.ReadAll(http.MaxBytesReader(w, r.Body, maxStreamableRequestBody))
 			closeErr := r.Body.Close()
@@ -83,10 +103,15 @@ func originAllowed(r *http.Request) bool {
 	if origin == "" {
 		return true
 	}
+	return slices.Contains(allowedOrigins(), origin)
+}
+
+func allowedOrigins() []string {
+	var origins []string
 	for _, allowed := range strings.Split(os.Getenv("MCP_ALLOWED_ORIGINS"), ",") {
-		if strings.TrimSpace(allowed) == origin {
-			return true
+		if origin := strings.TrimSpace(allowed); origin != "" {
+			origins = append(origins, origin)
 		}
 	}
-	return false
+	return origins
 }

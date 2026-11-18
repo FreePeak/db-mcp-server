@@ -229,6 +229,9 @@ store, and a TLS/OIDC gateway.
 
 ### Source Code Installation
 
+Building from source requires Go 1.25 or newer (`go.mod` sets `go 1.25.0`).
+CI and the published Docker and npm release builds use Go 1.26.
+
 ```bash
 # Clone the repository
 git clone https://github.com/FreePeak/db-mcp-server.git
