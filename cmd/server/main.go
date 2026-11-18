@@ -86,7 +86,7 @@ func main() {
 	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
 	unifiedTools := flag.Bool("unified-tools", false, "Register unified tools with database parameter instead of per-database tools")
 	healthPort := flag.Int("health-port", 9093, "Port for the /health HTTP endpoint (0 to disable; only used in SSE mode)")
-	apiKey := flag.String("api-key", os.Getenv("DB_MCP_API_KEY"), "API key required to authenticate HTTP/SSE clients (Authorization: Bearer <key>); empty disables auth. Applied to the streamable HTTP transport; compose with mcp.APIKeyAuth in your own reverse proxy for the SSE transport.")
+	apiKey := flag.String("api-key", "", "API key required to authenticate HTTP/SSE clients (Authorization: Bearer <key>); visible in the process list, so prefer DB_MCP_API_KEY or DB_MCP_API_KEY_FILE. Empty disables auth. Applied to the streamable HTTP transport; compose with mcp.APIKeyAuth in your own reverse proxy for the SSE transport.")
 	flag.Parse()
 
 	if *showVersion {
@@ -97,6 +97,16 @@ func main() {
 	// Initialize logger with custom log directory
 	logger.Initialize(logger.Config{Level: *logLevel, LogDir: *logDir})
 	pkgLogger.Initialize(*logLevel)
+
+	resolvedAPIKey, apiKeySource, err := resolveAPIKey(*apiKey, os.Getenv("DB_MCP_API_KEY"), os.Getenv("DB_MCP_API_KEY_FILE"))
+	if err != nil {
+		logger.Error("%v", err)
+		os.Exit(1)
+	}
+	*apiKey = resolvedAPIKey
+	if apiKeySource == apiKeySourceFlag {
+		logger.Warn("-api-key is visible in the process list; prefer DB_MCP_API_KEY_FILE (for example a Docker or Kubernetes secret) or DB_MCP_API_KEY")
+	}
 
 	// Prioritize flags with actual values
 	finalConfigPath := *configFile
