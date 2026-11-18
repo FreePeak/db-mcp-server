@@ -1,0 +1,77 @@
+name: Bug report
+description: Report a reproducible problem with the server
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not include passwords, tokens or real data in this issue.
+        Security vulnerabilities must be reported privately (see the config.yml contact links), not here.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the problem and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps, query or MCP request that triggers the problem.
+      placeholder: |
+        1. Configure a connection with ...
+        2. Call the query tool with ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database type
+      options:
+        - MySQL
+        - PostgreSQL
+        - SQLite
+        - Oracle
+        - TimescaleDB
+        - Other / not applicable
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Server version
+      description: Output of the release tag, npm package version or git commit you run.
+      placeholder: v1.14.1 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport mode
+      options:
+        - stdio
+        - sse
+        - Not sure
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How do you run the server?
+      options:
+        - Docker
+        - npm package
+        - Built from source
+        - Other
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and configuration
+      description: Relevant log output and configuration with secrets redacted.
+      render: shell

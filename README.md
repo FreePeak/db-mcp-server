@@ -4,6 +4,7 @@
 
 # Multi Database MCP Server
 
+[![Go Build & Test](https://github.com/FreePeak/db-mcp-server/actions/workflows/go.yml/badge.svg)](https://github.com/FreePeak/db-mcp-server/actions/workflows/go.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Go Report Card](https://goreportcard.com/badge/github.com/FreePeak/db-mcp-server)](https://goreportcard.com/report/github.com/FreePeak/db-mcp-server)
 [![Go Reference](https://pkg.go.dev/badge/github.com/FreePeak/db-mcp-server.svg)](https://pkg.go.dev/github.com/FreePeak/db-mcp-server)
@@ -887,7 +888,7 @@ We welcome contributions to the DB MCP Server project! To contribute:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-Please see our [CONTRIBUTING.md](docs/CONTRIBUTING.md) file for detailed guidelines.
+Please see our [CONTRIBUTING.md](CONTRIBUTING.md) file for detailed guidelines.
 
 ### Testing Your Changes
 
