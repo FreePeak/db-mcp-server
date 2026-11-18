@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/FreePeak/db-mcp-server/security/advisories/new
+    about: Report vulnerabilities privately through GitHub Private Vulnerability Reporting. See SECURITY.md. Do not open a public issue.
+  - name: Contributing guide
+    url: https://github.com/FreePeak/db-mcp-server/blob/main/CONTRIBUTING.md
+    about: Read the development setup, test, lint and CLA requirements before opening a pull request.
