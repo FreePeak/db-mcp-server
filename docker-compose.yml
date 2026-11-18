@@ -8,12 +8,9 @@ services:
       - "127.0.0.1:9092:9092"
     volumes:
       - ./config.json:/app/config.json:ro
-    command:
-      [
-        "/bin/sh",
-        "-c",
-        "/app/server -t sse -h 0.0.0.0 -allow-insecure-sse -c /app/config.json",
-      ]
+    environment:
+      - TRANSPORT_MODE=sse
+      - ALLOW_INSECURE_SSE=true
     depends_on:
       mysql1:
         condition: service_healthy

@@ -97,9 +97,10 @@ docker-build-multiarch:
 		--load .; \
 	docker buildx rm multiplatform-builder
 
-# Run the Docker container in SSE mode
+# Run the Docker container in Streamable HTTP mode (the image default).
+# DB_MCP_API_KEY is passed through from the host environment; the server refuses to start without it.
 docker-run:
-	docker run -d --name db-mcp-server -p 9092:9092 -v $(PWD)/config.json:/app/config.json -v $(PWD)/logs:/app/logs db-mcp-server:${TAG:-latest}
+	docker run -d --name db-mcp-server -p 9092:9092 -e DB_MCP_API_KEY -v $(PWD)/config.json:/app/config.json -v $(PWD)/logs:/app/logs db-mcp-server:${TAG:-latest}
 
 # Run Docker container in STDIO mode (for debugging)
 docker-run-stdio:
