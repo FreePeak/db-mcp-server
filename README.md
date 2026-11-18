@@ -204,28 +204,39 @@ JWKS signature validation, issuer/audience checks, and subject identity for
 shared deployments; database-specific scopes are still intentionally not
 enabled until that policy is defined.
 
-### Docker development image
+### Docker image
 
-The published image is a development/demo artifact, not an enterprise
-hardening recommendation. The current Dockerfile runs as an unprivileged
-user, omits an embedded config, and includes the legacy
-`-allow-insecure-sse` behavior for local Compose compatibility. It exposes a
-separate health port (`9093`) and is not suitable for public publication.
+The image defaults to the authenticated Streamable HTTP transport
+(`TRANSPORT_MODE=streamable`). It refuses to start without `DB_MCP_API_KEY` or
+OIDC configuration, and the container exits non-zero with an authentication
+error otherwise. It runs as an unprivileged user, omits an embedded config
+(mount one at `/app/config.json`), and serves an unauthenticated `/health`
+probe on port `9093` in both HTTP modes.
 
 ```bash
 # Build a local image from this source revision
 docker build -t db-mcp-server:local .
 
-# Keep it private; the image's default SSE mode is compatibility-only
-docker run --rm -p 127.0.0.1:9092:9092 \
-  -p 127.0.0.1:9093:9093 \
+# Default: Streamable HTTP. Export the key in your shell; it is passed through, not written to disk.
+docker run --rm -p 127.0.0.1:9092:9092 -p 127.0.0.1:9093:9093 \
+  -e DB_MCP_API_KEY \
   -v "$(pwd)/config.local.json:/app/config.json:ro" \
   db-mcp-server:local
 ```
 
-For a team deployment, wait for the authenticated Streamable transport and use
-a non-root, read-only-filesystem image with a private network, external secret
-store, and a TLS/OIDC gateway.
+Legacy SSE has no built-in authentication. It runs only when both variables are
+set explicitly, and only on a private network behind a trusted proxy:
+
+```bash
+docker run --rm -p 127.0.0.1:9092:9092 -p 127.0.0.1:9093:9093 \
+  -e TRANSPORT_MODE=sse -e ALLOW_INSECURE_SSE=true \
+  -v "$(pwd)/config.local.json:/app/config.json:ro" \
+  db-mcp-server:local
+```
+
+The image is a development and demo artifact, not a hardened public image. For a
+team deployment, put the Streamable endpoint behind a TLS/OIDC gateway with a
+private network and an external secret store.
 
 ### Source Code Installation
 
@@ -395,10 +406,11 @@ Values in a `.env` file are loaded first; real environment variables take preced
 |---|---|---|
 | `CONFIG_PATH` / `DB_CONFIG_FILE` | `config.json` | Path to the multi-database JSON config |
 | `DB_CONFIG` | — | Inline JSON database configuration (used when no file is present) |
-| `TRANSPORT_MODE` | `stdio` | Transport mode when `-t` is not passed |
+| `TRANSPORT_MODE` | `stdio` (Docker image: `streamable`) | Transport mode when `-t` is not passed |
 | `SERVER_PORT` | `9092` | HTTP port |
 | `MCP_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed by experimental Streamable HTTP |
 | `DB_MCP_API_KEY` | empty | Bearer key for experimental Streamable HTTP; keep it in a secret manager |
+| `ALLOW_INSECURE_SSE` | unset | Docker image only: `true` passes `-allow-insecure-sse` so `TRANSPORT_MODE=sse` can start |
 | `DB_MCP_API_SCOPES` | `db:read` | Required/granted scopes: `db:read`, `db:write`, and/or `db:admin` |
 | `DB_MCP_OIDC_ISSUER` | empty | OIDC issuer URL; when set, OIDC/JWT verification replaces the static pilot key |
 | `DB_MCP_OIDC_AUDIENCE` | empty | Required OIDC audience/client ID |

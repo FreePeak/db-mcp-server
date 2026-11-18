@@ -26,16 +26,12 @@ services:
       dockerfile: Dockerfile
     environment:
       - TZ=UTC
+      - TRANSPORT_MODE=sse
+      - ALLOW_INSECURE_SSE=true
     ports:
       - "127.0.0.1:9093:9092"
     volumes:
       - ./config.timescaledb-test.json:/app/config.json:ro
-    command:
-      [
-        "/bin/sh",
-        "-c",
-        "/app/server -t sse -h 0.0.0.0 -allow-insecure-sse -c /app/config.json",
-      ]
     depends_on:
       timescaledb:
         condition: service_healthy
