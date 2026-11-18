@@ -151,7 +151,7 @@ Oracle test environment manager:
 Three jobs run on every PR:
 
 1. **Build & Test** - Unit tests and build verification
-   - Go 1.22
+   - Go 1.26 (building from source needs Go 1.25 or newer)
    - Unit tests with `-short` flag
    - Build verification
 
@@ -164,7 +164,7 @@ Three jobs run on every PR:
    - Code coverage reporting
 
 3. **Lint** - Code quality checks
-   - golangci-lint v2.0.0
+   - golangci-lint v2.15.0
    - Timeout: 5 minutes
 
 ### Environment Variables

@@ -133,12 +133,12 @@ func logMessage(level string, format string, v ...interface{}) {
 	// For non-stdio mode or if file writing failed
 	switch strings.ToUpper(level) {
 	case "DEBUG":
-		intLogger.Debug(message)
+		intLogger.Debug("%s", message)
 	case "INFO":
-		intLogger.Info(message)
+		intLogger.Info("%s", message)
 	case "WARN":
-		intLogger.Warn(message)
+		intLogger.Warn("%s", message)
 	case "ERROR":
-		intLogger.Error(message)
+		intLogger.Error("%s", message)
 	}
 }
