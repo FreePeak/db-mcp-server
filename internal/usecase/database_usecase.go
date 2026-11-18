@@ -390,7 +390,8 @@ func (uc *DatabaseUseCase) ExecuteQueryMasked(ctx context.Context, dbID, query s
 // performance tracking always record the original query text.
 func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, params []interface{}, mask, capRows bool) (res string, resErr error) {
 	start := time.Now()
-	defer func() { audit.record("query", dbID, query, time.Since(start), resErr) }()
+	var auditRows *int
+	defer func() { audit.record(ctx, "query", dbID, query, time.Since(start), auditRows, resErr) }()
 
 	db, err := uc.repo.GetDatabase(dbID)
 	if err != nil {
@@ -432,11 +433,12 @@ func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, par
 				logger.Error("error closing rows: %v", closeErr)
 			}
 		}()
-		s, ferr := formatQueryResults(rows, db.MaxRows(), databaseMaskingRules(db), mask || databaseMaskPII(db))
+		s, n, ferr := formatQueryResults(rows, db.MaxRows(), databaseMaskingRules(db), mask || databaseMaskPII(db))
 		if ferr != nil {
 			return nil, ferr
 		}
 		out = s
+		auditRows = &n
 		return nil, nil
 	})
 	if trackErr != nil {
@@ -549,10 +551,10 @@ func maskPartial(rule *db.MaskingRule, val interface{}) string {
 // context window. Values in columns matched by masks are replaced before
 // rendering so sensitive data never leaves this process. The caller owns
 // closing rows.
-func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule, maskPII bool) (string, error) {
+func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule, maskPII bool) (string, int, error) {
 	columns, err := rows.Columns()
 	if err != nil {
-		return "", fmt.Errorf("failed to get column names: %w", err)
+		return "", 0, fmt.Errorf("failed to get column names: %w", err)
 	}
 	colMasks := matchMaskingRules(columns, masks)
 
@@ -578,7 +580,7 @@ func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule, m
 		}
 		rowCount++
 		if scanErr := rows.Scan(valuePtrs...); scanErr != nil {
-			return "", fmt.Errorf("failed to scan row: %w", scanErr)
+			return "", 0, fmt.Errorf("failed to scan row: %w", scanErr)
 		}
 
 		// Convert to strings and print
@@ -613,7 +615,7 @@ func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule, m
 		resultText.WriteString(strings.Join(rowText, "\t") + "\n")
 	}
 	if err = rows.Err(); err != nil {
-		return "", fmt.Errorf("error reading rows: %w", err)
+		return "", 0, fmt.Errorf("error reading rows: %w", err)
 	}
 
 	if truncated {
@@ -625,13 +627,14 @@ func formatQueryResults(rows domain.Rows, maxRows int, masks []db.MaskingRule, m
 	if maskedCells > 0 {
 		resultText.WriteString(fmt.Sprintf("\nMasked cells: %d (masking_rules active)", maskedCells))
 	}
-	return resultText.String(), nil
+	return resultText.String(), rowCount, nil
 }
 
 // ExecuteStatement executes a SQL statement (INSERT, UPDATE, DELETE)
 func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement string, params []interface{}) (res string, resErr error) {
 	start := time.Now()
-	defer func() { audit.record("execute", dbID, statement, time.Since(start), resErr) }()
+	var auditRows *int
+	defer func() { audit.record(ctx, "execute", dbID, statement, time.Since(start), auditRows, resErr) }()
 
 	db, err := uc.repo.GetDatabase(dbID)
 	if err != nil {
@@ -666,6 +669,7 @@ func (uc *DatabaseUseCase) ExecuteStatement(ctx context.Context, dbID, statement
 
 		// Get rows affected
 		rowsAffected, aerr := result.RowsAffected()
+		auditRows = knownRows(rowsAffected, aerr)
 		if aerr != nil {
 			rowsAffected = 0
 		}
@@ -740,7 +744,8 @@ func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action 
 	statement string, params []interface{}, readOnly bool) (res string, meta map[string]interface{}, resErr error) {
 
 	start := time.Now()
-	defer func() { audit.record("tx_"+action, dbID, statement, time.Since(start), resErr) }()
+	var auditRows *int
+	defer func() { audit.record(ctx, "tx_"+action, dbID, statement, time.Since(start), auditRows, resErr) }()
 
 	switch action {
 	case "begin":
@@ -818,6 +823,7 @@ func (uc *DatabaseUseCase) ExecuteTransaction(ctx context.Context, dbID, action 
 		}
 
 		rowsAffected, err := result.RowsAffected()
+		auditRows = knownRows(rowsAffected, err)
 		if err != nil {
 			rowsAffected = 0
 		}

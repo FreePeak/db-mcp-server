@@ -94,7 +94,7 @@ func TestAudit_ConcurrentWritesStayLineIntact(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < perG; i++ {
-				audit.record("query", "db", "SELECT 1", 0, nil)
+				audit.record(context.Background(), "query", "db", "SELECT 1", 0, nil, nil)
 			}
 		}()
 	}
@@ -116,7 +116,7 @@ func TestAudit_TruncatesHugeStatements(t *testing.T) {
 	t.Cleanup(DisableAuditLog)
 
 	huge := strings.Repeat("x", 50_000)
-	audit.record("query", "db", huge, 0, nil)
+	audit.record(context.Background(), "query", "db", huge, 0, nil, nil)
 
 	recs := readAuditLines(t, path)
 	if len(recs) != 1 {
@@ -131,7 +131,7 @@ func TestAudit_TruncatesHugeStatements(t *testing.T) {
 // silently instead of erroring or writing anywhere.
 func TestAudit_DisabledIsNoop(t *testing.T) {
 	DisableAuditLog()
-	audit.record("query", "db", "SELECT 1", 0, nil) // must not panic or write
+	audit.record(context.Background(), "query", "db", "SELECT 1", 0, nil, nil) // must not panic or write
 }
 
 // readonlyDB forces IsReadOnly so the rejection path is auditable.
@@ -170,6 +170,92 @@ func TestAudit_RecordsRejectedWrites(t *testing.T) {
 	for i, rec := range recs {
 		if rec.Error == "" || !strings.Contains(rec.Error, "read-only") {
 			t.Errorf("rejection %d must carry the guardrail error: %+v", i, rec)
+		}
+	}
+}
+
+// TestAudit_RecordsCallerAndRows checks that the caller set on the context
+// and the rows returned or affected reach the record for every entry point.
+func TestAudit_RecordsCallerAndRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := EnableAuditLog(path); err != nil {
+		t.Fatalf("enable failed: %v", err)
+	}
+	t.Cleanup(DisableAuditLog)
+
+	raw := openSQLiteForTest(t)
+	if _, err := raw.Exec(`CREATE TABLE t (v TEXT)`); err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO t VALUES ('a'), ('b')`); err != nil {
+		t.Fatalf("seed rows failed: %v", err)
+	}
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: raw}, dbType: "sqlite"})
+	ctx := WithCaller(context.Background(), Caller{Principal: "user@example.com", Session: "mcp-session-example"})
+
+	if _, err := uc.ExecuteQuery(ctx, "db", "SELECT v FROM t", nil); err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
+	if _, err := uc.ExecuteStatement(ctx, "db", "UPDATE t SET v = 'x'", nil); err != nil {
+		t.Fatalf("statement failed: %v", err)
+	}
+	_, meta, err := uc.ExecuteTransaction(ctx, "db", "begin", "", "", nil, false)
+	if err != nil {
+		t.Fatalf("begin failed: %v", err)
+	}
+	txID, _ := meta["transactionId"].(string)
+	if _, _, err := uc.ExecuteTransaction(ctx, "db", "execute", txID, "INSERT INTO t VALUES ('c')", nil, false); err != nil {
+		t.Fatalf("tx execute failed: %v", err)
+	}
+	if _, _, err := uc.ExecuteTransaction(ctx, "db", "commit", txID, "", nil, false); err != nil {
+		t.Fatalf("commit failed: %v", err)
+	}
+
+	recs := readAuditLines(t, path)
+	wantOps := []string{"query", "execute", "tx_begin", "tx_execute", "tx_commit"}
+	wantRows := []int{2, 2, -1, 1, -1} // -1: no row count expected
+	if len(recs) != len(wantOps) {
+		t.Fatalf("expected %d records, got %d: %+v", len(wantOps), len(recs), recs)
+	}
+	for i, rec := range recs {
+		if rec.Op != wantOps[i] {
+			t.Errorf("record %d op = %q, want %q", i, rec.Op, wantOps[i])
+		}
+		if rec.Principal != "user@example.com" || rec.Session != "mcp-session-example" {
+			t.Errorf("record %d missing caller: %+v", i, rec)
+		}
+		switch {
+		case wantRows[i] < 0 && rec.Rows != nil:
+			t.Errorf("record %d must omit rows, got %d", i, *rec.Rows)
+		case wantRows[i] >= 0 && (rec.Rows == nil || *rec.Rows != wantRows[i]):
+			t.Errorf("record %d rows = %v, want %d", i, rec.Rows, wantRows[i])
+		}
+	}
+}
+
+// TestAudit_OmitsCallerAndRowsWhenUnknown keeps the new fields out of the
+// JSON when there is no caller and no row count, so existing consumers see
+// the same record shape as before.
+func TestAudit_OmitsCallerAndRowsWhenUnknown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := EnableAuditLog(path); err != nil {
+		t.Fatalf("enable failed: %v", err)
+	}
+	t.Cleanup(DisableAuditLog)
+
+	audit.record(context.Background(), "query", "db", "SELECT 1", 0, nil, nil)
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read audit file: %v", err)
+	}
+	var fields map[string]interface{}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("corrupt audit line: %v", err)
+	}
+	for _, key := range []string{"principal", "session", "rows"} {
+		if _, ok := fields[key]; ok {
+			t.Errorf("field %q must be omitted when unknown, line: %s", key, raw)
 		}
 	}
 }

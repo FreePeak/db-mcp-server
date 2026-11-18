@@ -123,6 +123,18 @@ Protect agent sessions against runaway queries and accidental writes:
 
 | `DB_MCP_AUDIT_LOG=/path/audit.jsonl` | process | Appends one JSONL record per executed statement — timestamp, op (`query`/`execute`/`tx_*`), database, statement (capped at 10k chars), duration, error. Includes rejected attempts against read-only databases. Best-effort writes never fail a query; file is created with `0600`. |
 
+Each record also says **who** ran the statement and **how much** it touched. These fields are additive and omitted when unknown, so existing consumers keep working:
+
+- `principal`: the authenticated caller. For OIDC it is the token subject (`sub`); for the static API key it is `api-key`. Omitted for stdio and other unauthenticated transports.
+- `session`: the MCP session ID, when the transport has one (Streamable HTTP). Omitted otherwise.
+- `rows`: rows returned by a query, or rows affected by an execute or transaction execute. Omitted when the engine did not report it, for example when the statement failed before running.
+
+Example line (placeholder values):
+
+```json
+{"ts":"2026-11-18T10:15:30.123456789Z","op":"query","database":"app","statement":"SELECT id FROM orders LIMIT 5","duration_ms":1.234,"principal":"user@example.com","session":"mcp-session-example","rows":5}
+```
+
 > **Defense in depth**: read-only is enforced in three layers — application classifier, engine session defaults, and (recommended) least-privilege database users. Oracle currently relies on the classifier plus user privileges.
 
 ## Supported Databases
