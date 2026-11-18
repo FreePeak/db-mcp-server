@@ -8,7 +8,6 @@ import (
 
 	cortexServer "github.com/FreePeak/cortex/pkg/server"
 	cortexTypes "github.com/FreePeak/cortex/pkg/types"
-	"github.com/FreePeak/db-mcp-server/internal/usecase"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -130,13 +129,11 @@ func requiredToolScope(name string, arguments map[string]interface{}) string {
 	case hasToolPrefix(name, "execute"), hasToolPrefix(name, "transaction"):
 		return "db:write"
 	case hasToolPrefix(name, "query"):
-		sql, _ := arguments["query"].(string)
-		return sqlScope(sql)
+		return sqlScope(getStringParam(arguments, "query"))
 	case hasToolPrefix(name, "explain"):
-		sql, _ := arguments["statement"].(string)
-		return sqlScope(sql)
+		return sqlScope(getStringParam(arguments, "statement"))
 	case hasToolPrefix(name, "performance"):
-		action, _ := arguments["action"].(string)
+		action := getStringParam(arguments, "action")
 		if readOnlyPerformanceActions[action] {
 			return "db:read"
 		}
@@ -165,8 +162,7 @@ func sqlScope(sql string) string {
 // uses regardless of the tool name. The operation is matched case-insensitively,
 // as the handler does.
 func timescaleScope(arguments map[string]interface{}) string {
-	operation, _ := arguments["operation"].(string)
-	operation = strings.ToLower(operation)
+	operation := strings.ToLower(getStringParam(arguments, "operation"))
 	var sql string
 	var err error
 	switch operation {
