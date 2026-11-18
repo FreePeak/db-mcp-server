@@ -9,6 +9,7 @@ import (
 
 	cortexServer "github.com/FreePeak/cortex/pkg/server"
 	cortexTools "github.com/FreePeak/cortex/pkg/tools"
+	"github.com/FreePeak/db-mcp-server/internal/usecase"
 	sdkAuth "github.com/modelcontextprotocol/go-sdk/auth"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
@@ -21,7 +22,9 @@ func TestServerWrapperSDKStreamableRoundTrip(t *testing.T) {
 		cortexTools.WithDescription("echo text"),
 		cortexTools.WithString("text", cortexTools.Description("text to echo"), cortexTools.Required()),
 	)
-	err := wrapper.AddTool(context.Background(), tool, func(_ context.Context, request cortexServer.ToolCallRequest) (interface{}, error) {
+	var seen usecase.Caller
+	err := wrapper.AddTool(context.Background(), tool, func(ctx context.Context, request cortexServer.ToolCallRequest) (interface{}, error) {
+		seen = usecase.CallerFromContext(ctx)
 		text := request.Parameters["text"].(string)
 		if text == "error" {
 			return nil, errors.New("tool failed")
@@ -69,6 +72,7 @@ func TestServerWrapperSDKStreamableRoundTrip(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "echo:hello", textContent.Text)
 	require.Equal(t, "tx-test", result.Meta["transactionId"])
+	require.NotEmpty(t, seen.Session, "streamable tool call must carry the MCP session ID to the use case")
 
 	errorResult, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
 		Name:      "echo",
@@ -100,4 +104,25 @@ func TestToolScopeAllowed(t *testing.T) {
 	request.Extra.TokenInfo.Scopes = []string{"db:admin"}
 	request.Params.Name = "execute"
 	require.True(t, toolScopeAllowed(request))
+}
+
+func TestAdaptCortexHandlerPassesPrincipalToUseCase(t *testing.T) {
+	var seen usecase.Caller
+	handler := adaptCortexHandler(func(ctx context.Context, _ cortexServer.ToolCallRequest) (interface{}, error) {
+		seen = usecase.CallerFromContext(ctx)
+		return nil, nil
+	})
+
+	authed := &sdkmcp.CallToolRequest{
+		Params: &sdkmcp.CallToolParamsRaw{Name: "query"},
+		Extra:  &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{UserID: "user@example.com", Scopes: []string{"db:read"}}},
+	}
+	_, err := handler(context.Background(), authed)
+	require.NoError(t, err)
+	require.Equal(t, "user@example.com", seen.Principal)
+
+	unauthenticated := &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query"}}
+	_, err = handler(context.Background(), unauthenticated)
+	require.NoError(t, err)
+	require.Empty(t, seen.Principal)
 }
