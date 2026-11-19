@@ -238,7 +238,7 @@ func columnQueries(dbType, table string) []string {
 	case "mysql":
 		return []string{fmt.Sprintf("SHOW COLUMNS FROM `%s`", table)}
 	case "sqlite", "sqlite3":
-		return []string{fmt.Sprintf("SELECT name AS column_name, type AS data_type, \"notnull\" AS is_nullable, dflt_value AS column_default FROM pragma_table_info('%s')", table)}
+		return []string{fmt.Sprintf("SELECT name AS column_name, type AS data_type, CASE WHEN \"notnull\" = 0 THEN 'YES' ELSE 'NO' END AS is_nullable, dflt_value AS column_default FROM pragma_table_info('%s')", table)}
 	case "oracle":
 		return []string{fmt.Sprintf(`SELECT column_name, data_type, nullable AS is_nullable, data_default AS column_default FROM user_tab_columns WHERE table_name = UPPER('%s') ORDER BY column_id`, table)}
 	default:
