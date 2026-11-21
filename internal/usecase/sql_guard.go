@@ -36,6 +36,10 @@ var scanWriteKeywords = map[string]bool{
 	"REVOKE":   true,
 	"VACUUM":   true,
 	"REINDEX":  true,
+	// PostgreSQL session-state change reachable from a SELECT; it can lift the
+	// read-only default for the pooled connection. Defense in depth only: the
+	// query path also runs read-only databases in a rolled-back READ ONLY tx.
+	"SET_CONFIG": true,
 }
 
 // leadingOnlyWriteKeywords mutate data but double as ordinary function names

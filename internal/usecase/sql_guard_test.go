@@ -55,6 +55,11 @@ func TestIsWriteStatement(t *testing.T) {
 		{"multi statement trailing drop", "SELECT 1; DROP TABLE users", true},
 		{"multi statement leading insert", "INSERT INTO t VALUES (1); SELECT 1", true},
 
+		// Session-state changes issued through a SELECT flip the read-only
+		// default on the pooled connection, so they are writes for this guard.
+		{"set_config flips read-only default", "SELECT set_config('default_transaction_read_only','off',false)", true},
+		{"set_config flips transaction_read_only", "SELECT set_config('transaction_read_only', 'off', false)", true},
+
 		// Default deny for anything unrecognized.
 		{"unknown verb", "VACUUM FULL t", true},
 		{"empty", "", false},

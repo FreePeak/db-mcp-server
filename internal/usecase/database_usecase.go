@@ -418,20 +418,34 @@ func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, par
 		}
 	}
 
+	// PostgreSQL read-only queries run inside a READ ONLY transaction that
+	// is always rolled back. A SELECT can flip a session setting such as
+	// set_config('default_transaction_read_only','off',false); the rollback
+	// undoes that change before the pooled connection is reused. Other
+	// engines keep the plain query path (go-ora rejects read-only
+	// transactions).
+	readOnlyTx := false
+	if db.IsReadOnly() {
+		dbType, typeErr := uc.GetDatabaseType(dbID)
+		if typeErr != nil {
+			return "", fmt.Errorf("failed to get database type: %w", typeErr)
+		}
+		switch dbType {
+		case "postgres", "timescale", "timescaledb":
+			readOnlyTx = true
+		}
+	}
+
 	// Execute query with performance tracking so the in-process tracker
 	// (slow_queries, stats, workload_suggestions fallback) reflects real
 	// traffic instead of staying empty on the primary execution path.
 	var out string
 	_, trackErr := dbtools.GetPerformanceAnalyzer().TrackQuery(ctx, query, params, func() (interface{}, error) {
-		rows, qerr := db.Query(ctx, execQuery, params...)
+		rows, release, qerr := openRows(ctx, db, readOnlyTx, execQuery, params)
 		if qerr != nil {
 			return nil, fmt.Errorf("query execution failed%s: %w", cappedNote, qerr)
 		}
-		defer func() {
-			if closeErr := rows.Close(); closeErr != nil {
-				logger.Error("error closing rows: %v", closeErr)
-			}
-		}()
+		defer release()
 		s, ferr := formatQueryResults(rows, db.MaxRows(), databaseMaskingRules(db), mask || databaseMaskPII(db))
 		if ferr != nil {
 			return nil, ferr
@@ -444,6 +458,42 @@ func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, par
 	}
 
 	return out, nil
+}
+
+// openRows runs query and returns its rows with a release func the caller must
+// call once the rows are consumed. With readOnlyTx the statement runs in a READ
+// ONLY transaction and release rolls it back, so a session setting changed by
+// the statement does not outlive the call.
+func openRows(ctx context.Context, conn domain.Database, readOnlyTx bool, query string, params []interface{}) (domain.Rows, func(), error) {
+	if !readOnlyTx {
+		rows, err := conn.Query(ctx, query, params...)
+		if err != nil {
+			return nil, nil, err
+		}
+		return rows, func() { closeRows(rows) }, nil
+	}
+
+	tx, err := conn.Begin(ctx, &domain.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := tx.Query(ctx, query, params...)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, nil, err
+	}
+	return rows, func() {
+		closeRows(rows)
+		if rbErr := tx.Rollback(); rbErr != nil {
+			logger.Error("error rolling back read-only transaction: %v", rbErr)
+		}
+	}, nil
+}
+
+func closeRows(rows domain.Rows) {
+	if err := rows.Close(); err != nil {
+		logger.Error("error closing rows: %v", err)
+	}
 }
 
 // databaseMaskPII reports whether the operator configured content-based PII
