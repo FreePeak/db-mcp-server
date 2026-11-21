@@ -877,6 +877,20 @@ All tests run automatically on every pull request via GitHub Actions. The CI pip
 - **Regression Tests**: Comprehensive tests ensuring backward compatibility
 - **Linting**: Code quality checks with golangci-lint
 
+## Production-Grade Controls
+
+Teams that want AI agents to query production databases without raw credentials
+need more than the basics. The core already provides read-only enforcement, PII
+masking, a row cap (`max_rows`), an audit log (`DB_MCP_AUDIT_LOG`), and OIDC bearer
+or API-key scopes on the HTTP transport, as described in
+[Production Guardrails](#production-guardrails). Per-agent roles and permissions,
+agent identity in the audit trail, query cost limits, and a managed deployment
+(PostgreSQL and MySQL first) are in development with design partners and are not
+shipped yet.
+
+To discuss your requirements, [open a new issue](https://github.com/FreePeak/db-mcp-server/issues/new)
+and describe your setup: the databases, how your agents connect, and which controls you need.
+
 ## Contributing
 
 We welcome contributions to the DB MCP Server project! To contribute:
