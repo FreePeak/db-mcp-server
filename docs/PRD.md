@@ -34,7 +34,7 @@ enforcement, result caps, timeouts, PII masking, and an audit trail.
   visibility, least-privilege guidance.
 - G4 — **Scale to many databases** without blowing the model context window
   (unified tool mode) or the process (lazy loading).
-- G5 — **Stay boring and portable**: stdlib-first Go (1.23), no Docker
+- G5 — **Stay boring and portable**: stdlib-first Go (1.25+), no Docker
   runtime dependency, npm + Docker distribution channels.
 
 ### 1.2 Non-goals (explicitly out of scope)
