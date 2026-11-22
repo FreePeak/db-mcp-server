@@ -172,11 +172,30 @@ func databaseMaxQueryCost(d domain.Database) float64 {
 	return 0
 }
 
+// effectiveCostLimit returns the cost ceiling that applies to a call: the
+// smaller of the connection's and the caller's limits, ignoring a limit of 0,
+// or 0 when neither sets one.
+func effectiveCostLimit(dbLimit, callerLimit float64) float64 {
+	switch {
+	case dbLimit == 0:
+		return callerLimit
+	case callerLimit == 0:
+		return dbLimit
+	}
+	return min(dbLimit, callerLimit)
+}
+
+// queryCostLimit is the cost ceiling for a call on db, combining the
+// connection's max_query_cost with the caller's grant limit.
+func queryCostLimit(ctx context.Context, db domain.Database) float64 {
+	return effectiveCostLimit(databaseMaxQueryCost(db), CallerFromContext(ctx).MaxQueryCost)
+}
+
 // enforceQueryCost applies the cost gate to an agent-issued query. It refuses
 // a raw EXPLAIN ANALYZE, which executes its statement, and estimates each
 // SELECT or WITH before it reaches the engine. Other statements are not gated.
 func (uc *DatabaseUseCase) enforceQueryCost(ctx context.Context, dbID string, db domain.Database, query string, params []interface{}) error {
-	limit := databaseMaxQueryCost(db)
+	limit := queryCostLimit(ctx, db)
 	if limit <= 0 {
 		return nil
 	}

@@ -162,6 +162,41 @@ func TestRunQuery_CostGate_DeniesAboveLimit(t *testing.T) {
 	}
 }
 
+func TestEffectiveCostLimit(t *testing.T) {
+	tests := []struct {
+		name                 string
+		dbLimit, callerLimit float64
+		want                 float64
+	}{
+		{"none set", 0, 0, 0},
+		{"connection only", 0, 500, 500},
+		{"caller only", 800, 0, 800},
+		{"caller tighter", 1000, 300, 300},
+		{"connection tighter", 200, 1000, 200},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := effectiveCostLimit(tc.dbLimit, tc.callerLimit); got != tc.want {
+				t.Fatalf("effectiveCostLimit(%v, %v) = %v, want %v", tc.dbLimit, tc.callerLimit, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunQuery_CostGate_CallerLimitApplies(t *testing.T) {
+	db := &costDB{limit: 0, plan: pgPlanHuge}
+	uc := newCostUseCase(db, "postgres")
+	ctx := WithCaller(context.Background(), Caller{Principal: "agent-a", MaxQueryCost: 1000})
+
+	_, err := uc.ExecuteQueryMasked(ctx, "pg1", "SELECT * FROM a CROSS JOIN b", nil, false)
+	if err == nil || !strings.Contains(err.Error(), "exceeds max_query_cost 1000") {
+		t.Fatalf("caller grant limit must deny an estimate above it on an unlimited connection, got: %v", err)
+	}
+	if db.realCount() != 0 {
+		t.Fatalf("denied query must never reach the engine, sent: %q", db.sent)
+	}
+}
+
 func TestRunQuery_CostGate_AllowsBelow(t *testing.T) {
 	db := &costDB{limit: 1000, plan: pgPlanCheap}
 	uc := newCostUseCase(db, "postgres")

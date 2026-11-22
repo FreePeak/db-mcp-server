@@ -400,14 +400,32 @@ func main() {
 				logger.Error("DB_MCP_OIDC_AUDIENCE is required when DB_MCP_OIDC_ISSUER is configured")
 				os.Exit(1)
 			}
+			var roles *mcp.OIDCRoles
+			if rolesPath := strings.TrimSpace(os.Getenv("DB_MCP_OIDC_ROLES_FILE")); rolesPath != "" {
+				if err := requireUnifiedTools(*unifiedTools, "DB_MCP_OIDC_ROLES_FILE"); err != nil {
+					logger.Error("%v", err)
+					os.Exit(1)
+				}
+				roles, err = mcp.LoadOIDCRoles(rolesPath)
+				if err != nil {
+					logger.Error("Failed to load DB_MCP_OIDC_ROLES_FILE: %v", err)
+					os.Exit(1)
+				}
+			}
 			oidcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			verifier, err := mcp.NewOIDCVerifier(oidcCtx, oidcIssuer, oidcAudience)
+			verifier, err := mcp.NewOIDCVerifier(oidcCtx, oidcIssuer, oidcAudience, roles)
 			cancel()
 			if err != nil {
 				logger.Error("Failed to initialize OIDC verifier: %v", err)
 				os.Exit(1)
 			}
-			authMiddleware = mcp.OIDCBearerAuth(verifier, apiScopes)
+			// A roles file supplies each token's scopes, so the transport
+			// requires none of its own.
+			var requiredScopes []string
+			if roles == nil {
+				requiredScopes = apiScopes
+			}
+			authMiddleware = mcp.OIDCBearerAuth(verifier, requiredScopes)
 		} else if agentKeysFile != "" {
 			agentKeys, err := mcp.LoadAgentKeys(agentKeysFile)
 			if err != nil {
@@ -499,8 +517,19 @@ func agentKeysSettings(transport, oidcIssuer, path string, unifiedTools bool) (s
 	if strings.TrimSpace(oidcIssuer) != "" {
 		return "", "", fmt.Errorf("DB_MCP_AGENT_KEYS_FILE cannot be combined with DB_MCP_OIDC_ISSUER")
 	}
-	if !unifiedTools {
-		return "", "", fmt.Errorf("DB_MCP_AGENT_KEYS_FILE requires the -unified-tools flag: agent keys can call only unified tools")
+	if err := requireUnifiedTools(unifiedTools, "DB_MCP_AGENT_KEYS_FILE"); err != nil {
+		return "", "", err
 	}
 	return path, "", nil
+}
+
+// requireUnifiedTools refuses a principal file (source names its environment
+// variable) unless -unified-tools is set. Every principal that carries a
+// databases list, "*" included, is denied the per-database tool names
+// (toolDatabaseAllowed), so without the flag it could call no database tool.
+func requireUnifiedTools(unifiedTools bool, source string) error {
+	if unifiedTools {
+		return nil
+	}
+	return fmt.Errorf("%s requires the -unified-tools flag: its principals can call only unified tools", source)
 }

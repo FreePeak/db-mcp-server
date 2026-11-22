@@ -20,10 +20,10 @@ func TestScopesFromClaims(t *testing.T) {
 }
 
 func TestNewOIDCVerifierRequiresIssuerAndAudience(t *testing.T) {
-	if _, err := NewOIDCVerifier(context.Background(), "", "audience"); err == nil {
+	if _, err := NewOIDCVerifier(context.Background(), "", "audience", nil); err == nil {
 		t.Fatal("expected missing issuer error")
 	}
-	if _, err := NewOIDCVerifier(context.Background(), "https://issuer.example", ""); err == nil {
+	if _, err := NewOIDCVerifier(context.Background(), "https://issuer.example", "", nil); err == nil {
 		t.Fatal("expected missing audience error")
 	}
 }
