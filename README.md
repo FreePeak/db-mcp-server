@@ -249,12 +249,6 @@ The SQL check is the textual classifier in `internal/usecase/sql_guard.go`. It
 is a best-effort gate, not a parser or a sandbox, so run read-scoped clients
 against a least-privilege database user.
 
-Statement classification cannot see side effects of functions called from a
-read. Calls such as `SELECT pg_terminate_backend(pid)`, `SELECT nextval('seq')`
-or `SELECT set_config(...)` contain no write keyword and are classified as
-reads. Engine-level read-only enforcement for read-scoped calls is a planned
-follow-up.
-
 ### Docker development image
 
 The published image is a development/demo artifact, not an enterprise
