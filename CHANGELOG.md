@@ -2,6 +2,7 @@
 ## [Unreleased]
 
 ### Added
+- **OAuth protected resource metadata** (`DB_MCP_RESOURCE_URL` with `DB_MCP_OIDC_ISSUER`): Streamable HTTP serves RFC 9728 metadata at `/.well-known/oauth-protected-resource` so MCP clients can discover the identity provider, and `/mcp` answers 401/403 with a `WWW-Authenticate` challenge pointing at it
 - **Server-side row cap (Auto-LIMIT)**: when a connection sets `max_rows`, a single SELECT or WITH statement sent through the query tool gets `LIMIT max_rows+1` appended on PostgreSQL (including TimescaleDB), MySQL and SQLite, so the database stops producing rows past the cap instead of streaming the whole result to be truncated client-side; the existing `Truncated: showing first N rows` notice still fires. Statements that already bound or lock their rows (`LIMIT`, `OFFSET`, `FETCH`, `FOR`, `INTO`, `LOCK`), compound statements ending in a `VALUES` list, multi-statement input and non-SELECT statements are left unchanged, as are statements containing a backslash, `#` or a MySQL `/*!` comment, which the literal stripper cannot model. Select-list functions with side effects (for example `nextval()`) run for at most max_rows+1 rows. Internal tool queries are never rewritten, Oracle is not rewritten (client-side truncation still applies there), and when a capped query fails the error names the appended LIMIT so an explicit LIMIT can be added
 
 ## [v1.14.1] - 2026-11-17

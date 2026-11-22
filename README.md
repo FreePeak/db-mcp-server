@@ -415,6 +415,7 @@ Values in a `.env` file are loaded first; real environment variables take preced
 | `DB_MCP_API_SCOPES` | `db:read` | Required/granted scopes: `db:read`, `db:write`, and/or `db:admin` |
 | `DB_MCP_OIDC_ISSUER` | empty | OIDC issuer URL; when set, OIDC/JWT verification replaces the static pilot key |
 | `DB_MCP_OIDC_AUDIENCE` | empty | Required OIDC audience/client ID |
+| `DB_MCP_RESOURCE_URL` | empty | Public URL of `/mcp` (for example `https://db.example.com/mcp`); with `DB_MCP_OIDC_ISSUER` it serves OAuth protected resource metadata (RFC 9728) so MCP clients can discover the identity provider |
 | `LOG_LEVEL` | `info` | Log verbosity (`debug`, `info`, `warn`, `error`) |
 | `DISABLE_LOGGING` | `false` | `true`/`1` silences logging entirely |
 | `DB_TYPE`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | engine defaults | Single-database fallback when no JSON config exists |

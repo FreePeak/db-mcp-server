@@ -408,7 +408,10 @@ func main() {
 		streamableHandler := authMiddleware(mcp.NewStreamableHTTPHandler(toolRegistry.ServerAdapter().SDKServer()))
 
 		mux := http.NewServeMux()
-		mux.Handle("/mcp", streamableHandler)
+		if err := mcp.MountStreamableRoutes(mux, os.Getenv, apiScopes, streamableHandler); err != nil {
+			logger.Error("%v", err)
+			os.Exit(1)
+		}
 
 		streamableServer := &http.Server{
 			Addr:              net.JoinHostPort(*serverHost, strconv.Itoa(cfg.ServerPort)),
