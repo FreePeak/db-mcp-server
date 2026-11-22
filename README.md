@@ -115,7 +115,7 @@ Protect agent sessions against runaway queries and accidental writes:
 
 | Setting | Scope | Effect |
 |---------|-------|--------|
-| `"read_only": true` | per database | Best-effort defense in depth, not a security boundary. A textual classifier allowlists leading verbs and scans for write keywords (`INSERT`, `UPDATE`, `DELETE`, DDL, data-modifying CTEs, stacked writes) after stripping comments and string literals; statements it does not recognize are rejected. It runs for both query and execute tools, but functions called from a `SELECT` may not be recognized, so it can miss a write. Engine session defaults add a second layer: PostgreSQL/TimescaleDB sessions start with `default_transaction_read_only=on` and MySQL with `transaction_read_only=1`, but a statement can change these settings; SQLite opens `mode=ro`. Oracle has no session-level read-only switch; the connector refuses to connect with credentials that hold write privileges. The strongest control is a least-privilege database user with SELECT-only grants for each configured database. |
+| `"read_only": true` | per database | Best-effort defense in depth, not a security boundary. A textual check runs for both query and execute tools and rejects statements it does not recognize. Functions called from a `SELECT` may not be recognized, so the check can miss a write. Engine session defaults are a second layer, not a security boundary on their own: PostgreSQL/TimescaleDB sessions start with `default_transaction_read_only=on`, MySQL with `transaction_read_only=1`, and SQLite opens `mode=ro`. Oracle has no session-level read-only switch; the connector refuses to connect with credentials that hold write privileges. For strong guarantees, connect with a database account that only has SELECT privileges. |
 | `"max_rows": 1000` | per database | Truncates result sets at N rows and appends an explicit `Truncated: showing first N rows (max_rows=N)` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. On PostgreSQL (including TimescaleDB), MySQL and SQLite the query tool also appends `LIMIT max_rows+1` to a single SELECT/WITH statement with no LIMIT, OFFSET, FETCH, FOR, INTO or LOCK clause of its own and not ending in a VALUES list, so the database stops at the cap; statements containing a backslash, `#` or a MySQL `/*!` comment are sent unchanged; select-list functions with side effects (for example `nextval()`) run for at most max_rows+1 rows; an explicit `LIMIT` sends the query unchanged; Oracle results are truncated client-side only. |
 | `"masking_rules": [...]` | per database | Masks values of result columns whose **name** matches a rule's regex before they leave the server — applies to every query shape including `SELECT *`. Strategies: `"fixed_string"` (replace with `value`), `"null"`, and `"partial"` (`keep_last` trailing characters visible; shorter values fully masked). First matching rule wins; invalid patterns or unknown strategies abort config load (fail closed); masked-cell counts are reported in the result footer. Renaming a column with an alias bypasses name matching by design. See [docs/design/column-masking-scoping.md](docs/design/column-masking-scoping.md). |
 | `"mask_pii": true` | per database | Redacts PII in query results by **content shape**, not just column name: emails, phone numbers, Luhn-valid card numbers, SSNs, IPv4 addresses and 19+ digit identifiers are replaced with `[EMAIL]`/`[PHONE]`/`[CREDIT_CARD]`/`[SSN]`/`[IP_ADDRESS]`/`[LONG_NUMBER]` when they appear as a whole pattern inside a single cell, including free-text columns. Best-effort: values split across columns, non-standard formats, and names or addresses are not detected, and masking runs after the database has returned the data. Columns named like `email`/`card_number`/`iban` are redacted whole. Operator-controlled: once set, an agent **cannot** turn it off (the per-query `mask_pii` parameter is additive only). Composes with `masking_rules`. |
@@ -123,7 +123,19 @@ Protect agent sessions against runaway queries and accidental writes:
 
 | `DB_MCP_AUDIT_LOG=/path/audit.jsonl` | process | Appends one JSONL record per executed statement — timestamp, op (`query`/`execute`/`tx_*`), database, statement (capped at 10k chars), duration, error. Includes rejected attempts against read-only databases. Best-effort writes never fail a query; file is created with `0600`. |
 
-> **Defense in depth**: read-only is best-effort and is not a guarantee. The layers are the application classifier, engine session defaults (which a statement can change), and the database user's privileges. Use a least-privilege database user with SELECT-only grants for each configured database. A hardening change that runs read-only PostgreSQL queries in a rolled-back read-only transaction is in review.
+Each record also says **who** ran the statement and **how much** it touched. These fields are additive and omitted when unknown, so existing consumers keep working:
+
+- `principal`: the authenticated caller. For OIDC it is the token subject (`sub`); for the static API key it is `api-key`. Omitted for stdio and other unauthenticated transports.
+- `session`: the MCP session ID, when the transport has one (Streamable HTTP). It is written to the owner-only (`0600`) audit file. Omitted otherwise.
+- `rows`: the number of rows shown for a query, capped at `max_rows` when the result is truncated (a query matching 100 rows with `max_rows=3` records `rows: 3`); rows affected for an execute; rows affected for a transaction execute, counted before commit, so a later rollback does not change the recorded count. Omitted when the statement failed or the engine did not report a count.
+
+Example line (placeholder values):
+
+```json
+{"ts":"2026-11-18T10:15:30.123456789Z","op":"query","database":"app","statement":"SELECT id FROM orders LIMIT 5","duration_ms":1.234,"principal":"user@example.com","session":"mcp-session-example","rows":5}
+```
+
+> **Defense in depth**: read-only is best-effort and is not a guarantee. The layers are the application check, engine session defaults (not a security boundary on their own), and the database user's privileges. For strong guarantees, connect with a database account that only has SELECT privileges.
 
 ## Supported Databases
 
@@ -178,8 +190,8 @@ private reverse proxy:
 ```
 
 Do not use this mode for a shared deployment. The legacy endpoint does not
-apply `DB_MCP_API_KEY`; terminate TLS, authentication, and network policy at the
-proxy. A future release will replace it with a maintained Streamable HTTP
+apply the API key (`DB_MCP_API_KEY`, `DB_MCP_API_KEY_FILE`, or `-api-key`);
+terminate TLS, authentication, and network policy at the proxy. A future release will replace it with a maintained Streamable HTTP
 implementation.
 
 ### Streamable HTTP (experimental)
@@ -187,14 +199,43 @@ implementation.
 The `streamable` endpoint is backed by the maintained Go MCP SDK and supports
 stateful sessions, JSON or SSE responses, notifications, GET/DELETE session
 lifecycle, and JSON-RPC dispatch. The process refuses to start it without
-`DB_MCP_API_KEY`; keep it behind a private TLS gateway until the identity and
+an API key; keep it behind a private TLS gateway until the identity and
 conformance rollout is complete.
+
+Provide the key through exactly one source: `DB_MCP_API_KEY`, `DB_MCP_API_KEY_FILE`,
+or the `-api-key` flag. Setting more than one is a startup error. The flag is
+visible in the process list, so it logs a warning; prefer the file or env var.
+Use the file form with Docker or Kubernetes secrets:
+
+```bash
+# Docker secret mounted at /run/secrets/db_mcp_api_key
+docker run --rm -p 127.0.0.1:9092:9092 \
+  -e TRANSPORT_MODE=streamable \
+  -e DB_MCP_API_KEY_FILE=/run/secrets/db_mcp_api_key \
+  -v "$(pwd)/config.local.json:/app/config.json:ro" \
+  -v "$(pwd)/db_mcp_api_key:/run/secrets/db_mcp_api_key:ro" \
+  db-mcp-server:local
+```
+
+The key file is read once at startup. A rotated Kubernetes or Docker secret takes
+effect only after the server restarts. The key is not read for the stdio or SSE
+transports, so a blank key or a missing key file does not stop them.
 
 For browser-origin requests, set an explicit comma-separated allowlist:
 
 ```bash
 MCP_ALLOWED_ORIGINS=https://agent.example.com
 ```
+
+The SDK applies these request rules to the `streamable` endpoint:
+
+- When the server listens on a loopback address (the default `-h 127.0.0.1`),
+  a request whose `Host` header is not a loopback name is rejected with `403`.
+- Each `MCP_ALLOWED_ORIGINS` entry must be `scheme://host[:port]`, with no
+  path, query, fragment, or trailing slash. Invalid entries are logged and
+  ignored, so browser requests from that origin still get `403`.
+- A JSON `Content-Type` may carry parameters, such as
+  `application/json; charset=utf-8`.
 
 The built-in static bearer key is a bounded pilot mechanism. It grants
 `db:read` by default; set `DB_MCP_API_SCOPES=db:read,db:write` only for a
@@ -204,30 +245,67 @@ JWKS signature validation, issuer/audience checks, and subject identity for
 shared deployments; database-specific scopes are still intentionally not
 enabled until that policy is defined.
 
-### Docker development image
+#### Tool scopes
 
-The published image is a development/demo artifact, not an enterprise
-hardening recommendation. The current Dockerfile runs as an unprivileged
-user, omits an embedded config, and includes the legacy
-`-allow-insecure-sse` behavior for local Compose compatibility. It exposes a
-separate health port (`9093`) and is not suitable for public publication.
+The scope a call needs is decided by the statement or operation it runs, not
+by the tool name alone:
+
+| Tool | `db:read` | `db:write` |
+|------|-----------|------------|
+| `query`, `query_<db>` | statement passes the SQL write guard as read-only | statement is a write (`DELETE`, `DROP`, `SELECT ... INTO`, a stacked or data-modifying write, `COPY`, unknown verb) |
+| `explain`, `explain_<db>` | statement is read-only | statement is a write (checked with or without `analyze`) |
+| `performance_<db>` | `stats`, `slow_queries`, `engine_slow_queries`, `suggest`, `suggest_indexes`, `workload_suggestions`, `index_health`, `db_health` | `reset`, `validate_suggestions`, any other action |
+| `schema`, `describe`, `health`, `filter_tables`, `list_databases` | always | never |
+| `timescaledb_*` | `list_hypertables`, `get_compression_settings`, `get_retention_policy`, `list_continuous_aggregates`, `get_continuous_aggregate_info`; `time_series_query` and `analyze_time_series` when the SQL they build is read-only | every other operation, including unknown ones |
+| `execute*`, `transaction*` | never | always |
+
+A call whose SQL, action, or operation is missing or not a string fails closed
+to `db:write`, as do unknown tool names. Arguments that are not a JSON object
+are rejected before the scope check. `db:admin` allows every tool. Stdio
+connections carry no token and are not scope-checked.
+
+The SQL check is the textual classifier in `internal/usecase/sql_guard.go`. It
+is a best-effort gate, not a parser or a sandbox, so run read-scoped clients
+against a least-privilege database user.
+
+### Docker image
+
+The image defaults to the authenticated Streamable HTTP transport
+(`TRANSPORT_MODE=streamable`). It refuses to start without `DB_MCP_API_KEY`,
+`DB_MCP_API_KEY_FILE`, or OIDC configuration, and the container exits non-zero with an authentication
+error otherwise. It runs as an unprivileged user, omits an embedded config
+(mount one at `/app/config.json`), and serves an unauthenticated `/health`
+probe on port `9093` in both HTTP modes.
 
 ```bash
 # Build a local image from this source revision
 docker build -t db-mcp-server:local .
 
-# Keep it private; the image's default SSE mode is compatibility-only
-docker run --rm -p 127.0.0.1:9092:9092 \
-  -p 127.0.0.1:9093:9093 \
+# Default: Streamable HTTP. Export the key in your shell; it is passed through, not written to disk.
+docker run --rm -p 127.0.0.1:9092:9092 -p 127.0.0.1:9093:9093 \
+  -e DB_MCP_API_KEY \
   -v "$(pwd)/config.local.json:/app/config.json:ro" \
   db-mcp-server:local
 ```
 
-For a team deployment, wait for the authenticated Streamable transport and use
-a non-root, read-only-filesystem image with a private network, external secret
-store, and a TLS/OIDC gateway.
+Legacy SSE has no built-in authentication. It runs only when both variables are
+set explicitly, and only on a private network behind a trusted proxy:
+
+```bash
+docker run --rm -p 127.0.0.1:9092:9092 -p 127.0.0.1:9093:9093 \
+  -e TRANSPORT_MODE=sse -e ALLOW_INSECURE_SSE=true \
+  -v "$(pwd)/config.local.json:/app/config.json:ro" \
+  db-mcp-server:local
+```
+
+The image is a development and demo artifact, not a hardened public image. For a
+team deployment, put the Streamable endpoint behind a TLS/OIDC gateway with a
+private network and an external secret store.
 
 ### Source Code Installation
+
+Building from source requires Go 1.25 or newer (`go.mod` sets `go 1.25.0`).
+CI and the published Docker and npm release builds use Go 1.26.
 
 ```bash
 # Clone the repository
@@ -372,7 +450,7 @@ export DB_CONFIG='{"connections":[...]}'
 - `-h, -host`: HTTP bind host (default: `127.0.0.1`)
 - `--version`: Print the build version and exit
 - `-allow-insecure-sse`: Explicitly allow legacy SSE for a private development proxy
-- `-api-key`: Bearer key for the experimental Streamable HTTP entrypoint (or use `DB_MCP_API_KEY`)
+- `-api-key`: Bearer key for the experimental Streamable HTTP entrypoint. Visible in the process list and logs a warning; prefer `DB_MCP_API_KEY_FILE` or `DB_MCP_API_KEY`
 - `-log-level`: Log level (`debug`, `info`, `warn`, `error`)
 - `-log-dir`: Directory for log files (default: `./logs` in current directory)
 - `-db-config`: Inline JSON database configuration
@@ -395,10 +473,12 @@ Values in a `.env` file are loaded first; real environment variables take preced
 |---|---|---|
 | `CONFIG_PATH` / `DB_CONFIG_FILE` | `config.json` | Path to the multi-database JSON config |
 | `DB_CONFIG` | — | Inline JSON database configuration (used when no file is present) |
-| `TRANSPORT_MODE` | `stdio` | Transport mode when `-t` is not passed |
+| `TRANSPORT_MODE` | `stdio` (Docker image: `streamable`) | Transport mode when `-t` is not passed |
 | `SERVER_PORT` | `9092` | HTTP port |
 | `MCP_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed by experimental Streamable HTTP |
 | `DB_MCP_API_KEY` | empty | Bearer key for experimental Streamable HTTP; keep it in a secret manager |
+| `DB_MCP_API_KEY_FILE` | empty | Path to a file holding the Bearer key (trailing newline trimmed; an empty or whitespace-only file is an error). Use for Docker/Kubernetes secrets |
+| `ALLOW_INSECURE_SSE` | unset | Docker image only: `true` passes `-allow-insecure-sse` so `TRANSPORT_MODE=sse` can start |
 | `DB_MCP_API_SCOPES` | `db:read` | Required/granted scopes: `db:read`, `db:write`, and/or `db:admin` |
 | `DB_MCP_OIDC_ISSUER` | empty | OIDC issuer URL; when set, OIDC/JWT verification replaces the static pilot key |
 | `DB_MCP_OIDC_AUDIENCE` | empty | Required OIDC audience/client ID |
@@ -778,10 +858,11 @@ query_oracle_dev("SELECT employee_id, salary, RANK() OVER (ORDER BY salary DESC)
 
 ### Logs
 
-Enable verbose logging for troubleshooting:
+Enable verbose logging for troubleshooting (local use only: legacy SSE has no
+built-in authentication, so it needs `-allow-insecure-sse`):
 
 ```bash
-./bin/server -t sse -c config.json -v
+./bin/server -t sse -allow-insecure-sse -c config.json -v
 ```
 
 ## Testing
@@ -881,12 +962,14 @@ All tests run automatically on every pull request via GitHub Actions. The CI pip
 
 Teams that want AI agents to query production databases without raw credentials
 need more than the basics. The core already provides best-effort read-only checks (defense in depth, not a
-guarantee; SELECT-only database users are the real control), PII masking, a row cap (`max_rows`), an audit log (`DB_MCP_AUDIT_LOG`), and OIDC bearer
-or API-key scopes on the HTTP transport, as described in
-[Production Guardrails](#production-guardrails). Per-agent roles and permissions,
-agent identity in the audit trail, query cost limits, and a managed deployment
-(PostgreSQL and MySQL first) are in development with design partners and are not
-shipped yet.
+guarantee; SELECT-only database users are the real control), PII masking, a row cap (`max_rows`), an audit log
+(`DB_MCP_AUDIT_LOG`, which records the caller's principal and session), and authentication on the streamable
+HTTP `/mcp` endpoint (static API key or OIDC bearer token). The legacy SSE transport has no built-in
+authentication and is disabled unless `-allow-insecure-sse` is passed; see
+[Production Guardrails](#production-guardrails) and [Streamable HTTP](#streamable-http-experimental).
+Per-agent roles and permissions, distinct per-agent identities or keys beyond the API-key or OIDC principal,
+query cost limits, and a managed deployment (PostgreSQL and MySQL first) are in development with design
+partners and are not shipped yet.
 
 To discuss your requirements, [open a new issue](https://github.com/FreePeak/db-mcp-server/issues/new)
 and describe your setup: the databases, how your agents connect, and which controls you need.

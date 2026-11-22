@@ -74,8 +74,7 @@ func (uc *DatabaseUseCase) HealthCheck(ctx context.Context, dbID string) (map[st
 func (uc *DatabaseUseCase) engineHealthStats(ctx context.Context, dbID, dbType string) map[string]interface{} {
 	stats := map[string]interface{}{}
 
-	var query func(string) string
-	query = func(sql string) string {
+	query := func(sql string) string {
 		out, err := uc.ExecuteQuery(ctx, dbID, sql, nil)
 		if err != nil {
 			stats["engine_stats_error"] = err.Error()

@@ -60,7 +60,11 @@ func connectDirectly() {
 	if err := database.Connect(); err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer func() { _ = database.Close() }()
+	defer func() {
+		if err := database.Close(); err != nil {
+			log.Printf("Failed to close database: %v", err)
+		}
+	}()
 
 	fmt.Println("Successfully connected to PostgreSQL")
 	fmt.Println("Connection string (masked): ", database.ConnectionString())
@@ -82,7 +86,11 @@ func connectDirectly() {
 	if err != nil {
 		log.Fatalf("Query failed: %v", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Failed to close rows: %v", err)
+		}
+	}()
 
 	fmt.Println("\nAvailable databases:")
 	for rows.Next() {
@@ -147,7 +155,11 @@ func connectWithManager() {
 	if err := manager.Connect(); err != nil {
 		log.Fatalf("Failed to connect to databases: %v", err)
 	}
-	defer func() { _ = manager.CloseAll() }()
+	defer func() {
+		if err := manager.CloseAll(); err != nil {
+			log.Printf("Failed to close databases: %v", err)
+		}
+	}()
 
 	// Get a specific database connection
 	database, err := manager.GetDatabase("postgres17")

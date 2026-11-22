@@ -1283,32 +1283,80 @@ func (t *TimescaleDBTool) handleTimeSeriesQuery(ctx context.Context, request ser
 	if err := ensureTimescaleExtension(ctx, dbID, useCase); err != nil {
 		return nil, err
 	}
+	sql, err := buildTimeSeriesQuerySQL(request.Parameters)
+	if err != nil {
+		return nil, err
+	}
+	bucketInterval := getStringParam(request.Parameters, "bucket_interval")
+	formatPretty := getBoolParam(request.Parameters, "format_pretty")
+
+	// ExecuteQuery rather than ExecuteStatement: this is a pure SELECT and
+	// must stay available on read_only databases
+	result, err := useCase.ExecuteQuery(ctx, dbID, sql, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute time-series query: %w", err)
+	}
+
+	// Generate the response
+	response := map[string]interface{}{
+		"message": "Successfully retrieved time-series data",
+		"details": result,
+	}
+
+	// Add metadata if pretty format is requested
+	if formatPretty {
+		// Try to parse the result JSON for better presentation
+		var resultData []map[string]interface{}
+		if err := json.Unmarshal([]byte(result), &resultData); err == nil {
+			// Add statistics about the data
+			numRows := len(resultData)
+			response = addMetadata(response, "num_rows", numRows)
+			response = addMetadata(response, "time_bucket_interval", bucketInterval)
+
+			if numRows > 0 {
+				// Extract time range from the data if available
+				if firstBucket, ok := resultData[0]["time_bucket"].(string); ok {
+					response = addMetadata(response, "first_bucket", firstBucket)
+				}
+				if lastBucket, ok := resultData[numRows-1]["time_bucket"].(string); ok {
+					response = addMetadata(response, "last_bucket", lastBucket)
+				}
+			}
+		}
+	}
+
+	return response, nil
+}
+
+// buildTimeSeriesQuerySQL composes the time_series_query statement from the
+// caller's parameters. The handler executes this exact text and the scope
+// check classifies it, so both must share this one builder.
+func buildTimeSeriesQuerySQL(params map[string]interface{}) (string, error) {
 	// Extract required parameters
-	targetTable, ok := request.Parameters["target_table"].(string)
+	targetTable, ok := params["target_table"].(string)
 	if !ok || targetTable == "" {
-		return nil, fmt.Errorf("target_table parameter is required")
+		return "", fmt.Errorf("target_table parameter is required")
 	}
 
-	timeColumn, ok := request.Parameters["time_column"].(string)
+	timeColumn, ok := params["time_column"].(string)
 	if !ok || timeColumn == "" {
-		return nil, fmt.Errorf("time_column parameter is required")
+		return "", fmt.Errorf("time_column parameter is required")
 	}
 
-	bucketInterval, ok := request.Parameters["bucket_interval"].(string)
+	bucketInterval, ok := params["bucket_interval"].(string)
 	if !ok || bucketInterval == "" {
-		return nil, fmt.Errorf("bucket_interval parameter is required")
+		return "", fmt.Errorf("bucket_interval parameter is required")
 	}
 
 	// Extract optional parameters
-	startTimeStr := getStringParam(request.Parameters, "start_time")
-	endTimeStr := getStringParam(request.Parameters, "end_time")
-	aggregations := getStringParam(request.Parameters, "aggregations")
-	whereCondition := getStringParam(request.Parameters, "where_condition")
-	groupBy := getStringParam(request.Parameters, "group_by")
-	orderBy := getStringParam(request.Parameters, "order_by")
-	windowFunctions := getStringParam(request.Parameters, "window_functions")
-	limitStr := getStringParam(request.Parameters, "limit")
-	formatPretty := getBoolParam(request.Parameters, "format_pretty")
+	startTimeStr := getStringParam(params, "start_time")
+	endTimeStr := getStringParam(params, "end_time")
+	aggregations := getStringParam(params, "aggregations")
+	whereCondition := getStringParam(params, "where_condition")
+	groupBy := getStringParam(params, "group_by")
+	orderBy := getStringParam(params, "order_by")
+	windowFunctions := getStringParam(params, "window_functions")
+	limitStr := getStringParam(params, "limit")
 
 	// Set default values for optional parameters
 	if aggregations == "" {
@@ -1392,63 +1440,27 @@ func (t *TimescaleDBTool) handleTimeSeriesQuery(ctx context.Context, request ser
 		`, aggregations, windowFunctions, bucketInterval, timeColumn, aggregations, targetTable, whereClause, groupBy, orderBy, orderBy, limit)
 	}
 
-	// ExecuteQuery rather than ExecuteStatement: this is a pure SELECT and
-	// must stay available on read_only databases
-	result, err := useCase.ExecuteQuery(ctx, dbID, sql, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute time-series query: %w", err)
-	}
-
-	// Generate the response
-	response := map[string]interface{}{
-		"message": "Successfully retrieved time-series data",
-		"details": result,
-	}
-
-	// Add metadata if pretty format is requested
-	if formatPretty {
-		// Try to parse the result JSON for better presentation
-		var resultData []map[string]interface{}
-		if err := json.Unmarshal([]byte(result), &resultData); err == nil {
-			// Add statistics about the data
-			numRows := len(resultData)
-			response = addMetadata(response, "num_rows", numRows)
-			response = addMetadata(response, "time_bucket_interval", bucketInterval)
-
-			if numRows > 0 {
-				// Extract time range from the data if available
-				if firstBucket, ok := resultData[0]["time_bucket"].(string); ok {
-					response = addMetadata(response, "first_bucket", firstBucket)
-				}
-				if lastBucket, ok := resultData[numRows-1]["time_bucket"].(string); ok {
-					response = addMetadata(response, "last_bucket", lastBucket)
-				}
-			}
-		}
-	}
-
-	return response, nil
+	return sql, nil
 }
 
-// handleTimeSeriesAnalyze handles the analyze_time_series operation
-func (t *TimescaleDBTool) handleTimeSeriesAnalyze(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
-	if err := ensureTimescaleExtension(ctx, dbID, useCase); err != nil {
-		return nil, err
-	}
+// buildTimeSeriesAnalyzeSQL composes the analyze_time_series statement from the
+// caller's parameters. The handler executes this exact text and the scope
+// check classifies it, so both must share this one builder.
+func buildTimeSeriesAnalyzeSQL(params map[string]interface{}) (string, error) {
 	// Extract required parameters
-	targetTable, ok := request.Parameters["target_table"].(string)
+	targetTable, ok := params["target_table"].(string)
 	if !ok || targetTable == "" {
-		return nil, fmt.Errorf("target_table parameter is required")
+		return "", fmt.Errorf("target_table parameter is required")
 	}
 
-	timeColumn, ok := request.Parameters["time_column"].(string)
+	timeColumn, ok := params["time_column"].(string)
 	if !ok || timeColumn == "" {
-		return nil, fmt.Errorf("time_column parameter is required")
+		return "", fmt.Errorf("time_column parameter is required")
 	}
 
 	// Extract optional parameters
-	startTimeStr := getStringParam(request.Parameters, "start_time")
-	endTimeStr := getStringParam(request.Parameters, "end_time")
+	startTimeStr := getStringParam(params, "start_time")
+	endTimeStr := getStringParam(params, "end_time")
 
 	// Build WHERE clause
 	whereClause := ""
@@ -1468,6 +1480,19 @@ func (t *TimescaleDBTool) handleTimeSeriesAnalyze(ctx context.Context, request s
 			%s
 		%s
 	`, timeColumn, timeColumn, timeColumn, timeColumn, timeColumn, targetTable, whereClause)
+
+	return sql, nil
+}
+
+// handleTimeSeriesAnalyze handles the analyze_time_series operation
+func (t *TimescaleDBTool) handleTimeSeriesAnalyze(ctx context.Context, request server.ToolCallRequest, dbID string, useCase UseCaseProvider) (interface{}, error) {
+	if err := ensureTimescaleExtension(ctx, dbID, useCase); err != nil {
+		return nil, err
+	}
+	sql, err := buildTimeSeriesAnalyzeSQL(request.Parameters)
+	if err != nil {
+		return nil, err
+	}
 
 	// ExecuteQuery rather than ExecuteStatement: this is a pure SELECT and
 	// must stay available on read_only databases
