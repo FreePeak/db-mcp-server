@@ -196,6 +196,16 @@ For browser-origin requests, set an explicit comma-separated allowlist:
 MCP_ALLOWED_ORIGINS=https://agent.example.com
 ```
 
+The SDK applies these request rules to the `streamable` endpoint:
+
+- When the server listens on a loopback address (the default `-h 127.0.0.1`),
+  a request whose `Host` header is not a loopback name is rejected with `403`.
+- Each `MCP_ALLOWED_ORIGINS` entry must be `scheme://host[:port]`, with no
+  path, query, fragment, or trailing slash. Invalid entries are logged and
+  ignored, so browser requests from that origin still get `403`.
+- A JSON `Content-Type` may carry parameters, such as
+  `application/json; charset=utf-8`.
+
 The built-in static bearer key is a bounded pilot mechanism. It grants
 `db:read` by default; set `DB_MCP_API_SCOPES=db:read,db:write` only for a
 trusted write client. `db:admin` is reserved for controlled administration.
@@ -228,6 +238,9 @@ a non-root, read-only-filesystem image with a private network, external secret
 store, and a TLS/OIDC gateway.
 
 ### Source Code Installation
+
+Building from source requires Go 1.25 or newer (`go.mod` sets `go 1.25.0`).
+CI and the published Docker and npm release builds use Go 1.26.
 
 ```bash
 # Clone the repository
