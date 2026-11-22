@@ -53,21 +53,53 @@ func OIDCBearerAuth(verifier sdkAuth.TokenVerifier, scopes []string) func(http.H
 // context that an OIDC verifier will provide later, so tool-level scopes and
 // SDK session ownership work consistently.
 func APIKeyAuthWithScopes(apiKey string, scopes []string) func(http.Handler) http.Handler {
-	grantedScopes := append([]string(nil), scopes...)
-	if len(grantedScopes) == 0 {
-		grantedScopes = []string{"db:read"}
-	}
-	verifier := func(_ context.Context, token string, _ *http.Request) (*sdkAuth.TokenInfo, error) {
+	grantedScopes := grantedScopesOrDefault(scopes)
+	return sdkAuth.RequireBearerToken(staticKeyVerifier(apiKey, grantedScopes), &sdkAuth.RequireBearerTokenOptions{Scopes: grantedScopes})
+}
+
+// staticKeyVerifier accepts exactly one shared key and grants scopes as the
+// principal "api-key".
+func staticKeyVerifier(apiKey string, scopes []string) sdkAuth.TokenVerifier {
+	granted := grantedScopesOrDefault(scopes)
+	return func(_ context.Context, token string, _ *http.Request) (*sdkAuth.TokenInfo, error) {
 		if subtle.ConstantTimeCompare([]byte(token), []byte(apiKey)) != 1 {
 			return nil, sdkAuth.ErrInvalidToken
 		}
-		return &sdkAuth.TokenInfo{
-			UserID:     "api-key",
-			Scopes:     grantedScopes,
-			Expiration: time.Now().Add(10 * 365 * 24 * time.Hour),
-		}, nil
+		return staticTokenInfo("api-key", granted, nil), nil
 	}
-	return sdkAuth.RequireBearerToken(verifier, &sdkAuth.RequireBearerTokenOptions{Scopes: grantedScopes})
+}
+
+// Scope names accepted in DB_MCP_API_SCOPES and agent key files.
+const (
+	scopeRead  = "db:read"
+	scopeWrite = "db:write"
+	scopeAdmin = "db:admin"
+)
+
+func isKnownScope(scope string) bool {
+	switch scope {
+	case scopeRead, scopeWrite, scopeAdmin:
+		return true
+	}
+	return false
+}
+
+func grantedScopesOrDefault(scopes []string) []string {
+	if len(scopes) == 0 {
+		return []string{scopeRead}
+	}
+	return append([]string(nil), scopes...)
+}
+
+// staticTokenInfo builds a TokenInfo for a key that never expires. The SDK
+// rejects a zero Expiration, so every static key gets a long-lived one.
+func staticTokenInfo(userID string, scopes []string, extra map[string]any) *sdkAuth.TokenInfo {
+	return &sdkAuth.TokenInfo{
+		UserID:     userID,
+		Scopes:     scopes,
+		Expiration: time.Now().Add(10 * 365 * 24 * time.Hour),
+		Extra:      extra,
+	}
 }
 
 func unauthorized(w http.ResponseWriter) {

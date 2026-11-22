@@ -273,15 +273,25 @@ func buildPostgresConnStr(config Config) string {
 
 	// Engine-level read-only enforcement: make every pooled connection
 	// reject writes server-side, so guardrails hold even if an application-
-	// layer check is bypassed. Skipped when the operator supplies their own
-	// options string.
-	if config.ReadOnly && config.Options["options"] == "" {
-		params = append(params, `options='-c default_transaction_read_only=on'`)
+	// layer check is bypassed. The read-only default is appended to the
+	// operator's own options string (PostgreSQL accepts several -c flags), so
+	// both apply. pqValue quotes the combined value for lib/pq, which does not
+	// URL-decode key=value options.
+	if config.ReadOnly {
+		readOnlyOption := "-c default_transaction_read_only=on"
+		if operatorOptions := config.Options["options"]; operatorOptions != "" {
+			readOnlyOption = operatorOptions + " " + readOnlyOption
+		}
+		params = append(params, fmt.Sprintf("options=%s", pqValue(readOnlyOption)))
 	}
 
-	// Add any additional options from the map
+	// Add any additional options from the map; under read-only, "options" was
+	// already emitted above.
 	if config.Options != nil {
 		for key, value := range config.Options {
+			if key == "options" && config.ReadOnly {
+				continue
+			}
 			params = append(params, fmt.Sprintf("%s=%s", key, url.QueryEscape(value)))
 		}
 	}

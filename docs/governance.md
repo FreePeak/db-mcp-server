@@ -5,13 +5,14 @@ production databases. It covers transport and authentication, authorization,
 read-only connections, PII masking, query limits and the audit log. It ends
 with a worked example for a pilot.
 
-Each control is part of the open-source server. Each control runs only when
-you set it in the config file or the environment. Two checks run by default:
+Each control is part of the open-source server. Most controls run only when
+you set them in the config file or the environment. Two checks run by default:
 Streamable HTTP refuses to start without authentication, and legacy SSE stays
-off unless you opt in.
+off unless you opt in. Tool scopes apply to every Streamable HTTP call, and the
+default scope is `db:read`.
 
-Sections marked **Status** describe code that is not on `main` yet. Remove the
-status line when the code merges.
+Paragraphs with a Status line describe code that is not on `main` yet. Remove
+the Status line when that code merges.
 
 ## Overview
 
@@ -31,7 +32,7 @@ do not run for stdio. The database limits, masking and audit log still run.
 ### Secure transport defaults
 
 - Streamable HTTP refuses to start unless one of these is set: an OIDC issuer,
-  `DB_MCP_API_KEY`, `DB_MCP_API_KEY_FILE` or `-api-key`.
+  `DB_MCP_API_KEY`, `DB_MCP_API_KEY_FILE`, `-api-key` or `DB_MCP_AGENT_KEYS_FILE`.
 - Legacy SSE refuses to start unless `-allow-insecure-sse` is passed. It has no
   built-in authentication, and the API key does not apply to it.
 - The default bind address is `127.0.0.1` (`-h`).
@@ -63,7 +64,8 @@ Restart the server to rotate the key.
 
 Clients send the key as `Authorization: Bearer <key>`. The server compares the
 key in constant time. Calls made with this key use the principal `api-key`
-and the scopes in `DB_MCP_API_SCOPES` (default `db:read`).
+and the scopes in `DB_MCP_API_SCOPES` (default `db:read`). The shared key has
+no database allowlist.
 
 ### OIDC bearer tokens
 
@@ -71,8 +73,8 @@ Set both `DB_MCP_OIDC_ISSUER` and `DB_MCP_OIDC_AUDIENCE`. The audience is
 required when the issuer is set. The server:
 
 - runs OIDC discovery at startup and exits if discovery fails,
-- verifies each token's signature, expiry, issuer and audience (audience must
-  equal `DB_MCP_OIDC_AUDIENCE`),
+- verifies each token's signature, expiry, issuer and audience (the `aud`
+  claim must contain `DB_MCP_OIDC_AUDIENCE`),
 - requires a non-empty `sub` claim, which becomes the principal,
 - reads scopes from the claims `scope`, `scp`, `permissions` and `db_scopes`.
   Each claim may be a space-separated string or an array of strings.
@@ -80,9 +82,8 @@ required when the issuer is set. The server:
 When an issuer is set, OIDC replaces the shared key. `DB_MCP_API_KEY` is then
 not used for requests.
 
-Without a roles file, every request must carry every scope listed in
-`DB_MCP_API_SCOPES` (default `db:read`). A token that lacks one of them gets
-`403`.
+Every request must carry every scope listed in `DB_MCP_API_SCOPES` (default
+`db:read`). A token that lacks one of them gets `403`.
 
 Example: an OIDC configuration for a pilot.
 
@@ -94,30 +95,26 @@ DB_MCP_API_SCOPES=db:read
 
 ### Protected resource metadata
 
-> **Status:** not on `main` yet. It comes from PR #123.
-
 Set `DB_MCP_RESOURCE_URL` to the absolute `http` or `https` URL of the `/mcp`
 endpoint. It requires `DB_MCP_OIDC_ISSUER`. Startup fails without the issuer or
-when the URL is not absolute.
+when the URL is not an absolute `http` or `https` URL.
 
 With the variable set, the server does two things.
 
 - It serves the RFC 9728 metadata document at
-  `/.well-known/oauth-protected-resource` followed by the path of the resource
-  URL. The document is outside the authentication check. It lists `resource`,
+  `/.well-known/oauth-protected-resource`. When the resource URL has a path, the
+  document is also served at that path appended to the well-known prefix. The
+  document is outside the authentication check. It lists `resource`,
   `authorization_servers` (the issuer), `scopes_supported` (`db:read`,
   `db:write`, `db:admin`) and `bearer_methods_supported` (`header`).
 - It adds a `WWW-Authenticate` challenge to `401` and `403` responses from
-  `/mcp`. The challenge is `Bearer resource_metadata="<metadata-url>"`. It adds
-  `scope="..."` from `DB_MCP_API_SCOPES` when that is set. On `403` it adds
-  `error="insufficient_scope"`.
+  `/mcp`. The challenge is `Bearer resource_metadata="<metadata-url>"` with
+  `scope="..."` set to the scopes in `DB_MCP_API_SCOPES` (default `db:read`).
+  On `403` it adds `error="insufficient_scope"`.
 
 Without `DB_MCP_RESOURCE_URL`, `/mcp` sends no `resource_metadata` challenge.
 
 ### Per-agent keys file
-
-> **Status:** not on `main` yet. It comes from the agent keys branch
-> (`feat/agent-keys`).
 
 Give each agent its own key, identity, scopes and database allowlist. Set
 `DB_MCP_AGENT_KEYS_FILE` to a JSON list. Only the SHA-256 digest of each key is
@@ -150,26 +147,34 @@ Rules:
 
 - `id` is required. It must not have leading or trailing spaces, and it must be
   unique. The audit log records it as the principal.
-- `key_sha256` is 64 hex characters and must be unique.
+- `key_sha256` is 64 hex characters. It must be unique and must not be the
+  SHA-256 of an empty key.
 - `scopes` is required. Each value must be `db:read`, `db:write` or `db:admin`.
 - `databases` is required. List database ids from the config, or use `"*"`.
   Matching is exact and case-sensitive.
-- The file is read at startup only.
+- The file is read once at startup. It must be a regular file of at most 64 KiB.
+  An empty file is an error.
+- The parser rejects unknown fields (for example `expires_at`), data after the
+  list, and an empty list.
 - The file applies to Streamable HTTP only. With another transport the server
   ignores it and logs a warning.
 - The file cannot be combined with `DB_MCP_OIDC_ISSUER`. Startup fails.
+- The file requires `-unified-tools`, whatever its `databases` values are,
+  including `"*"`. Startup fails without it. See
+  [Database allowlists](#database-allowlists).
 - `DB_MCP_API_KEY` or `DB_MCP_API_KEY_FILE` may be set as well. That legacy key
   still works. It uses the scopes in `DB_MCP_API_SCOPES` and has no database
-  restriction.
-- Startup errors name the entry `id` and never the key.
+  restriction, so it may also call per-database tool names.
+- Startup errors name the entry by its `id` (or by its position in the list when
+  the `id` is missing). They never show the key.
 
-The file may also set `max_query_cost` per key. See the cost limit in
-[Query limits](#query-limits).
+> **Status: lands with the OIDC roles PR.** An entry may also set
+> `max_query_cost`, a per-key cost ceiling. See [Query limits](#query-limits).
 
 ### OIDC roles file
 
-> **Status:** not on `main` yet. It comes from the OIDC roles branch
-> (`feat/oidc-roles`), which contains the per-agent keys work.
+> **Status: lands with the OIDC roles PR.** This section describes
+> `DB_MCP_OIDC_ROLES_FILE`, which is not on `main` yet.
 
 Map one token claim to grants. Set `DB_MCP_OIDC_ROLES_FILE` to a JSON document.
 It requires `DB_MCP_OIDC_ISSUER`. Startup fails without it.
@@ -195,8 +200,8 @@ It requires `DB_MCP_OIDC_ISSUER`. Startup fails without it.
 
 Rules:
 
-- The claim may be a string or an array. The server splits strings on
-  whitespace.
+- The top-level `claim` is required. The claim may be a string or an array. The
+  server splits strings on whitespace.
 - The first role in file order whose value appears in the claim applies. Put
   the most specific role first.
 - A token that matches no role gets no scopes and no databases. Every call is
@@ -204,10 +209,10 @@ Rules:
 - Each `value` is required, must be unique and must not contain whitespace.
 - Each role needs `scopes` and `databases`. `max_query_cost` is optional and
   must not be negative.
-- When the roles file is set, the token's own scope claims are ignored. The
-  transport then requires no scopes of its own.
-- A role that lists databases other than `["*"]` requires `-unified-tools`.
-  Startup fails without it. See [Database allowlists](#database-allowlists).
+- When the roles file is set, the token's own scope claims are ignored, and the
+  transport does not require the `DB_MCP_API_SCOPES` scopes on each request.
+- The roles file requires `-unified-tools`, whatever its `databases` values are,
+  including `"*"`. Startup fails without it.
 
 ## Authorization
 
@@ -241,31 +246,36 @@ privileges they need.
 
 A denied call returns an error to the client. The message is
 `the authenticated principal lacks the required database scope`. The database
-is not reached.
+is not reached. The denial is written to the audit log (see [Audit log](#audit-log)).
 
 ### Database allowlists
 
-> **Status:** not on `main` yet. It comes from the per-agent keys and OIDC
-> roles branches.
+An allowlist limits an agent key to some databases.
 
-An allowlist limits a key or role to some databases.
+> **Status: lands with the OIDC roles PR.** The same allowlist rules apply to
+> OIDC roles, and an OIDC token with no roles file has no allowlist.
 
-- Every allowlisted principal may call only the unified tools: `query`,
+- A principal with an allowlist may call only the unified tools: `query`,
   `execute`, `transaction`, `performance`, `explain`, `describe`, `health`,
   `schema` and `filter_tables`. Each call must name a `database` argument on
-  the allowlist.
-- Per-database tool names such as `query_<id>` are denied for allowlisted
-  principals.
-- `list_databases` is always allowed. It still needs `db:read`.
-- Principals without an allowlist (stdio, the shared key, OIDC without a roles
-  file) are not restricted by database.
-- An allowlist of `["*"]` means no database restriction.
-- Any allowlist other than `["*"]` requires `-unified-tools`. The server refuses
-  to start without it.
-
-Current gap: the branches check `["*"]` the same way as other allowlists. Per-
-database tool names are denied even for `["*"]` until that fix lands. Use
-`-unified-tools` with allowlisted principals in the meantime.
+  the allowlist. TimescaleDB tools (`timescaledb_*`) are not in that list, so
+  they are denied.
+- Per-database tool names such as `query_<id>` are denied.
+- `"*"` grants every database. It does not lift the unified-tools rule: a key
+  with `["*"]` also calls only the unified tools, with a `database` argument.
+- `list_databases` is always allowed and still needs `db:read`. Its output lists
+  only the databases on the allowlist.
+- `tools/list` still names every configured database id, in the description of
+  each unified tool and of its `database` parameter. An allowlisted key can
+  therefore see database names, but its calls are restricted to its allowlist.
+  Do not treat database ids as secret.
+- A call to a database outside the allowlist is refused with
+  `the authenticated principal is not allowed to use this database`. The
+  database is not reached. The refusal is written to the audit log.
+- Principals without an allowlist (stdio and the shared key) are not restricted
+  by database.
+- The agent keys file and any roles file require `-unified-tools`, including
+  for `"*"`.
 
 ## Read-only connections
 
@@ -273,13 +283,15 @@ Set `"read_only": true` on a database. The server then enforces read-only in
 several places.
 
 - The query tool refuses write statements before it reaches the database.
-- The execute tool refuses every statement.
+- The execute tool refuses every statement on a read-only database.
 - A transaction started with `begin` in write mode is refused. A write
   statement inside a transaction is refused.
-- PostgreSQL and TimescaleDB open sessions with `default_transaction_read_only=on`.
-  Each query runs in a read-only transaction that is rolled back.
-- MySQL opens sessions with `transaction_read_only=1`.
-- SQLite opens the file with `mode=ro`.
+- PostgreSQL and TimescaleDB: the database session is read-only. The connection
+  sets `default_transaction_read_only=on`, and this stays in effect when the
+  connection also sets its own `options`. Each query also runs in a read-only
+  transaction that is rolled back.
+- MySQL: sessions open with `transaction_read_only=1`.
+- SQLite: the file opens with `mode=ro`.
 - Oracle has no session read-only switch. The connector checks the privileges of
   each new session. It refuses a read-only database whose credentials hold a
   write privilege. If the check cannot run, the session is refused.
@@ -291,8 +303,11 @@ agent needs.
 
 ## PII masking
 
-Two settings mask query results before they leave the server. Both apply to
-the query tool only. Schema, explain and performance output is not masked.
+Two settings mask query results before they leave the server: column rules
+(`masking_rules`) and content rules (`mask_pii`). Both are set by the operator
+in the config. They apply to every query result the server formats, including
+the catalog queries that the explain, describe, performance and health tools
+send. The per-query `mask_pii` parameter applies to the query tool only.
 
 ### Column rules: `masking_rules`
 
@@ -313,9 +328,9 @@ does not parse SQL, so rules match names only.
 
 `"mask_pii": true` does two things.
 
-- Columns whose names look like PII are replaced whole. Names containing
-  fragments such as `email`, `phone`, `ssn`, `card_number`, `credit_card` or
-  `iban` are covered.
+- Columns whose names contain a fixed fragment such as `email`, `phone`, `ssn`,
+  `card_number`, `credit_card` or `iban` are replaced whole. The full fragment
+  list is in `internal/usecase/pii_mask.go`.
 - Values in every column are scanned for common PII formats. A format is
   replaced when it appears as a whole pattern inside a cell:
 
@@ -342,9 +357,14 @@ never leave the database, also restrict access with database grants or views.
 ### Row cap: `max_rows`
 
 `"max_rows": N` truncates a result at N rows. The result ends with a notice:
-`Truncated: showing first N rows (max_rows=N)`. The server asks the engine for
-one row more than the cap, so it can tell that the result was truncated. `0`
-means no cap.
+`Truncated: showing first N rows (max_rows=N)`. `0` means no cap.
+
+On PostgreSQL (including TimescaleDB), MySQL and SQLite, the query tool also
+adds `LIMIT N+1` to a SELECT or WITH statement that has no bounding clause of its
+own (`LIMIT`, `OFFSET`, `FETCH`, `FOR`, `INTO` or `LOCK`). The engine then stops
+at the cap instead of sending every row. Statements the server cannot rewrite
+safely, all other statements, and Oracle results are truncated on the client
+instead.
 
 ### Cost limit: `max_query_cost`
 
@@ -355,9 +375,10 @@ limit. The unit is planner cost, not time.
   start if the limit is set on another engine, or if the value is negative.
 - The gate runs on the query tool. It estimates each `SELECT` or `WITH`
   statement with `EXPLAIN` before the statement runs. The estimate uses the
-  statement the server will run, including any row cap.
-- PostgreSQL reads the root `Total Cost`. MySQL sums the `query_cost` of each
-  query block.
+  statement the server will run, including any row cap. The gate's own
+  `EXPLAIN` is not written to the audit log.
+- PostgreSQL reads the root `Total Cost`. MySQL adds up the `query_cost` values
+  in the plan.
 - If the estimate is above the limit, the call fails with
   `estimated query cost <n> exceeds max_query_cost <limit> for database <id>`.
 - The gate fails closed. If the estimate cannot be obtained or read, the query
@@ -366,15 +387,14 @@ limit. The unit is planner cost, not time.
   runs the statement.
 - Explain with `analyze=true` is estimated first and refused above the limit.
 - Other statement types are not gated by this limit.
+- `0` (default) means off.
 
-> **Status:** the caller limit below is not on `main` yet. It comes from the
-> OIDC roles branch.
-
-A caller grant can also carry `max_query_cost` (see the roles and keys files).
-For a call, the effective limit is the smaller non-zero value of the database
-limit and the caller limit. The same check covers explain with `analyze=true`.
-A caller limit on an engine without an estimate, such as SQLite or Oracle,
-denies every `SELECT` and `WITH` for that caller.
+> **Status: lands with the OIDC roles PR.** A caller grant from an agent key or
+> an OIDC role can also carry `max_query_cost`. The effective limit is the
+> smaller non-zero value of the database limit and the caller limit, and the
+> same check covers explain with `analyze=true`. On an engine without a cost
+> estimate, such as SQLite or Oracle, a caller limit denies every `SELECT` and
+> `WITH` for that caller.
 
 ### Query timeout: `query_timeout`
 
@@ -385,33 +405,32 @@ connections that do not set their own value. The JSON value takes precedence.
 ## Audit log
 
 Set `DB_MCP_AUDIT_LOG=/path/audit.jsonl`. The server appends one JSON line per
-record. The file is created with mode `0600`. If the file cannot be opened at
-startup, the server logs a warning and runs without the audit log. Use
-`DB_MCP_AUDIT_REQUIRED` to make that a startup error.
+record. The file is created with mode `0600`. The server opens the file when it
+writes the first record. If the file cannot be opened, the server logs a warning
+and writes no records. Set `DB_MCP_AUDIT_REQUIRED` to open the file at startup
+and make a failure a startup error (see below).
 
-Records cover the query, execute and transaction paths. Explain, schema and
-performance calls write no record. Internal catalog queries that use the query
-path are recorded too.
+Records cover every statement the server sends through the query, execute and
+transaction paths, and every call refused by a tool scope or by an agent key's
+database allowlist. Calls that run no SQL write no record. The explain,
+describe, performance and health tools send their own SQL through the query
+path, so each statement they send is recorded as a `query` or `execute` record.
 
 | Field | Present when | Meaning |
 |-------|--------------|---------|
 | `ts` | always | UTC time, RFC 3339 with nanoseconds. |
-| `op` | always | `query`, `execute`, `tx_begin`, `tx_commit`, `tx_rollback` or `tx_execute`. `denied` marks a call refused by a tool scope (pending). |
+| `op` | always | `query`, `execute`, `denied`, or `tx_*` for each transaction tool action. `denied` marks a call refused before it reached the database. |
 | `database` | always | Database id. |
 | `statement` | always | Statement text as sent. Literal values appear in it. Bound parameter values are not written. Capped at 10,000 bytes, with `...[truncated]` appended. |
 | `duration_ms` | always | Duration in milliseconds, with microsecond precision. |
 | `principal` | the caller has one | OIDC `sub`, the agent key `id`, or `api-key` for the shared key. Stdio has none unless `DB_MCP_AUDIT_PRINCIPAL` is set. |
 | `session` | the transport has a session ID | MCP session ID (Streamable HTTP). |
-| `rows` | the count is known | Query: rows shown, capped at `max_rows`. Execute: rows affected. `tx_execute`: rows affected, counted before commit, so a later rollback does not change it. |
-| `error` | the call failed | The error text. This includes read-only refusals and cost-limit denials. |
-| `tool` | the call came through Streamable HTTP (pending) | MCP tool name. |
+| `tool` | the call came through Streamable HTTP | MCP tool name, such as `query`. Stdio and SSE records have none. |
+| `rows` | the count is known | Query: rows shown, capped at `max_rows`. Execute: rows affected. Transaction execute: rows affected, counted before the transaction ends, so a later rollback does not change it. |
+| `error` | the call failed or was denied | The error text. This includes read-only refusals, cost-limit denials, and the reason for a `denied` record. |
 
 The statement text can contain personal data. Protect the file like any other
 log that holds query text.
-
-> **Status:** `denied`, `tool`, `DB_MCP_AUDIT_REQUIRED` and
-> `DB_MCP_AUDIT_PRINCIPAL` come from PR #134. Scope refusals are recorded. A
-> database allowlist refusal is not recorded in the branches as they stand.
 
 - `DB_MCP_AUDIT_REQUIRED=true` (or `1`) makes startup fail unless
   `DB_MCP_AUDIT_LOG` is set and the file can be opened.

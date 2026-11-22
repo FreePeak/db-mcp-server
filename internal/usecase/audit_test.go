@@ -289,7 +289,7 @@ func TestAudit_OmitsCallerAndRowsWhenUnknown(t *testing.T) {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		t.Fatalf("corrupt audit line: %v", err)
 	}
-	for _, key := range []string{"principal", "session", "rows"} {
+	for _, key := range []string{"principal", "session", "rows", "tool"} {
 		if _, ok := fields[key]; ok {
 			t.Errorf("field %q must be omitted when unknown, line: %s", key, raw)
 		}
@@ -403,5 +403,127 @@ func TestAudit_UnauthenticatedQueryOmitsPrincipalAndSession(t *testing.T) {
 		if _, ok := fields[key]; ok {
 			t.Errorf("field %q must be omitted for an unauthenticated call, line: %s", key, raw)
 		}
+	}
+}
+
+// TestAudit_RecordsToolFromCaller checks that the MCP tool name carried on the
+// caller reaches the record.
+func TestAudit_RecordsToolFromCaller(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := EnableAuditLog(path); err != nil {
+		t.Fatalf("enable failed: %v", err)
+	}
+	t.Cleanup(DisableAuditLog)
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: openSQLiteForTest(t)}, dbType: "sqlite"})
+	ctx := WithCaller(context.Background(), Caller{Principal: "user@example.com", Tool: "query_orders"})
+	if _, err := uc.ExecuteQuery(ctx, "orders", "SELECT 1", nil); err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
+
+	recs := readAuditLines(t, path)
+	if len(recs) != 1 || recs[0].Tool != "query_orders" {
+		t.Fatalf("expected one record with tool query_orders, got %+v", recs)
+	}
+}
+
+// TestAuditDenied_WritesDeniedRecord checks that a refused call is written as a
+// denied record carrying the reason, the target and the caller.
+func TestAuditDenied_WritesDeniedRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := EnableAuditLog(path); err != nil {
+		t.Fatalf("enable failed: %v", err)
+	}
+	t.Cleanup(DisableAuditLog)
+
+	ctx := WithCaller(context.Background(), Caller{Principal: "ops", Session: "sess-1", Tool: "query_orders"})
+	AuditDenied(ctx, "orders", "DELETE FROM orders", "lacks scope")
+
+	recs := readAuditLines(t, path)
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record, got %d: %+v", len(recs), recs)
+	}
+	rec := recs[0]
+	if rec.Op != "denied" || rec.Error != "lacks scope" || rec.DurMS != 0 {
+		t.Errorf("denied record op/error/duration wrong: %+v", rec)
+	}
+	if rec.Database != "orders" || rec.Statement != "DELETE FROM orders" {
+		t.Errorf("denied record target wrong: %+v", rec)
+	}
+	if rec.Principal != "ops" || rec.Session != "sess-1" || rec.Tool != "query_orders" {
+		t.Errorf("denied record caller wrong: %+v", rec)
+	}
+}
+
+// TestAuditDenied_NoopWhenDisabled checks that a denial with no audit sink
+// neither opens one nor fails.
+func TestAuditDenied_NoopWhenDisabled(t *testing.T) {
+	t.Setenv("DB_MCP_AUDIT_LOG", "")
+	DisableAuditLog()
+	audit.once = sync.Once{}
+	t.Cleanup(func() { audit.once = sync.Once{} })
+
+	AuditDenied(context.Background(), "orders", "DELETE FROM orders", "lacks scope")
+	if audit.w != nil {
+		t.Fatal("AuditDenied opened a sink while audit logging was disabled")
+	}
+}
+
+// TestAudit_DefaultPrincipalFromEnv checks that DB_MCP_AUDIT_PRINCIPAL labels
+// calls with no caller principal, and that a caller principal still wins.
+func TestAudit_DefaultPrincipalFromEnv(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	t.Setenv("DB_MCP_AUDIT_PRINCIPAL", "ops-laptop")
+	if err := EnableAuditLog(path); err != nil {
+		t.Fatalf("enable failed: %v", err)
+	}
+	t.Cleanup(DisableAuditLog)
+
+	audit.record(context.Background(), "query", "db", "SELECT 1", 0, nil, nil)
+	audit.record(WithCaller(context.Background(), Caller{Principal: "user@example.com"}), "query", "db", "SELECT 1", 0, nil, nil)
+
+	recs := readAuditLines(t, path)
+	if len(recs) != 2 {
+		t.Fatalf("expected 2 records, got %d: %+v", len(recs), recs)
+	}
+	if recs[0].Principal != "ops-laptop" {
+		t.Errorf("empty caller principal = %q, want default ops-laptop", recs[0].Principal)
+	}
+	if recs[1].Principal != "user@example.com" {
+		t.Errorf("caller principal = %q, want user@example.com (token principal wins)", recs[1].Principal)
+	}
+}
+
+// TestRequireAuditLog_FailsWhenUnset checks that a required audit log with no
+// DB_MCP_AUDIT_LOG path is an error.
+func TestRequireAuditLog_FailsWhenUnset(t *testing.T) {
+	t.Setenv("DB_MCP_AUDIT_LOG", "")
+	if err := RequireAuditLog(); err == nil {
+		t.Fatal("expected an error when DB_MCP_AUDIT_LOG is unset")
+	}
+}
+
+// TestRequireAuditLog_FailsOnUnwritablePath checks that a required audit log
+// whose file cannot be created is an error.
+func TestRequireAuditLog_FailsOnUnwritablePath(t *testing.T) {
+	t.Setenv("DB_MCP_AUDIT_LOG", filepath.Join(t.TempDir(), "missing-dir", "audit.jsonl"))
+	if err := RequireAuditLog(); err == nil {
+		t.Fatal("expected an error when the audit file cannot be opened")
+	}
+}
+
+// TestRequireAuditLog_OKWithWritablePath checks that a writable path opens the
+// sink at startup instead of on the first record.
+func TestRequireAuditLog_OKWithWritablePath(t *testing.T) {
+	t.Setenv("DB_MCP_AUDIT_LOG", filepath.Join(t.TempDir(), "audit.jsonl"))
+	t.Cleanup(func() {
+		DisableAuditLog()
+		audit.once = sync.Once{}
+	})
+	if err := RequireAuditLog(); err != nil {
+		t.Fatalf("RequireAuditLog failed for a writable path: %v", err)
+	}
+	if audit.w == nil {
+		t.Fatal("RequireAuditLog returned nil without opening the sink")
 	}
 }

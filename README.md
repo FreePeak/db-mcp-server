@@ -120,22 +120,22 @@ Protect agent sessions against runaway queries and accidental writes:
 | `"masking_rules": [...]` | per database | Masks values of result columns whose **name** matches a rule's regex before they leave the server — applies to every query shape including `SELECT *`. Strategies: `"fixed_string"` (replace with `value`), `"null"`, and `"partial"` (`keep_last` trailing characters visible; shorter values fully masked). First matching rule wins; invalid patterns or unknown strategies abort config load (fail closed); masked-cell counts are reported in the result footer. Renaming a column with an alias bypasses name matching by design. See [docs/design/column-masking-scoping.md](docs/design/column-masking-scoping.md). |
 | `"mask_pii": true` | per database | Redacts PII in query results by **content shape**, not just column name: emails, phone numbers, Luhn-valid card numbers, SSNs, IPv4 addresses and 19+ digit identifiers are replaced with `[EMAIL]`/`[PHONE]`/`[CREDIT_CARD]`/`[SSN]`/`[IP_ADDRESS]`/`[LONG_NUMBER]` when they appear as a whole pattern inside a single cell, including free-text columns. Best-effort: values split across columns, non-standard formats, and names or addresses are not detected, and masking runs after the database has returned the data. Columns named like `email`/`card_number`/`iban` are redacted whole. Operator-controlled: once set, an agent **cannot** turn it off (the per-query `mask_pii` parameter is additive only). Composes with `masking_rules`. |
 | `"query_timeout": 30` | per database | Cancels statements that exceed the timeout in seconds; enforced at the repository layer for every tool (queries, statements, transactions, explain, schema inspection). Unset defaults to 30s; `-1` disables. Env-only deployments can set `QUERY_TIMEOUT_SECONDS` to fill connections without an explicit value (JSON keeps precedence). |
-| `"max_query_cost": 50000` | per database | Denies a `SELECT` or `WITH` through the query tool when its `EXPLAIN` planner-cost estimate is above the limit. Explain with `analyze=true` is estimated first and refused above the limit. PostgreSQL, TimescaleDB and MySQL only; startup fails on other engines and on a negative value. An estimate that cannot be obtained or read denies the query. `0` (default) means off. A caller limit from an agent key or OIDC role can lower it further. See [docs/governance.md](docs/governance.md#cost-limit-max_query_cost). |
+| `"max_query_cost": 50000` | per database | Denies a `SELECT` or `WITH` through the query tool when its `EXPLAIN` planner-cost estimate is above the limit. Explain with `analyze=true` is estimated first and refused above the limit. PostgreSQL, TimescaleDB and MySQL only; startup fails on other engines and on a negative value. An estimate that cannot be obtained or read denies the query. `0` (default) means off. A caller limit from an agent key or OIDC role can lower it further. _Status: lands with the OIDC roles PR._ See [docs/governance.md](docs/governance.md#cost-limit-max_query_cost). |
 | `DB_MCP_API_KEY` or `DB_MCP_API_KEY_FILE` | process | Shared Bearer key for Streamable HTTP. Set exactly one source (flag, env or file); Streamable HTTP refuses to start without authentication. Calls with this key use the principal `api-key`. The key file is read once at startup. |
 | `DB_MCP_OIDC_ISSUER` + `DB_MCP_OIDC_AUDIENCE` | process | OIDC bearer tokens on Streamable HTTP: discovery at startup, signature, issuer and audience checks, and the `sub` claim as the principal. When set, OIDC replaces the shared key. |
-| `DB_MCP_API_SCOPES` | process | Scopes granted to the shared key (default `db:read`) and required on every request under OIDC without a roles file. Each tool call also needs its own scope: `db:read`, `db:write` or `db:admin`. See [Tool scopes](#tool-scopes). |
-| `DB_MCP_AGENT_KEYS_FILE` | process | Per-agent keys: each agent gets a digest, an `id` (its audit principal), scopes and a database allowlist. Streamable HTTP only; cannot be combined with OIDC. Allowlisted keys use the unified tools only, so the server needs `-unified-tools`. _Pending merge: agent keys branch._ |
-| `DB_MCP_OIDC_ROLES_FILE` | process | Maps one token claim to a grant (scopes, databases, optional `max_query_cost`). The first matching role in file order applies; a token that matches no role is denied everything. Requires `DB_MCP_OIDC_ISSUER`. _Pending merge: OIDC roles branch._ |
-| `DB_MCP_RESOURCE_URL` | process | Serves RFC 9728 protected resource metadata at `/.well-known/oauth-protected-resource` and adds a `WWW-Authenticate` challenge to `/mcp` 401 and 403 responses. Requires `DB_MCP_OIDC_ISSUER`. _Pending PR #123._ |
-| `DB_MCP_AUDIT_LOG=/path/audit.jsonl` | process | Appends one JSONL record per executed statement — timestamp, op (`query`/`execute`/`tx_*`), database, statement (capped at 10,000 bytes), duration, error. Includes rejected attempts against read-only databases. Best-effort writes never fail a query; file is created with `0600`. Once PR #134 merges, also records calls refused by a tool scope (`op: "denied"`) and the `tool` field; `DB_MCP_AUDIT_REQUIRED=true` makes startup fail unless the log opens, and `DB_MCP_AUDIT_PRINCIPAL` labels records that have no principal (stdio). |
+| `DB_MCP_API_SCOPES` | process | Scopes granted to the shared key (default `db:read`) and required on every request under OIDC. _Status: lands with the OIDC roles PR: a roles file supplies each token's scopes instead._ Each tool call also needs its own scope: `db:read`, `db:write` or `db:admin`. See [Tool scopes](#tool-scopes). |
+| `DB_MCP_AGENT_KEYS_FILE` | process | Per-agent keys: each agent gets a digest, an `id` (its audit principal), scopes and a database allowlist. Streamable HTTP only; cannot be combined with OIDC. Every agent key, `"*"` included, uses the unified tools only, so the server needs `-unified-tools`. |
+| `DB_MCP_OIDC_ROLES_FILE` | process | Maps one token claim to a grant (scopes, databases, optional `max_query_cost`). The first matching role in file order applies; a token that matches no role is denied everything. Requires `DB_MCP_OIDC_ISSUER` and `-unified-tools`. _Status: lands with the OIDC roles PR._ |
+| `DB_MCP_RESOURCE_URL` | process | Serves RFC 9728 protected resource metadata at `/.well-known/oauth-protected-resource` and adds a `WWW-Authenticate` challenge to `/mcp` 401 and 403 responses. Requires `DB_MCP_OIDC_ISSUER`. |
+| `DB_MCP_AUDIT_LOG=/path/audit.jsonl` | process | Appends one JSONL record per executed statement — timestamp, op (`query`/`execute`/`tx_*`), database, statement (capped at 10,000 bytes), duration, error. Includes rejected attempts against read-only databases. Best-effort writes never fail a query; file is created with `0600`. Also records calls refused by a tool scope or by an agent key's database allowlist (`op: "denied"`, Streamable HTTP only) and the `tool` field; `DB_MCP_AUDIT_REQUIRED=true` makes startup fail unless the log opens, and `DB_MCP_AUDIT_PRINCIPAL` labels records that have no principal (stdio). |
 
 Each record also says **who** ran the statement and **how much** it touched. These fields are additive and omitted when unknown, so existing consumers keep working:
 
-- `principal`: the authenticated caller. For OIDC it is the token subject (`sub`); for the static API key it is `api-key`; for a per-agent key it is the key's `id` (pending merge). Omitted for stdio and other unauthenticated transports, unless `DB_MCP_AUDIT_PRINCIPAL` labels them (pending PR #134).
+- `principal`: the authenticated caller. For OIDC it is the token subject (`sub`); for the static API key it is `api-key`; for a per-agent key it is the key's `id`. Omitted for stdio and other unauthenticated transports, unless `DB_MCP_AUDIT_PRINCIPAL` labels them.
 - `session`: the MCP session ID, when the transport has one (Streamable HTTP). It is written to the owner-only (`0600`) audit file. Omitted otherwise.
 - `rows`: the number of rows shown for a query, capped at `max_rows` when the result is truncated (a query matching 100 rows with `max_rows=3` records `rows: 3`); rows affected for an execute; rows affected for a transaction execute, counted before commit, so a later rollback does not change the recorded count. Omitted when the statement failed or the engine did not report a count.
-- `tool`: the MCP tool name of the call, such as `query` or `execute`. Written for calls that come through Streamable HTTP (pending PR #134); stdio and SSE calls do not carry it.
-- `op: "denied"`: a call refused by a tool scope before it reached the database. `error` holds the reason and `rows` is omitted. Denials are written only for Streamable HTTP (pending PR #134). A refusal by a database allowlist is not written in the branches as they stand.
+- `tool`: the MCP tool name of the call, such as `query` or `execute`. Written for calls that come through Streamable HTTP; stdio and SSE calls do not carry it.
+- `op: "denied"`: a call refused by a tool scope, or by an agent key's database allowlist, before it reached the database. `error` holds the reason and `rows` is omitted. Written only for Streamable HTTP.
 
 Example line (placeholder values):
 
@@ -145,7 +145,7 @@ Example line (placeholder values):
 
 > **Defense in depth**: read-only is best-effort and is not a guarantee. The layers are the application check, engine session defaults (not a security boundary on their own), and the database user's privileges. For strong guarantees, connect with a database account that only has SELECT privileges.
 
-The production controls guide, with the formats of the key and role files, the authorization rules and a
+The production controls guide, with the agent keys file format, the authorization rules and a
 worked pilot example, is in [docs/governance.md](docs/governance.md).
 
 ## Supported Databases
@@ -279,11 +279,76 @@ The SQL check is the textual classifier in `internal/usecase/sql_guard.go`. It
 is a best-effort gate, not a parser or a sandbox, so run read-scoped clients
 against a least-privilege database user.
 
+#### Per-agent keys (`DB_MCP_AGENT_KEYS_FILE`)
+
+Give each agent its own key, identity, scopes and database allowlist by pointing
+`DB_MCP_AGENT_KEYS_FILE` at a JSON list. Only SHA-256 digests are stored.
+Agent keys can call only the unified tools, so start the server with
+`-unified-tools` (there is no environment variable for it). With the file set and
+the flag off, the server refuses to start:
+
+```json
+[
+  {"id": "reporting-agent", "key_sha256": "<64 hex chars>", "scopes": ["db:read"], "databases": ["sales"]},
+  {"id": "ops-agent", "key_sha256": "<64 hex chars>", "scopes": ["db:read", "db:write"], "databases": ["*"]}
+]
+```
+
+Generate a random key for each agent, and store only its SHA-256 digest in the
+file. The key is the agent's bearer token, so give it to the agent and keep it
+out of the file:
+
+```bash
+KEY="$(openssl rand -hex 32)"                          # give this to the agent
+printf '%s' "$KEY" | shasum -a 256 | cut -d' ' -f1     # put this in key_sha256
+```
+
+Keys do not expire. To rotate, generate a new key, replace the entry's
+`key_sha256` (or add a new entry and remove the old one), and restart the server:
+the file is read only at startup.
+
+- `scopes` is required: one or more of `db:read`, `db:write`, `db:admin`.
+- `databases` is required and must be non-empty. List database ids from the
+  config, or use `"*"` (alone or among other values) for every database. Matching
+  is exact and case-sensitive; a missing or non-string `database` argument is
+  denied.
+- The allowlist is per configured database, not per schema or table. A
+  connection that can reach other schemas can reach them through SQL, so give
+  each database a least-privilege DB user.
+- Scope and allowlist both apply to every call. An allowlisted key may call only
+  the unified tools (`query`, `execute`, `transaction`, `performance`, `explain`,
+  `describe`, `health`, `schema`, `filter_tables`) with a `database` argument;
+  per-database tool names (`query_<id>`) are denied. TimescaleDB tools
+  (`timescaledb_*`) are not in that list, so agent keys cannot use them.
+  `list_databases` is always callable and lists only the databases in the key's
+  allowlist (`"*"` lists all). The audit log records the entry `id` as the
+  principal.
+- Discovery is not limited by the allowlist. `tools/list` returns the unified
+  tool descriptions and the `database` parameter description, and both name every
+  configured database id to any authenticated key. The allowlist controls which
+  databases a key can use, not which ids it can see. Do not rely on database ids
+  being secret.
+- Streamable HTTP only. With stdio or SSE the file is ignored: the server logs a
+  warning and prints it to stderr (stdout carries MCP traffic).
+- Cannot be combined with OIDC. With streamable HTTP, setting
+  `DB_MCP_OIDC_ISSUER` together with this file is a startup error.
+- `DB_MCP_API_SCOPES` applies only to the legacy key (`DB_MCP_API_KEY` or
+  `DB_MCP_API_KEY_FILE`), never to agent keys. The legacy key, when also set,
+  still works after the agent keys are checked, and it is the only key a
+  streamable server needs when no agent keys file is set.
+
+The server refuses to start on: invalid JSON; an unknown field (for example
+`expires_at`, since keys do not expire); data after the list; an empty file
+(`[]`); a missing or empty `scopes` or `databases`; a missing, blank or
+whitespace-padded `id`; a duplicate `id` or `key_sha256`; a `key_sha256` that is
+not 64 hex characters or is the SHA-256 of the empty string; an unknown scope; and
+the file set without `-unified-tools`. Errors name the entry id, never the key.
+
 ### Docker image
 
 The image defaults to the authenticated Streamable HTTP transport
 (`TRANSPORT_MODE=streamable`). It refuses to start without `DB_MCP_API_KEY`,
-`DB_MCP_API_KEY_FILE`, or OIDC configuration, and the container exits non-zero with an authentication
+`DB_MCP_API_KEY_FILE`, `DB_MCP_AGENT_KEYS_FILE`, or OIDC configuration, and the container exits non-zero with an authentication
 error otherwise. It runs as an unprivileged user, omits an embedded config
 (mount one at `/app/config.json`), and serves an unauthenticated `/health`
 probe on port `9093` in both HTTP modes.
@@ -297,6 +362,17 @@ docker run --rm -p 127.0.0.1:9092:9092 -p 127.0.0.1:9093:9093 \
   -e DB_MCP_API_KEY \
   -v "$(pwd)/config.local.json:/app/config.json:ro" \
   db-mcp-server:local
+```
+
+Agent keys need the unified tools, and the image's default command does not pass
+`-unified-tools`. Override the command so the server gets the flag:
+
+```bash
+docker run --rm -p 127.0.0.1:9092:9092 -p 127.0.0.1:9093:9093 \
+  -e DB_MCP_AGENT_KEYS_FILE=/app/agent-keys.json \
+  -v "$(pwd)/config.local.json:/app/config.json:ro" \
+  -v "$(pwd)/agent-keys.json:/app/agent-keys.json:ro" \
+  db-mcp-server:local /app/server -t streamable -h 0.0.0.0 -p 9092 -c /app/config.json -unified-tools
 ```
 
 Legacy SSE has no built-in authentication. It runs only when both variables are
@@ -491,13 +567,17 @@ Values in a `.env` file are loaded first; real environment variables take preced
 | `DB_MCP_API_KEY_FILE` | empty | Path to a file holding the Bearer key (trailing newline trimmed; an empty or whitespace-only file is an error). Use for Docker/Kubernetes secrets |
 | `ALLOW_INSECURE_SSE` | unset | Docker image only: `true` passes `-allow-insecure-sse` so `TRANSPORT_MODE=sse` can start |
 | `DB_MCP_API_SCOPES` | `db:read` | Required/granted scopes: `db:read`, `db:write`, and/or `db:admin` |
+| `DB_MCP_AGENT_KEYS_FILE` | empty | JSON file of per-agent key digests, scopes and database allowlists (see above) |
 | `DB_MCP_OIDC_ISSUER` | empty | OIDC issuer URL; when set, OIDC/JWT verification replaces the static pilot key |
 | `DB_MCP_OIDC_AUDIENCE` | empty | Required OIDC audience/client ID |
+| `DB_MCP_RESOURCE_URL` | empty | Public URL of `/mcp` (for example `https://db.example.com/mcp`); with `DB_MCP_OIDC_ISSUER` it serves OAuth protected resource metadata (RFC 9728) so MCP clients can discover the identity provider |
 | `LOG_LEVEL` | `info` | Log verbosity (`debug`, `info`, `warn`, `error`) |
 | `DISABLE_LOGGING` | `false` | `true`/`1` silences logging entirely |
 | `DB_TYPE`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | engine defaults | Single-database fallback when no JSON config exists |
 | `QUERY_TIMEOUT_SECONDS` | unset | Fills connections that don't set their own `query_timeout`; negative disables the cap. JSON configs keep precedence. |
 | `DB_MCP_AUDIT_LOG` | unset | Optional append-only JSONL audit path |
+| `DB_MCP_AUDIT_PRINCIPAL` | unset | Principal recorded for audit records with no authenticated caller (stdio sessions); a token principal always wins |
+| `DB_MCP_AUDIT_REQUIRED` | unset | `true`/`1` makes startup fail unless `DB_MCP_AUDIT_LOG` is set and its file can be opened |
 | `VERBOSE` | unset | `true`/`1` sets the startup log level to `debug` (the default is `error`, i.e. silent unless `LOG_LEVEL` is set) |
 | `MCP_DISABLE_LOGGING` | unset | `true`/`1` discards MCP protocol logs (writer-level switch, independent of `LOG_LEVEL`/`DISABLE_LOGGING`) |
 
@@ -977,9 +1057,9 @@ guarantee; SELECT-only database users are the real control), PII masking, a row 
 HTTP `/mcp` endpoint (static API key or OIDC bearer token). The legacy SSE transport has no built-in
 authentication and is disabled unless `-allow-insecure-sse` is passed; see
 [Production Guardrails](#production-guardrails) and [Streamable HTTP](#streamable-http-experimental).
-Shipped: per-agent keys with scopes and database allowlists (`DB_MCP_AGENT_KEYS_FILE`), OIDC role grants with
-optional per-caller cost limits (`DB_MCP_OIDC_ROLES_FILE`), and query cost limits (`max_query_cost`). In
-development with design partners and not shipped yet: a managed deployment (PostgreSQL and MySQL first).
+Shipped: per-agent keys with scopes and database allowlists (`DB_MCP_AGENT_KEYS_FILE`) and query cost limits
+(`max_query_cost`). _Status: lands with the OIDC roles PR:_ OIDC role grants with optional per-caller cost limits
+(`DB_MCP_OIDC_ROLES_FILE`). In development with design partners and not shipped yet: a managed deployment (PostgreSQL and MySQL first).
 
 To discuss your requirements, [open a new issue](https://github.com/FreePeak/db-mcp-server/issues/new)
 and describe your setup: the databases, how your agents connect, and which controls you need.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	cortexServer "github.com/FreePeak/cortex/pkg/server"
@@ -58,13 +59,30 @@ func adaptCortexHandler(handler func(context.Context, cortexServer.ToolCallReque
 				return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "invalid tool arguments: " + err.Error()}
 			}
 		}
+		caller := callerFromRequest(request)
+		caller.Tool = request.Params.Name
+		ctx = usecase.WithCaller(ctx, caller)
 		if !toolScopeAllowed(request, arguments) {
+			const reason = "the authenticated principal lacks the required database scope"
+			dbID, statement := deniedCallTarget(request.Params.Name, arguments)
+			usecase.AuditDenied(ctx, dbID, statement, reason)
 			return &sdkmcp.CallToolResult{
 				IsError: true,
-				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "the authenticated principal lacks the required database scope"}},
+				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: reason}},
 			}, nil
 		}
-		ctx = usecase.WithCaller(ctx, callerFromRequest(request))
+		if !toolDatabaseAllowed(request, arguments) {
+			const reason = "the authenticated principal is not allowed to use this database"
+			dbID, statement := deniedCallTarget(request.Params.Name, arguments)
+			usecase.AuditDenied(ctx, dbID, statement, reason)
+			return &sdkmcp.CallToolResult{
+				IsError: true,
+				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: reason}},
+			}, nil
+		}
+		if allowlist, scoped := databaseAllowlist(request); scoped {
+			ctx = withDatabaseAllowlist(ctx, allowlist)
+		}
 		result, err := handler(ctx, cortexServer.ToolCallRequest{
 			Name:       request.Params.Name,
 			Parameters: arguments,
@@ -79,17 +97,85 @@ func adaptCortexHandler(handler func(context.Context, cortexServer.ToolCallReque
 	}
 }
 
+// deniedCallTarget names the database and statement a refused call addressed,
+// for the audit record. The database falls back to the ID in the tool name.
+func deniedCallTarget(name string, arguments map[string]interface{}) (dbID, statement string) {
+	dbID = getStringParam(arguments, "database")
+	if dbID == "" {
+		dbID = extractDatabaseIDFromName(name)
+	}
+	statement = getStringParam(arguments, "query")
+	if statement == "" {
+		statement = getStringParam(arguments, "statement")
+	}
+	return dbID, statement
+}
+
 func toolScopeAllowed(request *sdkmcp.CallToolRequest, arguments map[string]interface{}) bool {
 	if request.Extra == nil || request.Extra.TokenInfo == nil {
 		return true
 	}
 	required := requiredToolScope(request.Params.Name, arguments)
 	for _, scope := range request.Extra.TokenInfo.Scopes {
-		if scope == required || scope == "db:admin" {
+		if scope == required || scope == scopeAdmin {
 			return true
 		}
 	}
 	return false
+}
+
+// listDatabasesTool is the one registered tool that takes no database target.
+const listDatabasesTool = "list_databases"
+
+// toolDatabaseAllowed enforces a per-agent database allowlist. Principals
+// without an allowlist (stdio, legacy key, OIDC) are unrestricted. A principal
+// that carries one is denied anything not listed, so an empty list denies
+// everything; "*" lists every database. An allowlisted principal may call only
+// the unified tools, with a `database` argument on the allowlist, because
+// per-database tool names such as query_<id> carry the target in the name where
+// it cannot be checked reliably. list_databases has no target and is always
+// allowed.
+func toolDatabaseAllowed(request *sdkmcp.CallToolRequest, arguments map[string]interface{}) bool {
+	allowlist, scoped := databaseAllowlist(request)
+	if !scoped {
+		return true
+	}
+	name := request.Params.Name
+	if name == listDatabasesTool {
+		return true
+	}
+	if !slices.Contains(unifiedDatabaseToolTypes, name) {
+		return false
+	}
+	database, ok := arguments["database"].(string)
+	if !ok || database == "" {
+		return false
+	}
+	return allowlistPermits(allowlist, database)
+}
+
+// databaseAllowlist returns the database allowlist of the authenticated
+// principal and whether it has one. A value that is not a string list yields a
+// nil allowlist, which grants nothing.
+func databaseAllowlist(request *sdkmcp.CallToolRequest) ([]string, bool) {
+	if request.Extra == nil || request.Extra.TokenInfo == nil {
+		return nil, false
+	}
+	raw, scoped := request.Extra.TokenInfo.Extra["databases"]
+	if !scoped {
+		return nil, false
+	}
+	databases, ok := raw.([]string)
+	if !ok {
+		return nil, true
+	}
+	return databases, true
+}
+
+// allowlistPermits reports whether an allowlist grants a database id. "*"
+// grants every database.
+func allowlistPermits(allowlist []string, database string) bool {
+	return slices.Contains(allowlist, allDatabases) || slices.Contains(allowlist, database)
 }
 
 // readOnlyToolTypes are tool types whose every call is read-only.
@@ -127,7 +213,7 @@ var readOnlyTimescaleOperations = map[string]bool{
 func requiredToolScope(name string, arguments map[string]interface{}) string {
 	switch {
 	case hasToolPrefix(name, "execute"), hasToolPrefix(name, "transaction"):
-		return "db:write"
+		return scopeWrite
 	case hasToolPrefix(name, "query"):
 		return sqlScope(getStringParam(arguments, "query"))
 	case hasToolPrefix(name, "explain"):
@@ -135,27 +221,27 @@ func requiredToolScope(name string, arguments map[string]interface{}) string {
 	case hasToolPrefix(name, "performance"):
 		action := getStringParam(arguments, "action")
 		if readOnlyPerformanceActions[action] {
-			return "db:read"
+			return scopeRead
 		}
-		return "db:write"
+		return scopeWrite
 	case strings.HasPrefix(name, "timescaledb_"):
 		return timescaleScope(arguments)
 	}
 	for _, base := range readOnlyToolTypes {
 		if hasToolPrefix(name, base) {
-			return "db:read"
+			return scopeRead
 		}
 	}
-	return "db:write"
+	return scopeWrite
 }
 
 // sqlScope classifies a statement with the shared write guard. A blank
 // statement is treated as missing and fails closed.
 func sqlScope(sql string) string {
 	if strings.TrimSpace(sql) == "" || usecase.IsWriteStatement(sql) {
-		return "db:write"
+		return scopeWrite
 	}
-	return "db:read"
+	return scopeRead
 }
 
 // timescaleScope dispatches on the operation argument, which the handler
@@ -172,12 +258,12 @@ func timescaleScope(arguments map[string]interface{}) string {
 		sql, err = buildTimeSeriesAnalyzeSQL(arguments)
 	default:
 		if readOnlyTimescaleOperations[operation] {
-			return "db:read"
+			return scopeRead
 		}
-		return "db:write"
+		return scopeWrite
 	}
 	if err != nil {
-		return "db:write"
+		return scopeWrite
 	}
 	return sqlScope(sql)
 }
@@ -239,4 +325,35 @@ func callerFromRequest(request *sdkmcp.CallToolRequest) usecase.Caller {
 		caller.Session = request.Session.ID()
 	}
 	return caller
+}
+
+// databaseAllowlistKey carries a principal's database allowlist to handlers.
+type databaseAllowlistKey struct{}
+
+// databaseScope is the allowlist of a principal that has one. A nil
+// databases slice denies every database.
+type databaseScope struct {
+	databases []string
+}
+
+// withDatabaseAllowlist returns a copy of ctx that limits database listings to
+// databases; "*" lists every database.
+func withDatabaseAllowlist(ctx context.Context, databases []string) context.Context {
+	return context.WithValue(ctx, databaseAllowlistKey{}, databaseScope{databases: databases})
+}
+
+// allowedDatabases returns the ids in databases that the context's principal
+// may see. Without an allowlist in ctx every id is returned.
+func allowedDatabases(ctx context.Context, databases []string) []string {
+	scope, scoped := ctx.Value(databaseAllowlistKey{}).(databaseScope)
+	if !scoped {
+		return databases
+	}
+	var visible []string
+	for _, id := range databases {
+		if allowlistPermits(scope.databases, id) {
+			visible = append(visible, id)
+		}
+	}
+	return visible
 }

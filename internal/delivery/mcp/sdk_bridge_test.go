@@ -2,9 +2,12 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,8 +15,11 @@ import (
 	cortexTools "github.com/FreePeak/cortex/pkg/tools"
 	sdkAuth "github.com/modelcontextprotocol/go-sdk/auth"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 
+	"github.com/FreePeak/db-mcp-server/internal/domain"
 	"github.com/FreePeak/db-mcp-server/internal/usecase"
 )
 
@@ -296,4 +302,285 @@ func TestAdaptCortexHandlerPassesPrincipalToUseCase(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, seen.Principal)
 	require.Empty(t, seen.Session)
+}
+
+func restrictedRequest(name string, databases []string) *sdkmcp.CallToolRequest {
+	return &sdkmcp.CallToolRequest{
+		Params: &sdkmcp.CallToolParamsRaw{Name: name},
+		Extra: &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{
+			UserID: "agent-a",
+			Scopes: []string{"db:read"},
+			Extra:  map[string]any{"databases": databases},
+		}},
+	}
+}
+
+func TestToolDatabaseAllowed(t *testing.T) {
+	tests := []struct {
+		name      string
+		request   *sdkmcp.CallToolRequest
+		arguments map[string]interface{}
+		want      bool
+	}{
+		{"no token info (stdio) is unrestricted", &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query"}}, map[string]interface{}{"database": "prod"}, true},
+		{"token without allowlist (legacy or OIDC) is unrestricted", &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query"}, Extra: &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{UserID: "api-key"}}}, map[string]interface{}{"database": "prod"}, true},
+		{"empty allowlist fails closed", restrictedRequest("query", []string{}), map[string]interface{}{"database": "prod"}, false},
+		{"nil allowlist fails closed", restrictedRequest("query", nil), map[string]interface{}{"database": "prod"}, false},
+		{"star allows any database", restrictedRequest("query", []string{"*"}), map[string]interface{}{"database": "prod"}, true},
+		{"star among entries allows any database", restrictedRequest("query", []string{"sales", "*"}), map[string]interface{}{"database": "prod"}, true},
+		{"star does not allow a missing database argument", restrictedRequest("query", []string{"*"}), map[string]interface{}{}, false},
+		{"allowed database", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": "sales"}, true},
+		{"second listed database", restrictedRequest("query", []string{"sales", "prod"}), map[string]interface{}{"database": "prod"}, true},
+		{"database name is case sensitive", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": "SALES"}, false},
+		{"database name with whitespace is denied", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": " sales"}, false},
+		{"non-string database argument is denied", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": 42}, false},
+		{"star literal in arguments is not a wildcard", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": "*"}, false},
+		{"allowed database on write tool", restrictedRequest("execute", []string{"sales"}), map[string]interface{}{"database": "sales"}, true},
+		{"database outside allowlist", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": "prod"}, false},
+		{"unified tool without database argument", restrictedRequest("query", []string{"sales"}), map[string]interface{}{}, false},
+		{"empty database argument", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": ""}, false},
+		{"per-database tool name cannot bypass the allowlist", restrictedRequest("query_prod", []string{"sales"}), map[string]interface{}{"database": "sales"}, false},
+		{"per-database tool name without argument", restrictedRequest("query_sales", []string{"sales"}), map[string]interface{}{}, false},
+		{"list_databases has no database target", restrictedRequest("list_databases", []string{"sales"}), map[string]interface{}{}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, toolDatabaseAllowed(tc.request, tc.arguments))
+		})
+	}
+}
+
+func TestAdaptCortexHandlerDeniesDatabaseOutsideAllowlist(t *testing.T) {
+	called := false
+	handler := adaptCortexHandler(func(context.Context, cortexServer.ToolCallRequest) (interface{}, error) {
+		called = true
+		return nil, nil
+	})
+
+	denied := restrictedRequest("query", []string{"sales"})
+	denied.Params.Arguments = json.RawMessage(`{"database":"prod","query":"select 1"}`)
+	result, err := handler(context.Background(), denied)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.False(t, called, "handler must not run for a database outside the allowlist")
+	text, ok := result.Content[0].(*sdkmcp.TextContent)
+	require.True(t, ok)
+	require.Contains(t, text.Text, "not allowed to use this database")
+}
+
+func TestAdaptCortexHandlerScopeAndAllowlistBothApply(t *testing.T) {
+	called := false
+	handler := adaptCortexHandler(func(context.Context, cortexServer.ToolCallRequest) (interface{}, error) {
+		called = true
+		return nil, nil
+	})
+
+	// The token holds db:read only, so the write tool is refused on scope even
+	// though the database is on the allowlist.
+	denied := restrictedRequest("execute", []string{"sales"})
+	denied.Params.Arguments = json.RawMessage(`{"database":"sales","query":"delete from t"}`)
+	result, err := handler(context.Background(), denied)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.False(t, called, "handler must not run when the scope is missing")
+	text, ok := result.Content[0].(*sdkmcp.TextContent)
+	require.True(t, ok)
+	require.Contains(t, text.Text, "lacks the required database scope")
+}
+
+// listDatabasesUseCase reports a fixed set of configured database ids.
+type listDatabasesUseCase struct {
+	UseCaseProvider
+	databases []string
+}
+
+func (u listDatabasesUseCase) ListDatabases() []string { return u.databases }
+
+// listDatabasesText returns the text list_databases produced.
+func listDatabasesText(t *testing.T, result interface{}) string {
+	t.Helper()
+	content, ok := result.(map[string]interface{})["content"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, content, 1)
+	return content[0]["text"].(string)
+}
+
+func TestListDatabasesFiltersToAllowlist(t *testing.T) {
+	useCase := listDatabasesUseCase{databases: []string{"a", "b"}}
+	tests := []struct {
+		name string
+		ctx  context.Context
+		want string
+	}{
+		{"allowlist limits the list", withDatabaseAllowlist(context.Background(), []string{"a"}), "Available databases:\n\n1. a\n"},
+		{"star lists every database", withDatabaseAllowlist(context.Background(), []string{"*"}), "Available databases:\n\n1. a\n2. b\n"},
+		{"no allowlist lists every database", context.Background(), "Available databases:\n\n1. a\n2. b\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := NewListDatabasesTool().HandleRequest(tc.ctx, cortexServer.ToolCallRequest{Name: listDatabasesTool}, "", useCase)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, listDatabasesText(t, result))
+		})
+	}
+}
+
+func TestAdaptCortexHandlerLimitsListDatabasesToAllowlist(t *testing.T) {
+	useCase := listDatabasesUseCase{databases: []string{"a", "b"}}
+	handler := adaptCortexHandler(func(ctx context.Context, request cortexServer.ToolCallRequest) (interface{}, error) {
+		return NewListDatabasesTool().HandleRequest(ctx, request, "", useCase)
+	})
+
+	result, err := handler(context.Background(), restrictedRequest(listDatabasesTool, []string{"a"}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.Len(t, result.Content, 1)
+	assert.Equal(t, "Available databases:\n\n1. a\n", result.Content[0].(*sdkmcp.TextContent).Text)
+}
+
+// readAuditRecords decodes every JSONL record in an audit file.
+func readAuditRecords(t *testing.T, path string) []map[string]interface{} {
+	t.Helper()
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer f.Close()
+	var out []map[string]interface{}
+	dec := json.NewDecoder(f)
+	for dec.More() {
+		var rec map[string]interface{}
+		require.NoError(t, dec.Decode(&rec))
+		out = append(out, rec)
+	}
+	return out
+}
+
+// TestAdaptCortexHandler_AuditsScopeDenial checks that a call refused by the
+// tool scope check is audited once, with its tool, target and statement, and
+// never reaches the handler.
+func TestAdaptCortexHandler_AuditsScopeDenial(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	require.NoError(t, usecase.EnableAuditLog(path))
+	t.Cleanup(usecase.DisableAuditLog)
+
+	calls := 0
+	handler := adaptCortexHandler(func(context.Context, cortexServer.ToolCallRequest) (interface{}, error) {
+		calls++
+		return nil, nil
+	})
+	request := &sdkmcp.CallToolRequest{
+		Params: &sdkmcp.CallToolParamsRaw{Name: "query_orders", Arguments: json.RawMessage(`{"query":"INSERT INTO orders VALUES (1)"}`)},
+		Extra:  &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{UserID: "reader", Scopes: []string{"db:read"}}},
+	}
+
+	result, err := handler(context.Background(), request)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Equal(t, 0, calls)
+
+	recs := readAuditRecords(t, path)
+	require.Len(t, recs, 1)
+	require.Equal(t, "denied", recs[0]["op"])
+	require.Equal(t, "query_orders", recs[0]["tool"])
+	require.Equal(t, "orders", recs[0]["database"])
+	require.Equal(t, "INSERT INTO orders VALUES (1)", recs[0]["statement"])
+	require.Equal(t, "reader", recs[0]["principal"])
+}
+
+// TestAgentKey_DatabaseDenialIsAudited checks that a call refused by an agent
+// key's database allowlist is audited once, under the key id as principal and
+// the tool name, and never reaches the handler.
+func TestAgentKey_DatabaseDenialIsAudited(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	require.NoError(t, usecase.EnableAuditLog(path))
+	t.Cleanup(usecase.DisableAuditLog)
+
+	calls := 0
+	handler := adaptCortexHandler(func(context.Context, cortexServer.ToolCallRequest) (interface{}, error) {
+		calls++
+		return nil, nil
+	})
+	request := &sdkmcp.CallToolRequest{
+		Params: &sdkmcp.CallToolParamsRaw{Name: "query", Arguments: json.RawMessage(`{"database":"other","query":"SELECT 1"}`)},
+		Extra: &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{
+			UserID: "agent-a",
+			Scopes: []string{"db:read"},
+			Extra:  map[string]any{"databases": []string{"sales"}},
+		}},
+	}
+
+	result, err := handler(context.Background(), request)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Equal(t, 0, calls)
+
+	recs := readAuditRecords(t, path)
+	require.Len(t, recs, 1)
+	require.Equal(t, "denied", recs[0]["op"])
+	require.Equal(t, "agent-a", recs[0]["principal"])
+	require.Equal(t, "query", recs[0]["tool"])
+	require.Equal(t, "other", recs[0]["database"])
+}
+
+// sqliteBridgeDB adapts an in-memory SQLite handle to domain.Database so the
+// bridge test can run a real use case behind the handler.
+type sqliteBridgeDB struct {
+	db *sql.DB
+}
+
+func (s sqliteBridgeDB) Query(ctx context.Context, query string, args ...interface{}) (domain.Rows, error) {
+	return s.db.QueryContext(ctx, query, args...)
+}
+func (s sqliteBridgeDB) Exec(ctx context.Context, statement string, args ...interface{}) (domain.Result, error) {
+	return s.db.ExecContext(ctx, statement, args...)
+}
+func (s sqliteBridgeDB) Begin(context.Context, *domain.TxOptions) (domain.Tx, error) {
+	return nil, errors.New("transactions are not used in this test")
+}
+func (s sqliteBridgeDB) IsReadOnly() bool { return false }
+func (s sqliteBridgeDB) MaxRows() int     { return 0 }
+
+// sqliteBridgeRepo serves one database for every ID.
+type sqliteBridgeRepo struct {
+	db domain.Database
+}
+
+func (r sqliteBridgeRepo) GetDatabase(string) (domain.Database, error) { return r.db, nil }
+func (r sqliteBridgeRepo) ListDatabases() []string                     { return nil }
+func (r sqliteBridgeRepo) GetDatabaseType(string) (string, error)      { return "sqlite", nil }
+func (r sqliteBridgeRepo) IsLazyLoading() bool                         { return false }
+
+// TestAdaptCortexHandler_RecordsToolOnSuccess checks that a call which runs
+// through the use case writes a normal query record carrying the tool name and
+// the token principal.
+func TestAdaptCortexHandler_RecordsToolOnSuccess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	require.NoError(t, usecase.EnableAuditLog(path))
+	t.Cleanup(usecase.DisableAuditLog)
+
+	raw, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = raw.Close() })
+	uc := usecase.NewDatabaseUseCase(sqliteBridgeRepo{db: sqliteBridgeDB{db: raw}})
+	handler := adaptCortexHandler(func(ctx context.Context, _ cortexServer.ToolCallRequest) (interface{}, error) {
+		text, err := uc.ExecuteQuery(ctx, "orders", "SELECT 1", nil)
+		if err != nil {
+			return nil, err
+		}
+		return &Response{Content: []TextContent{{Type: "text", Text: text}}}, nil
+	})
+	request := &sdkmcp.CallToolRequest{
+		Params: &sdkmcp.CallToolParamsRaw{Name: "query_orders", Arguments: json.RawMessage(`{"query":"SELECT 1"}`)},
+		Extra:  &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{UserID: "reader", Scopes: []string{"db:read"}}},
+	}
+
+	result, err := handler(context.Background(), request)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	recs := readAuditRecords(t, path)
+	require.Len(t, recs, 1)
+	require.Equal(t, "query", recs[0]["op"])
+	require.Equal(t, "orders", recs[0]["database"])
+	require.Equal(t, "query_orders", recs[0]["tool"])
+	require.Equal(t, "reader", recs[0]["principal"])
 }
