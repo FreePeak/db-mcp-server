@@ -163,7 +163,15 @@ func main() {
 	}
 
 	oidcIssuer := strings.TrimSpace(os.Getenv("DB_MCP_OIDC_ISSUER"))
-	if err := validateTransportAuth(cfg.TransportMode, *apiKey != "", oidcIssuer != "", *allowInsecureSSE); err != nil {
+	agentKeysFile, agentKeysWarning, err := agentKeysSettings(cfg.TransportMode, oidcIssuer, os.Getenv("DB_MCP_AGENT_KEYS_FILE"))
+	if err != nil {
+		logger.Error("%v", err)
+		os.Exit(1)
+	}
+	if agentKeysWarning != "" {
+		logger.Warn("%s", agentKeysWarning)
+	}
+	if err := validateTransportAuth(cfg.TransportMode, *apiKey != "" || agentKeysFile != "", oidcIssuer != "", *allowInsecureSSE); err != nil {
 		logger.Error("%v", err)
 		os.Exit(1)
 	}
@@ -389,6 +397,17 @@ func main() {
 				os.Exit(1)
 			}
 			authMiddleware = mcp.OIDCBearerAuth(verifier, apiScopes)
+		} else if agentKeysFile != "" {
+			agentKeys, err := mcp.LoadAgentKeys(agentKeysFile)
+			if err != nil {
+				logger.Error("Failed to load DB_MCP_AGENT_KEYS_FILE: %v", err)
+				os.Exit(1)
+			}
+			authMiddleware, err = mcp.AgentKeyAuth(agentKeys, *apiKey, apiScopes)
+			if err != nil {
+				logger.Error("Failed to configure agent key authentication: %v", err)
+				os.Exit(1)
+			}
 		} else {
 			authMiddleware = mcp.APIKeyAuthWithScopes(*apiKey, apiScopes)
 		}
@@ -440,4 +459,22 @@ func main() {
 	}
 
 	logger.Info("Server shutdown complete")
+}
+
+// agentKeysSettings resolves DB_MCP_AGENT_KEYS_FILE for the transport. It
+// returns the trimmed path ("" when unset), a warning when a set file is ignored
+// because the transport is not streamable HTTP, and an error when the file
+// conflicts with OIDC.
+func agentKeysSettings(transport, oidcIssuer, path string) (string, string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", "", nil
+	}
+	if transport != "streamable" {
+		return "", "DB_MCP_AGENT_KEYS_FILE is ignored: per-agent keys apply only to the streamable HTTP transport", nil
+	}
+	if strings.TrimSpace(oidcIssuer) != "" {
+		return "", "", fmt.Errorf("DB_MCP_AGENT_KEYS_FILE cannot be combined with DB_MCP_OIDC_ISSUER")
+	}
+	return path, "", nil
 }

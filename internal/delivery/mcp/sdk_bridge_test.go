@@ -12,6 +12,7 @@ import (
 	cortexTools "github.com/FreePeak/cortex/pkg/tools"
 	sdkAuth "github.com/modelcontextprotocol/go-sdk/auth"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/FreePeak/db-mcp-server/internal/usecase"
@@ -296,4 +297,88 @@ func TestAdaptCortexHandlerPassesPrincipalToUseCase(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, seen.Principal)
 	require.Empty(t, seen.Session)
+}
+
+func restrictedRequest(name string, databases []string) *sdkmcp.CallToolRequest {
+	return &sdkmcp.CallToolRequest{
+		Params: &sdkmcp.CallToolParamsRaw{Name: name},
+		Extra: &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{
+			UserID: "agent-a",
+			Scopes: []string{"db:read"},
+			Extra:  map[string]any{"databases": databases},
+		}},
+	}
+}
+
+func TestToolDatabaseAllowed(t *testing.T) {
+	tests := []struct {
+		name      string
+		request   *sdkmcp.CallToolRequest
+		arguments map[string]interface{}
+		want      bool
+	}{
+		{"no token info (stdio) is unrestricted", &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query"}}, map[string]interface{}{"database": "prod"}, true},
+		{"token without allowlist (legacy or OIDC) is unrestricted", &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query"}, Extra: &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{UserID: "api-key"}}}, map[string]interface{}{"database": "prod"}, true},
+		{"empty allowlist fails closed", restrictedRequest("query", []string{}), map[string]interface{}{"database": "prod"}, false},
+		{"nil allowlist fails closed", restrictedRequest("query", nil), map[string]interface{}{"database": "prod"}, false},
+		{"star allows any database", restrictedRequest("query", []string{"*"}), map[string]interface{}{"database": "prod"}, true},
+		{"star among entries allows any database", restrictedRequest("query", []string{"sales", "*"}), map[string]interface{}{"database": "prod"}, true},
+		{"star does not allow a missing database argument", restrictedRequest("query", []string{"*"}), map[string]interface{}{}, false},
+		{"allowed database", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": "sales"}, true},
+		{"second listed database", restrictedRequest("query", []string{"sales", "prod"}), map[string]interface{}{"database": "prod"}, true},
+		{"database name is case sensitive", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": "SALES"}, false},
+		{"database name with whitespace is denied", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": " sales"}, false},
+		{"non-string database argument is denied", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": 42}, false},
+		{"star literal in arguments is not a wildcard", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": "*"}, false},
+		{"allowed database on write tool", restrictedRequest("execute", []string{"sales"}), map[string]interface{}{"database": "sales"}, true},
+		{"database outside allowlist", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": "prod"}, false},
+		{"unified tool without database argument", restrictedRequest("query", []string{"sales"}), map[string]interface{}{}, false},
+		{"empty database argument", restrictedRequest("query", []string{"sales"}), map[string]interface{}{"database": ""}, false},
+		{"per-database tool name cannot bypass the allowlist", restrictedRequest("query_prod", []string{"sales"}), map[string]interface{}{"database": "sales"}, false},
+		{"per-database tool name without argument", restrictedRequest("query_sales", []string{"sales"}), map[string]interface{}{}, false},
+		{"list_databases has no database target", restrictedRequest("list_databases", []string{"sales"}), map[string]interface{}{}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, toolDatabaseAllowed(tc.request, tc.arguments))
+		})
+	}
+}
+
+func TestAdaptCortexHandlerDeniesDatabaseOutsideAllowlist(t *testing.T) {
+	called := false
+	handler := adaptCortexHandler(func(context.Context, cortexServer.ToolCallRequest) (interface{}, error) {
+		called = true
+		return nil, nil
+	})
+
+	denied := restrictedRequest("query", []string{"sales"})
+	denied.Params.Arguments = json.RawMessage(`{"database":"prod","query":"select 1"}`)
+	result, err := handler(context.Background(), denied)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.False(t, called, "handler must not run for a database outside the allowlist")
+	text, ok := result.Content[0].(*sdkmcp.TextContent)
+	require.True(t, ok)
+	require.Contains(t, text.Text, "not allowed to use this database")
+}
+
+func TestAdaptCortexHandlerScopeAndAllowlistBothApply(t *testing.T) {
+	called := false
+	handler := adaptCortexHandler(func(context.Context, cortexServer.ToolCallRequest) (interface{}, error) {
+		called = true
+		return nil, nil
+	})
+
+	// The token holds db:read only, so the write tool is refused on scope even
+	// though the database is on the allowlist.
+	denied := restrictedRequest("execute", []string{"sales"})
+	denied.Params.Arguments = json.RawMessage(`{"database":"sales","query":"delete from t"}`)
+	result, err := handler(context.Background(), denied)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.False(t, called, "handler must not run when the scope is missing")
+	text, ok := result.Content[0].(*sdkmcp.TextContent)
+	require.True(t, ok)
+	require.Contains(t, text.Text, "lacks the required database scope")
 }

@@ -268,6 +268,50 @@ The SQL check is the textual classifier in `internal/usecase/sql_guard.go`. It
 is a best-effort gate, not a parser or a sandbox, so run read-scoped clients
 against a least-privilege database user.
 
+#### Per-agent keys (`DB_MCP_AGENT_KEYS_FILE`)
+
+Give each agent its own key, identity, scopes and database allowlist by pointing
+`DB_MCP_AGENT_KEYS_FILE` at a JSON list. Only SHA-256 digests are stored:
+
+```json
+[
+  {"id": "reporting-agent", "key_sha256": "<64 hex chars>", "scopes": ["db:read"], "databases": ["sales"]},
+  {"id": "ops-agent", "key_sha256": "<64 hex chars>", "scopes": ["db:read", "db:write"], "databases": ["*"]}
+]
+```
+
+Generate a digest from the key you hand to the agent:
+
+```bash
+printf '%s' "$KEY" | shasum -a 256 | cut -d' ' -f1
+```
+
+- `scopes` is required: one or more of `db:read`, `db:write`, `db:admin`.
+- `databases` is required and must be non-empty. List database ids from the
+  config, or use `"*"` (alone or among other values) for every database. Matching
+  is exact and case-sensitive; a missing or non-string `database` argument is
+  denied.
+- The allowlist is per configured database, not per schema or table. A
+  connection that can reach other schemas can reach them through SQL, so give
+  each database a least-privilege DB user.
+- Scope and allowlist both apply to every call. An allowlisted key may call only
+  the unified tools (`query`, `execute`, `transaction`, `performance`, `explain`,
+  `describe`, `health`, `schema`, `filter_tables`) with a `database` argument;
+  per-database tool names (`query_<id>`) are denied. `list_databases` still lists
+  every database. The audit log records the entry `id` as the principal.
+- Streamable HTTP only. With any other transport the file is ignored and a
+  warning is logged.
+- `DB_MCP_API_SCOPES` applies only to the legacy key (`DB_MCP_API_KEY` or
+  `DB_MCP_API_KEY_FILE`), never to agent keys. The file cannot be combined with
+  OIDC. The legacy key, when also set, still works after the agent keys are
+  checked, and it is the only key a streamable server needs when no agent keys
+  file is set.
+
+The server refuses to start on: invalid JSON; an empty file (`[]`); a missing
+or empty `scopes` or `databases`; a missing, blank or whitespace-padded `id`; a
+duplicate `id` or `key_sha256`; a `key_sha256` that is not 64 hex characters; an
+unknown scope. Errors name the entry id, never the key.
+
 ### Docker image
 
 The image defaults to the authenticated Streamable HTTP transport
@@ -480,6 +524,7 @@ Values in a `.env` file are loaded first; real environment variables take preced
 | `DB_MCP_API_KEY_FILE` | empty | Path to a file holding the Bearer key (trailing newline trimmed; an empty or whitespace-only file is an error). Use for Docker/Kubernetes secrets |
 | `ALLOW_INSECURE_SSE` | unset | Docker image only: `true` passes `-allow-insecure-sse` so `TRANSPORT_MODE=sse` can start |
 | `DB_MCP_API_SCOPES` | `db:read` | Required/granted scopes: `db:read`, `db:write`, and/or `db:admin` |
+| `DB_MCP_AGENT_KEYS_FILE` | empty | JSON file of per-agent key digests, scopes and database allowlists (see above) |
 | `DB_MCP_OIDC_ISSUER` | empty | OIDC issuer URL; when set, OIDC/JWT verification replaces the static pilot key |
 | `DB_MCP_OIDC_AUDIENCE` | empty | Required OIDC audience/client ID |
 | `LOG_LEVEL` | `info` | Log verbosity (`debug`, `info`, `warn`, `error`) |

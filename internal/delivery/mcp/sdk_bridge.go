@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	cortexServer "github.com/FreePeak/cortex/pkg/server"
@@ -64,6 +65,12 @@ func adaptCortexHandler(handler func(context.Context, cortexServer.ToolCallReque
 				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "the authenticated principal lacks the required database scope"}},
 			}, nil
 		}
+		if !toolDatabaseAllowed(request, arguments) {
+			return &sdkmcp.CallToolResult{
+				IsError: true,
+				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "the authenticated principal is not allowed to use this database"}},
+			}, nil
+		}
 		ctx = usecase.WithCaller(ctx, callerFromRequest(request))
 		result, err := handler(ctx, cortexServer.ToolCallRequest{
 			Name:       request.Params.Name,
@@ -90,6 +97,43 @@ func toolScopeAllowed(request *sdkmcp.CallToolRequest, arguments map[string]inte
 		}
 	}
 	return false
+}
+
+// listDatabasesTool is the one registered tool that takes no database target.
+const listDatabasesTool = "list_databases"
+
+// toolDatabaseAllowed enforces a per-agent database allowlist. Principals
+// without an allowlist (stdio, legacy key, OIDC) are unrestricted. A principal
+// that carries one is denied anything not listed, so an empty list denies
+// everything; "*" lists every database. An allowlisted principal may call only
+// the unified tools, with a `database` argument on the allowlist, because
+// per-database tool names such as query_<id> carry the target in the name where
+// it cannot be checked reliably. list_databases has no target and is always
+// allowed.
+func toolDatabaseAllowed(request *sdkmcp.CallToolRequest, arguments map[string]interface{}) bool {
+	if request.Extra == nil || request.Extra.TokenInfo == nil {
+		return true
+	}
+	raw, scoped := request.Extra.TokenInfo.Extra["databases"]
+	if !scoped {
+		return true
+	}
+	name := request.Params.Name
+	if name == listDatabasesTool {
+		return true
+	}
+	if !slices.Contains(unifiedDatabaseToolTypes, name) {
+		return false
+	}
+	database, ok := arguments["database"].(string)
+	if !ok || database == "" {
+		return false
+	}
+	databases, ok := raw.([]string)
+	if !ok {
+		return false
+	}
+	return slices.Contains(databases, allDatabases) || slices.Contains(databases, database)
 }
 
 // readOnlyToolTypes are tool types whose every call is read-only.
