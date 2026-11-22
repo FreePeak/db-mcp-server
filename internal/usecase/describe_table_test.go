@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -52,6 +53,13 @@ func TestDescribeTable_EndToEnd(t *testing.T) {
 		if !names[want] {
 			t.Fatalf("missing column %q in %v", want, names)
 		}
+	}
+	nullable := map[string]string{}
+	for _, c := range columns {
+		nullable[fmt.Sprint(c["column_name"])] = fmt.Sprint(c["is_nullable"])
+	}
+	if nullable["name"] != "NO" || nullable["price"] != "YES" {
+		t.Fatalf("expected name NO and price YES, got %v", nullable)
 	}
 
 	if rc, ok := info["rowCount"].(string); !ok || rc != "2" {
