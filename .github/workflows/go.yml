@@ -262,7 +262,7 @@ jobs:
         go test -v ./pkg/db -run TestConnectionPooling
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@v7
       with:
         files: ./coverage.txt
         flags: integration
