@@ -65,7 +65,7 @@ func (uc *DatabaseUseCase) ExecuteExplain(ctx context.Context, dbID, statement s
 	// analyze executes the statement, so its estimate is checked first when
 	// the database has a cost limit.
 	if analyze {
-		if limit := databaseMaxQueryCost(db); limit > 0 {
+		if limit := queryCostLimit(ctx, db); limit > 0 {
 			if err := uc.checkQueryCost(ctx, dbID, db, dbType, statement, nil, limit); err != nil {
 				return "", err
 			}

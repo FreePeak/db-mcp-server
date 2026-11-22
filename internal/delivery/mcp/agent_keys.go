@@ -21,20 +21,19 @@ import (
 const allDatabases = "*"
 
 // AgentKey is one per-agent credential. Only the SHA-256 digest of the key is
-// stored; the plaintext key lives with the agent. Databases is required: list
-// database ids, or "*" for all of them.
+// stored; the plaintext key lives with the agent. The embedded Grant holds the
+// scopes and the required database allowlist (list database ids, or "*" for
+// all of them), plus an optional max_query_cost.
 type AgentKey struct {
-	ID        string   `json:"id"`
-	KeySHA256 string   `json:"key_sha256"`
-	Scopes    []string `json:"scopes"`
-	Databases []string `json:"databases"`
+	ID        string `json:"id"`
+	KeySHA256 string `json:"key_sha256"`
+	Grant
 }
 
 type agentKeyEntry struct {
-	id        string
-	digest    [sha256.Size]byte
-	scopes    []string
-	databases []string
+	id     string
+	digest [sha256.Size]byte
+	grant  Grant
 }
 
 // AgentKeyAuth authenticates Streamable HTTP requests against per-agent keys
@@ -48,7 +47,7 @@ func AgentKeyAuth(keys []AgentKey, legacyKey string, legacyScopes []string) (fun
 		if err != nil {
 			return nil, err
 		}
-		entry := agentKeyEntry{id: key.ID, scopes: key.Scopes, databases: key.Databases}
+		entry := agentKeyEntry{id: key.ID, grant: key.Grant}
 		copy(entry.digest[:], digest)
 		entries = append(entries, entry)
 	}
@@ -69,7 +68,7 @@ func AgentKeyAuth(keys []AgentKey, legacyKey string, legacyScopes []string) (fun
 			}
 		}
 		if match != nil {
-			return staticTokenInfo(match.id, match.scopes, map[string]any{"databases": match.databases}), nil
+			return staticTokenInfo(match.id, match.grant.Scopes, match.grant.extra()), nil
 		}
 		if legacy != nil {
 			return legacy(ctx, token, r)
@@ -134,16 +133,8 @@ func validateAgentKeys(keys []AgentKey) error {
 		}
 		seenDigests[string(digest)] = struct{}{}
 
-		if len(key.Scopes) == 0 {
-			return fmt.Errorf("agent key %q: at least one scope is required", key.ID)
-		}
-		for _, scope := range key.Scopes {
-			if !isKnownScope(scope) {
-				return fmt.Errorf("agent key %q: unknown scope %q", key.ID, scope)
-			}
-		}
-		if len(key.Databases) == 0 {
-			return fmt.Errorf(`agent key %q: databases is required (list database ids, or "*" for all)`, key.ID)
+		if err := validateGrant(fmt.Sprintf("agent key %q", key.ID), key.Grant); err != nil {
+			return err
 		}
 	}
 	return nil

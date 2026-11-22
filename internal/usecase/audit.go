@@ -41,9 +41,10 @@ type auditRecord struct {
 // Caller identifies who issued a request for audit attribution. The delivery
 // layer sets it on the context; the use case only reads it.
 type Caller struct {
-	Principal string // authenticated identity; empty when unauthenticated
-	Session   string // MCP session ID; empty when the transport has none
-	Tool      string // MCP tool name of the call; empty outside tools/call
+	Principal    string  // authenticated identity; empty when unauthenticated
+	Session      string  // MCP session ID; empty when the transport has none
+	Tool         string  // MCP tool name of the call; empty outside tools/call
+	MaxQueryCost float64 // EXPLAIN cost ceiling from the caller's grant; 0 means none
 }
 
 type callerKey struct{}

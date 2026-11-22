@@ -178,6 +178,11 @@ func main() {
 		logger.Error("%v", err)
 		os.Exit(1)
 	}
+	oidcRolesFile, err := oidcRolesSettings(oidcIssuer, os.Getenv("DB_MCP_OIDC_ROLES_FILE"), *unifiedTools)
+	if err != nil {
+		logger.Error("%v", err)
+		os.Exit(1)
+	}
 	writeAgentKeysWarning(os.Stderr, agentKeysWarning)
 	if agentKeysWarning != "" {
 		logger.Warn("%s", agentKeysWarning)
@@ -400,14 +405,28 @@ func main() {
 				logger.Error("DB_MCP_OIDC_AUDIENCE is required when DB_MCP_OIDC_ISSUER is configured")
 				os.Exit(1)
 			}
+			var roles *mcp.OIDCRoles
+			if oidcRolesFile != "" {
+				roles, err = mcp.LoadOIDCRoles(oidcRolesFile)
+				if err != nil {
+					logger.Error("Failed to load DB_MCP_OIDC_ROLES_FILE: %v", err)
+					os.Exit(1)
+				}
+			}
 			oidcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			verifier, err := mcp.NewOIDCVerifier(oidcCtx, oidcIssuer, oidcAudience)
+			verifier, err := mcp.NewOIDCVerifier(oidcCtx, oidcIssuer, oidcAudience, roles)
 			cancel()
 			if err != nil {
 				logger.Error("Failed to initialize OIDC verifier: %v", err)
 				os.Exit(1)
 			}
-			authMiddleware = mcp.OIDCBearerAuth(verifier, apiScopes)
+			// A roles file supplies each token's scopes, so the transport
+			// requires none of its own.
+			var requiredScopes []string
+			if roles == nil {
+				requiredScopes = apiScopes
+			}
+			authMiddleware = mcp.OIDCBearerAuth(verifier, requiredScopes)
 		} else if agentKeysFile != "" {
 			agentKeys, err := mcp.LoadAgentKeys(agentKeysFile)
 			if err != nil {
@@ -484,6 +503,24 @@ func writeAgentKeysWarning(w io.Writer, warning string) {
 	fmt.Fprintln(w, warning) //nolint:errcheck // no other channel exists to report a failed stderr write
 }
 
+// oidcRolesSettings resolves DB_MCP_OIDC_ROLES_FILE. Roles reach requests only
+// through OIDC, so a roles file without an issuer is refused rather than
+// silently ignored, and so is one without -unified-tools. It returns the
+// trimmed path ("" when unset).
+func oidcRolesSettings(oidcIssuer, path string, unifiedTools bool) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", nil
+	}
+	if strings.TrimSpace(oidcIssuer) == "" {
+		return "", fmt.Errorf("DB_MCP_OIDC_ROLES_FILE is set but DB_MCP_OIDC_ISSUER is empty; roles apply only through OIDC")
+	}
+	if err := requireUnifiedTools(unifiedTools, "DB_MCP_OIDC_ROLES_FILE"); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 // agentKeysSettings resolves DB_MCP_AGENT_KEYS_FILE for the transport. It
 // returns the trimmed path ("" when unset), a warning when a set file is ignored
 // because the transport is not streamable HTTP, and an error when the file
@@ -499,8 +536,19 @@ func agentKeysSettings(transport, oidcIssuer, path string, unifiedTools bool) (s
 	if strings.TrimSpace(oidcIssuer) != "" {
 		return "", "", fmt.Errorf("DB_MCP_AGENT_KEYS_FILE cannot be combined with DB_MCP_OIDC_ISSUER")
 	}
-	if !unifiedTools {
-		return "", "", fmt.Errorf("DB_MCP_AGENT_KEYS_FILE requires the -unified-tools flag: agent keys can call only unified tools")
+	if err := requireUnifiedTools(unifiedTools, "DB_MCP_AGENT_KEYS_FILE"); err != nil {
+		return "", "", err
 	}
 	return path, "", nil
+}
+
+// requireUnifiedTools refuses a principal file (source names its environment
+// variable) unless -unified-tools is set. Every principal that carries a
+// databases list, "*" included, is denied the per-database tool names
+// (toolDatabaseAllowed), so without the flag it could call no database tool.
+func requireUnifiedTools(unifiedTools bool, source string) error {
+	if unifiedTools {
+		return nil
+	}
+	return fmt.Errorf("%s requires the -unified-tools flag: its principals can call only unified tools", source)
 }
