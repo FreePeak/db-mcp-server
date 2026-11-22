@@ -21,7 +21,9 @@ var readOnlyLeadingKeywords = map[string]bool{
 // scanWriteKeywords are data/schema-mutating verbs. Any occurrence outside of
 // string literals classifies the whole statement as a write, which catches
 // data-modifying CTEs ("WITH x AS (DELETE ...) SELECT ...") and stacked
-// statements ("SELECT 1; DROP TABLE users").
+// statements ("SELECT 1; DROP TABLE users"). INTO is included because
+// "SELECT ... INTO" creates a table (Postgres, SQL Server) or writes a file
+// or variable (MySQL); a plain INSERT INTO is already a write by its verb.
 var scanWriteKeywords = map[string]bool{
 	"INSERT":   true,
 	"UPDATE":   true,
@@ -40,6 +42,7 @@ var scanWriteKeywords = map[string]bool{
 	// read-only default for the pooled connection. Defense in depth only: the
 	// query path also runs read-only databases in a rolled-back READ ONLY tx.
 	"SET_CONFIG": true,
+	"INTO":       true,
 }
 
 // leadingOnlyWriteKeywords mutate data but double as ordinary function names

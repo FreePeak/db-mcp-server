@@ -66,6 +66,25 @@ func TestIsWriteStatement(t *testing.T) {
 		{"quoted set_config column", `SELECT "set_config" FROM settings`, false},
 		{"quoted set_config alias", `SELECT name AS "set_config" FROM settings`, false},
 
+		// SELECT ... INTO creates a table or writes a file or variable.
+		{"select into table", "SELECT * INTO newt FROM orders", true},
+		{"with select into table", "WITH s AS (SELECT * FROM orders) SELECT * INTO newt FROM s", true},
+		{"select into outfile", "SELECT * FROM t INTO OUTFILE 'out.csv'", true},
+		{"select into dumpfile", "SELECT 1 INTO DUMPFILE 'dump.bin'", true},
+		{"select into user variable", "SELECT id INTO @v FROM t", true},
+		{"explain of select into", "EXPLAIN SELECT * INTO newt FROM orders", true},
+
+		// INTO inside literals, comments or identifiers is not a keyword.
+		{"into inside string literal", "SELECT 'into' AS x", false},
+		{"into inside identifier", "SELECT into_date FROM t", false},
+		{"into inside block comment", "SELECT 1 /* INTO newt */", false},
+		{"into inside line comment", "-- INTO newt\nSELECT 1", false},
+
+		// COPY is not a read verb, so default deny classifies it as a write.
+		{"copy to file", "COPY t TO 'out.csv'", true},
+		{"copy from file", "COPY t FROM 'in.csv'", true},
+		{"copy query to stdout", "COPY (SELECT 1) TO STDOUT", true},
+
 		// Default deny for anything unrecognized.
 		{"unknown verb", "VACUUM FULL t", true},
 		{"empty", "", false},
