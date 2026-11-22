@@ -1057,8 +1057,8 @@ func (t *ListDatabasesTool) CreateUnifiedTool(name string, _ []string) interface
 }
 
 // HandleRequest handles list databases tool requests
-func (t *ListDatabasesTool) HandleRequest(_ context.Context, _ server.ToolCallRequest, _ string, useCase UseCaseProvider) (interface{}, error) {
-	databases := useCase.ListDatabases()
+func (t *ListDatabasesTool) HandleRequest(ctx context.Context, _ server.ToolCallRequest, _ string, useCase UseCaseProvider) (interface{}, error) {
+	databases := allowedDatabases(ctx, useCase.ListDatabases())
 
 	// Format as text for display
 	output := "Available databases:\n\n"

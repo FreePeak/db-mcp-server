@@ -268,11 +268,76 @@ The SQL check is the textual classifier in `internal/usecase/sql_guard.go`. It
 is a best-effort gate, not a parser or a sandbox, so run read-scoped clients
 against a least-privilege database user.
 
+#### Per-agent keys (`DB_MCP_AGENT_KEYS_FILE`)
+
+Give each agent its own key, identity, scopes and database allowlist by pointing
+`DB_MCP_AGENT_KEYS_FILE` at a JSON list. Only SHA-256 digests are stored.
+Agent keys can call only the unified tools, so start the server with
+`-unified-tools` (there is no environment variable for it). With the file set and
+the flag off, the server refuses to start:
+
+```json
+[
+  {"id": "reporting-agent", "key_sha256": "<64 hex chars>", "scopes": ["db:read"], "databases": ["sales"]},
+  {"id": "ops-agent", "key_sha256": "<64 hex chars>", "scopes": ["db:read", "db:write"], "databases": ["*"]}
+]
+```
+
+Generate a random key for each agent, and store only its SHA-256 digest in the
+file. The key is the agent's bearer token, so give it to the agent and keep it
+out of the file:
+
+```bash
+KEY="$(openssl rand -hex 32)"                          # give this to the agent
+printf '%s' "$KEY" | shasum -a 256 | cut -d' ' -f1     # put this in key_sha256
+```
+
+Keys do not expire. To rotate, generate a new key, replace the entry's
+`key_sha256` (or add a new entry and remove the old one), and restart the server:
+the file is read only at startup.
+
+- `scopes` is required: one or more of `db:read`, `db:write`, `db:admin`.
+- `databases` is required and must be non-empty. List database ids from the
+  config, or use `"*"` (alone or among other values) for every database. Matching
+  is exact and case-sensitive; a missing or non-string `database` argument is
+  denied.
+- The allowlist is per configured database, not per schema or table. A
+  connection that can reach other schemas can reach them through SQL, so give
+  each database a least-privilege DB user.
+- Scope and allowlist both apply to every call. An allowlisted key may call only
+  the unified tools (`query`, `execute`, `transaction`, `performance`, `explain`,
+  `describe`, `health`, `schema`, `filter_tables`) with a `database` argument;
+  per-database tool names (`query_<id>`) are denied. TimescaleDB tools
+  (`timescaledb_*`) are not in that list, so agent keys cannot use them.
+  `list_databases` is always callable and lists only the databases in the key's
+  allowlist (`"*"` lists all). The audit log records the entry `id` as the
+  principal.
+- Discovery is not limited by the allowlist. `tools/list` returns the unified
+  tool descriptions and the `database` parameter description, and both name every
+  configured database id to any authenticated key. The allowlist controls which
+  databases a key can use, not which ids it can see. Do not rely on database ids
+  being secret.
+- Streamable HTTP only. With stdio or SSE the file is ignored: the server logs a
+  warning and prints it to stderr (stdout carries MCP traffic).
+- Cannot be combined with OIDC. With streamable HTTP, setting
+  `DB_MCP_OIDC_ISSUER` together with this file is a startup error.
+- `DB_MCP_API_SCOPES` applies only to the legacy key (`DB_MCP_API_KEY` or
+  `DB_MCP_API_KEY_FILE`), never to agent keys. The legacy key, when also set,
+  still works after the agent keys are checked, and it is the only key a
+  streamable server needs when no agent keys file is set.
+
+The server refuses to start on: invalid JSON; an unknown field (for example
+`expires_at`, since keys do not expire); data after the list; an empty file
+(`[]`); a missing or empty `scopes` or `databases`; a missing, blank or
+whitespace-padded `id`; a duplicate `id` or `key_sha256`; a `key_sha256` that is
+not 64 hex characters or is the SHA-256 of the empty string; an unknown scope; and
+the file set without `-unified-tools`. Errors name the entry id, never the key.
+
 ### Docker image
 
 The image defaults to the authenticated Streamable HTTP transport
 (`TRANSPORT_MODE=streamable`). It refuses to start without `DB_MCP_API_KEY`,
-`DB_MCP_API_KEY_FILE`, or OIDC configuration, and the container exits non-zero with an authentication
+`DB_MCP_API_KEY_FILE`, `DB_MCP_AGENT_KEYS_FILE`, or OIDC configuration, and the container exits non-zero with an authentication
 error otherwise. It runs as an unprivileged user, omits an embedded config
 (mount one at `/app/config.json`), and serves an unauthenticated `/health`
 probe on port `9093` in both HTTP modes.
@@ -286,6 +351,17 @@ docker run --rm -p 127.0.0.1:9092:9092 -p 127.0.0.1:9093:9093 \
   -e DB_MCP_API_KEY \
   -v "$(pwd)/config.local.json:/app/config.json:ro" \
   db-mcp-server:local
+```
+
+Agent keys need the unified tools, and the image's default command does not pass
+`-unified-tools`. Override the command so the server gets the flag:
+
+```bash
+docker run --rm -p 127.0.0.1:9092:9092 -p 127.0.0.1:9093:9093 \
+  -e DB_MCP_AGENT_KEYS_FILE=/app/agent-keys.json \
+  -v "$(pwd)/config.local.json:/app/config.json:ro" \
+  -v "$(pwd)/agent-keys.json:/app/agent-keys.json:ro" \
+  db-mcp-server:local /app/server -t streamable -h 0.0.0.0 -p 9092 -c /app/config.json -unified-tools
 ```
 
 Legacy SSE has no built-in authentication. It runs only when both variables are
@@ -480,6 +556,7 @@ Values in a `.env` file are loaded first; real environment variables take preced
 | `DB_MCP_API_KEY_FILE` | empty | Path to a file holding the Bearer key (trailing newline trimmed; an empty or whitespace-only file is an error). Use for Docker/Kubernetes secrets |
 | `ALLOW_INSECURE_SSE` | unset | Docker image only: `true` passes `-allow-insecure-sse` so `TRANSPORT_MODE=sse` can start |
 | `DB_MCP_API_SCOPES` | `db:read` | Required/granted scopes: `db:read`, `db:write`, and/or `db:admin` |
+| `DB_MCP_AGENT_KEYS_FILE` | empty | JSON file of per-agent key digests, scopes and database allowlists (see above) |
 | `DB_MCP_OIDC_ISSUER` | empty | OIDC issuer URL; when set, OIDC/JWT verification replaces the static pilot key |
 | `DB_MCP_OIDC_AUDIENCE` | empty | Required OIDC audience/client ID |
 | `DB_MCP_RESOURCE_URL` | empty | Public URL of `/mcp` (for example `https://db.example.com/mcp`); with `DB_MCP_OIDC_ISSUER` it serves OAuth protected resource metadata (RFC 9728) so MCP clients can discover the identity provider |

@@ -282,11 +282,15 @@ func (tr *ToolRegistry) registerTool(ctx context.Context, toolTypeName string, n
 	})
 }
 
+// unifiedDatabaseToolTypes are the tool types registered once for all
+// databases, each taking a `database` argument.
+var unifiedDatabaseToolTypes = []string{"query", "execute", "transaction", "performance", "explain", "describe", "health", "schema", "filter_tables"}
+
 // registerUnifiedTools registers unified tools with a database parameter
 func (tr *ToolRegistry) registerUnifiedTools(ctx context.Context) error {
 	dbList := tr.databaseUseCase.ListDatabases()
 
-	toolTypeNames := []string{"query", "execute", "transaction", "performance", "explain", "describe", "health", "schema", "filter_tables"}
+	toolTypeNames := unifiedDatabaseToolTypes
 
 	registrationErrors := 0
 	for _, typeName := range toolTypeNames {
