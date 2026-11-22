@@ -10,6 +10,8 @@ import (
 	cortexTypes "github.com/FreePeak/cortex/pkg/types"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/FreePeak/db-mcp-server/internal/usecase"
 )
 
 func convertSDKTool(tool *cortexTypes.Tool) *sdkmcp.Tool {
@@ -62,6 +64,7 @@ func adaptCortexHandler(handler func(context.Context, cortexServer.ToolCallReque
 				return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "invalid tool arguments: " + err.Error()}
 			}
 		}
+		ctx = usecase.WithCaller(ctx, callerFromRequest(request))
 		result, err := handler(ctx, cortexServer.ToolCallRequest{
 			Name:       request.Params.Name,
 			Parameters: arguments,
@@ -134,4 +137,17 @@ func convertCortexResult(result interface{}) (*sdkmcp.CallToolResult, error) {
 		converted.Content = []sdkmcp.Content{}
 	}
 	return &converted, nil
+}
+
+// callerFromRequest maps the authenticated token and MCP session of a tool
+// call onto the audit caller. Stdio and unauthenticated calls carry neither.
+func callerFromRequest(request *sdkmcp.CallToolRequest) usecase.Caller {
+	var caller usecase.Caller
+	if request.Extra != nil && request.Extra.TokenInfo != nil {
+		caller.Principal = request.Extra.TokenInfo.UserID
+	}
+	if request.Session != nil {
+		caller.Session = request.Session.ID()
+	}
+	return caller
 }
