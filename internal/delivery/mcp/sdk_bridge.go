@@ -71,6 +71,9 @@ func adaptCortexHandler(handler func(context.Context, cortexServer.ToolCallReque
 				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "the authenticated principal is not allowed to use this database"}},
 			}, nil
 		}
+		if allowlist, scoped := databaseAllowlist(request); scoped {
+			ctx = withDatabaseAllowlist(ctx, allowlist)
+		}
 		ctx = usecase.WithCaller(ctx, callerFromRequest(request))
 		result, err := handler(ctx, cortexServer.ToolCallRequest{
 			Name:       request.Params.Name,
@@ -111,10 +114,7 @@ const listDatabasesTool = "list_databases"
 // it cannot be checked reliably. list_databases has no target and is always
 // allowed.
 func toolDatabaseAllowed(request *sdkmcp.CallToolRequest, arguments map[string]interface{}) bool {
-	if request.Extra == nil || request.Extra.TokenInfo == nil {
-		return true
-	}
-	raw, scoped := request.Extra.TokenInfo.Extra["databases"]
+	allowlist, scoped := databaseAllowlist(request)
 	if !scoped {
 		return true
 	}
@@ -129,11 +129,31 @@ func toolDatabaseAllowed(request *sdkmcp.CallToolRequest, arguments map[string]i
 	if !ok || database == "" {
 		return false
 	}
+	return allowlistPermits(allowlist, database)
+}
+
+// databaseAllowlist returns the database allowlist of the authenticated
+// principal and whether it has one. A value that is not a string list yields a
+// nil allowlist, which grants nothing.
+func databaseAllowlist(request *sdkmcp.CallToolRequest) ([]string, bool) {
+	if request.Extra == nil || request.Extra.TokenInfo == nil {
+		return nil, false
+	}
+	raw, scoped := request.Extra.TokenInfo.Extra["databases"]
+	if !scoped {
+		return nil, false
+	}
 	databases, ok := raw.([]string)
 	if !ok {
-		return false
+		return nil, true
 	}
-	return slices.Contains(databases, allDatabases) || slices.Contains(databases, database)
+	return databases, true
+}
+
+// allowlistPermits reports whether an allowlist grants a database id. "*"
+// grants every database.
+func allowlistPermits(allowlist []string, database string) bool {
+	return slices.Contains(allowlist, allDatabases) || slices.Contains(allowlist, database)
 }
 
 // readOnlyToolTypes are tool types whose every call is read-only.
@@ -283,4 +303,35 @@ func callerFromRequest(request *sdkmcp.CallToolRequest) usecase.Caller {
 		caller.Session = request.Session.ID()
 	}
 	return caller
+}
+
+// databaseAllowlistKey carries a principal's database allowlist to handlers.
+type databaseAllowlistKey struct{}
+
+// databaseScope is the allowlist of a principal that has one. A nil
+// databases slice denies every database.
+type databaseScope struct {
+	databases []string
+}
+
+// withDatabaseAllowlist returns a copy of ctx that limits database listings to
+// databases; "*" lists every database.
+func withDatabaseAllowlist(ctx context.Context, databases []string) context.Context {
+	return context.WithValue(ctx, databaseAllowlistKey{}, databaseScope{databases: databases})
+}
+
+// allowedDatabases returns the ids in databases that the context's principal
+// may see. Without an allowlist in ctx every id is returned.
+func allowedDatabases(ctx context.Context, databases []string) []string {
+	scope, scoped := ctx.Value(databaseAllowlistKey{}).(databaseScope)
+	if !scoped {
+		return databases
+	}
+	var visible []string
+	for _, id := range databases {
+		if allowlistPermits(scope.databases, id) {
+			visible = append(visible, id)
+		}
+	}
+	return visible
 }

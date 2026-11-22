@@ -382,3 +382,53 @@ func TestAdaptCortexHandlerScopeAndAllowlistBothApply(t *testing.T) {
 	require.True(t, ok)
 	require.Contains(t, text.Text, "lacks the required database scope")
 }
+
+// listDatabasesUseCase reports a fixed set of configured database ids.
+type listDatabasesUseCase struct {
+	UseCaseProvider
+	databases []string
+}
+
+func (u listDatabasesUseCase) ListDatabases() []string { return u.databases }
+
+// listDatabasesText returns the text list_databases produced.
+func listDatabasesText(t *testing.T, result interface{}) string {
+	t.Helper()
+	content, ok := result.(map[string]interface{})["content"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, content, 1)
+	return content[0]["text"].(string)
+}
+
+func TestListDatabasesFiltersToAllowlist(t *testing.T) {
+	useCase := listDatabasesUseCase{databases: []string{"a", "b"}}
+	tests := []struct {
+		name string
+		ctx  context.Context
+		want string
+	}{
+		{"allowlist limits the list", withDatabaseAllowlist(context.Background(), []string{"a"}), "Available databases:\n\n1. a\n"},
+		{"star lists every database", withDatabaseAllowlist(context.Background(), []string{"*"}), "Available databases:\n\n1. a\n2. b\n"},
+		{"no allowlist lists every database", context.Background(), "Available databases:\n\n1. a\n2. b\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := NewListDatabasesTool().HandleRequest(tc.ctx, cortexServer.ToolCallRequest{Name: listDatabasesTool}, "", useCase)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, listDatabasesText(t, result))
+		})
+	}
+}
+
+func TestAdaptCortexHandlerLimitsListDatabasesToAllowlist(t *testing.T) {
+	useCase := listDatabasesUseCase{databases: []string{"a", "b"}}
+	handler := adaptCortexHandler(func(ctx context.Context, request cortexServer.ToolCallRequest) (interface{}, error) {
+		return NewListDatabasesTool().HandleRequest(ctx, request, "", useCase)
+	})
+
+	result, err := handler(context.Background(), restrictedRequest(listDatabasesTool, []string{"a"}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.Len(t, result.Content, 1)
+	assert.Equal(t, "Available databases:\n\n1. a\n", result.Content[0].(*sdkmcp.TextContent).Text)
+}

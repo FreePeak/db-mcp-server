@@ -297,8 +297,9 @@ printf '%s' "$KEY" | shasum -a 256 | cut -d' ' -f1
 - Scope and allowlist both apply to every call. An allowlisted key may call only
   the unified tools (`query`, `execute`, `transaction`, `performance`, `explain`,
   `describe`, `health`, `schema`, `filter_tables`) with a `database` argument;
-  per-database tool names (`query_<id>`) are denied. `list_databases` still lists
-  every database. The audit log records the entry `id` as the principal.
+  per-database tool names (`query_<id>`) are denied. `list_databases` is always
+  callable and lists only the databases in the key's allowlist (`"*"` lists all).
+  The audit log records the entry `id` as the principal.
 - Streamable HTTP only. With stdio or SSE the file is ignored: the server logs a
   warning and prints it to stderr (stdout carries MCP traffic).
 - Cannot be combined with OIDC. With streamable HTTP, setting
