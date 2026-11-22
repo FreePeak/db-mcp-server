@@ -95,7 +95,7 @@ func toolScopeAllowed(request *sdkmcp.CallToolRequest, arguments map[string]inte
 	}
 	required := requiredToolScope(request.Params.Name, arguments)
 	for _, scope := range request.Extra.TokenInfo.Scopes {
-		if scope == required || scope == "db:admin" {
+		if scope == required || scope == scopeAdmin {
 			return true
 		}
 	}
@@ -191,7 +191,7 @@ var readOnlyTimescaleOperations = map[string]bool{
 func requiredToolScope(name string, arguments map[string]interface{}) string {
 	switch {
 	case hasToolPrefix(name, "execute"), hasToolPrefix(name, "transaction"):
-		return "db:write"
+		return scopeWrite
 	case hasToolPrefix(name, "query"):
 		return sqlScope(getStringParam(arguments, "query"))
 	case hasToolPrefix(name, "explain"):
@@ -199,27 +199,27 @@ func requiredToolScope(name string, arguments map[string]interface{}) string {
 	case hasToolPrefix(name, "performance"):
 		action := getStringParam(arguments, "action")
 		if readOnlyPerformanceActions[action] {
-			return "db:read"
+			return scopeRead
 		}
-		return "db:write"
+		return scopeWrite
 	case strings.HasPrefix(name, "timescaledb_"):
 		return timescaleScope(arguments)
 	}
 	for _, base := range readOnlyToolTypes {
 		if hasToolPrefix(name, base) {
-			return "db:read"
+			return scopeRead
 		}
 	}
-	return "db:write"
+	return scopeWrite
 }
 
 // sqlScope classifies a statement with the shared write guard. A blank
 // statement is treated as missing and fails closed.
 func sqlScope(sql string) string {
 	if strings.TrimSpace(sql) == "" || usecase.IsWriteStatement(sql) {
-		return "db:write"
+		return scopeWrite
 	}
-	return "db:read"
+	return scopeRead
 }
 
 // timescaleScope dispatches on the operation argument, which the handler
@@ -236,12 +236,12 @@ func timescaleScope(arguments map[string]interface{}) string {
 		sql, err = buildTimeSeriesAnalyzeSQL(arguments)
 	default:
 		if readOnlyTimescaleOperations[operation] {
-			return "db:read"
+			return scopeRead
 		}
-		return "db:write"
+		return scopeWrite
 	}
 	if err != nil {
-		return "db:write"
+		return scopeWrite
 	}
 	return sqlScope(sql)
 }

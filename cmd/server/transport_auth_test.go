@@ -10,7 +10,7 @@ func TestValidateTransportAuth(t *testing.T) {
 	tests := []struct {
 		name             string
 		transport        string
-		hasAPIKey        bool
+		hasStaticKeys    bool
 		hasOIDC          bool
 		allowInsecureSSE bool
 		wantErr          string
@@ -21,9 +21,9 @@ func TestValidateTransportAuth(t *testing.T) {
 			wantErr:   "DB_MCP_AGENT_KEYS_FILE",
 		},
 		{
-			name:      "streamable with API key",
-			transport: "streamable",
-			hasAPIKey: true,
+			name:          "streamable with API key",
+			transport:     "streamable",
+			hasStaticKeys: true,
 		},
 		{
 			name:      "streamable with OIDC",
@@ -31,10 +31,10 @@ func TestValidateTransportAuth(t *testing.T) {
 			hasOIDC:   true,
 		},
 		{
-			name:      "streamable with both API key and OIDC",
-			transport: "streamable",
-			hasAPIKey: true,
-			hasOIDC:   true,
+			name:          "streamable with both API key and OIDC",
+			transport:     "streamable",
+			hasStaticKeys: true,
+			hasOIDC:       true,
 		},
 		{
 			name:      "sse without opt-in is refused",
@@ -58,7 +58,7 @@ func TestValidateTransportAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateTransportAuth(tt.transport, tt.hasAPIKey, tt.hasOIDC, tt.allowInsecureSSE)
+			err := validateTransportAuth(tt.transport, tt.hasStaticKeys, tt.hasOIDC, tt.allowInsecureSSE)
 			if tt.wantErr == "" {
 				assert.NoError(t, err)
 				return
