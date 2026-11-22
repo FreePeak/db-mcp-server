@@ -211,3 +211,105 @@ func TestRelationshipGraph_PostgresQualifiesPublicTables(t *testing.T) {
 	}
 	t.Fatalf("expected a describe query for public.authors containing %q; recorded queries:\n%s", want, strings.Join(db.queries, "\n---\n"))
 }
+
+// mysqlCatalogDB serves SHOW COLUMNS / SHOW INDEX rows in the shape the MySQL
+// driver returns them, so DescribeTable runs its real MySQL path.
+type mysqlCatalogDB struct {
+	*fakeDB
+}
+
+func (m *mysqlCatalogDB) Query(ctx context.Context, q string, args ...interface{}) (domain.Rows, error) {
+	switch {
+	case strings.HasPrefix(q, "SHOW COLUMNS"):
+		return &fakeRows{
+			columns: []string{"Field", "Type", "Null", "Key", "Default", "Extra"},
+			data: [][]interface{}{
+				{"id", "bigint unsigned", "NO", "PRI", nil, "auto_increment"},
+				{"email", "varchar(255)", "NO", "UNI", nil, ""},
+				{"status", "varchar(16)", "YES", "MUL", "active", ""},
+			},
+		}, nil
+	case strings.HasPrefix(q, "SHOW INDEX"):
+		cols := []string{"Table", "Non_unique", "Key_name", "Seq_in_index", "Column_name", "Sub_part", "Index_type"}
+		return &fakeRows{
+			columns: cols,
+			data: [][]interface{}{
+				{"sample_items", "0", "PRIMARY", "1", "id", nil, "BTREE"},
+				{"sample_items", "0", "uq_email", "1", "email", nil, "BTREE"},
+				// Second key part listed first: definitions follow Seq_in_index.
+				{"sample_items", "1", "idx_status_email", "2", "email", "10", "BTREE"},
+				{"sample_items", "1", "idx_status_email", "1", "status", nil, "BTREE"},
+			},
+		}, nil
+	}
+	return &fakeRows{columns: []string{"n"}}, nil
+}
+
+// TestDescribeTable_MySQLNormalizesShowOutput checks that MySQL describe
+// returns the column_name / data_type / is_nullable / column_default and
+// index_name / definition keys every other engine returns (issue #110).
+func TestDescribeTable_MySQLNormalizesShowOutput(t *testing.T) {
+	uc := NewDatabaseUseCase(&fakeRepo{db: &mysqlCatalogDB{fakeDB: &fakeDB{}}, dbType: "mysql"})
+	info, err := uc.DescribeTable(context.Background(), "mysql1", "sample_items")
+	if err != nil {
+		t.Fatalf("describe failed: %v", err)
+	}
+
+	var gotCols []string
+	for _, c := range info["columns"].([]map[string]interface{}) {
+		gotCols = append(gotCols, fmt.Sprintf("%v|%v|%v|%v", c["column_name"], c["data_type"], c["is_nullable"], c["column_default"]))
+	}
+	wantCols := []string{
+		"id|bigint unsigned|NO|<nil>",
+		"email|varchar(255)|NO|<nil>",
+		"status|varchar(16)|YES|active",
+	}
+	if strings.Join(gotCols, "\n") != strings.Join(wantCols, "\n") {
+		t.Fatalf("columns:\n got %v\nwant %v", gotCols, wantCols)
+	}
+
+	var gotIdx []string
+	for _, ix := range info["indexes"].([]map[string]interface{}) {
+		gotIdx = append(gotIdx, fmt.Sprintf("%v: %v", ix["index_name"], ix["definition"]))
+	}
+	wantIdx := []string{
+		"PRIMARY: UNIQUE BTREE (id)",
+		"uq_email: UNIQUE BTREE (email)",
+		"idx_status_email: BTREE (status, email(10))",
+	}
+	if strings.Join(gotIdx, "\n") != strings.Join(wantIdx, "\n") {
+		t.Fatalf("indexes:\n got %v\nwant %v", gotIdx, wantIdx)
+	}
+}
+
+// TestNormalizeMySQLIndexes_BinaryProtocolValues covers integer cells, as the
+// driver returns them for binary-protocol results, and functional key parts.
+func TestNormalizeMySQLIndexes_BinaryProtocolValues(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"Key_name": "idx_lower", "Non_unique": int64(1), "Seq_in_index": int64(1), "Column_name": nil, "Expression": "lower(`email`)", "Index_type": "BTREE"},
+		{"Key_name": "PRIMARY", "Non_unique": int64(0), "Seq_in_index": int64(1), "Column_name": []byte("id"), "Index_type": "BTREE"},
+	}
+	got := normalizeMySQLIndexes(rows)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 indexes, got %v", got)
+	}
+	if got[0]["definition"] != "BTREE (lower(`email`))" || got[1]["definition"] != "UNIQUE BTREE (id)" {
+		t.Fatalf("unexpected definitions: %v", got)
+	}
+}
+
+// TestMySQLCatalogQueries_ScopeToTable checks that the constraint join matches
+// the table name, since every MySQL primary key is named PRIMARY, and that the
+// row estimate reads the current database only.
+func TestMySQLCatalogQueries_ScopeToTable(t *testing.T) {
+	q := constraintQueries("mysql", "sample_items")[0]
+	if !strings.Contains(q, "tc.TABLE_NAME = kcu.TABLE_NAME") {
+		t.Errorf("constraint join must match table names, got:\n%s", q)
+	}
+	if !strings.Contains(q, "tc.TABLE_NAME = 'sample_items' AND tc.TABLE_SCHEMA = DATABASE()") {
+		t.Errorf("constraint query must filter the requested table, got:\n%s", q)
+	}
+	if est := rowEstimateQuery("mysql", "sample_items"); !strings.Contains(est, "table_schema = DATABASE() AND table_name = 'sample_items'") {
+		t.Errorf("row estimate must read the current database only, got:\n%s", est)
+	}
+}

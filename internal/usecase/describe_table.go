@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/lib/pq"
@@ -128,6 +130,11 @@ func (uc *DatabaseUseCase) DescribeTable(ctx context.Context, dbID, table string
 		return nil, fmt.Errorf("failed to describe indexes: %w", err)
 	}
 
+	if strings.ToLower(dbType) == "mysql" {
+		columns = normalizeMySQLColumns(columns)
+		indexes = normalizeMySQLIndexes(indexes)
+	}
+
 	constraints, err := uc.queryTableMetadata(ctx, dbID, constraintQueries(strings.ToLower(dbType), table))
 	if err != nil {
 		// Constraint introspection varies more across engines/versions;
@@ -244,6 +251,100 @@ func rowsToMaps(rows interface {
 	return out, nil
 }
 
+// normalizeMySQLColumns maps SHOW COLUMNS rows (Field / Type / Null /
+// Default) to the column_name / data_type / is_nullable / column_default
+// shape the other engines return. SHOW COLUMNS stays the query because
+// tableColumns and the index advisor read the same rows.
+func normalizeMySQLColumns(rows []map[string]interface{}) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, map[string]interface{}{
+			"column_name":    r["Field"],
+			"data_type":      r["Type"],
+			"is_nullable":    r["Null"],
+			"column_default": r["Default"],
+		})
+	}
+	return out
+}
+
+// normalizeMySQLIndexes folds SHOW INDEX rows, one per indexed column, into
+// one index_name / definition row per index, e.g. "UNIQUE BTREE (a, b(10))".
+// SHOW INDEX stays the query because index health parses its per-column rows.
+func normalizeMySQLIndexes(rows []map[string]interface{}) []map[string]interface{} {
+	type mysqlIndex struct {
+		unique    bool
+		indexType string
+		cols      map[int]string
+		seqs      []int
+	}
+	byName := map[string]*mysqlIndex{}
+	order := []string{}
+	for _, r := range rows {
+		name := mysqlCell(r["Key_name"])
+		if name == "" {
+			continue
+		}
+		idx := byName[name]
+		if idx == nil {
+			idx = &mysqlIndex{
+				unique:    mysqlCell(r["Non_unique"]) == "0",
+				indexType: mysqlCell(r["Index_type"]),
+				cols:      map[int]string{},
+			}
+			byName[name] = idx
+			order = append(order, name)
+		}
+		col := mysqlCell(r["Column_name"])
+		if col == "" {
+			// Functional key parts (MySQL 8.0.13+) carry the expression instead.
+			col = mysqlCell(r["Expression"])
+		}
+		if sub := mysqlCell(r["Sub_part"]); sub != "" && col != "" {
+			col += "(" + sub + ")"
+		}
+		seq, err := strconv.Atoi(mysqlCell(r["Seq_in_index"]))
+		if err != nil {
+			seq = len(idx.seqs) + 1
+		}
+		if _, dup := idx.cols[seq]; !dup {
+			idx.seqs = append(idx.seqs, seq)
+		}
+		idx.cols[seq] = col
+	}
+
+	out := make([]map[string]interface{}, 0, len(order))
+	for _, name := range order {
+		idx := byName[name]
+		sort.Ints(idx.seqs)
+		cols := make([]string, 0, len(idx.seqs))
+		for _, s := range idx.seqs {
+			cols = append(cols, idx.cols[s])
+		}
+		def := strings.TrimSpace(idx.indexType + " (" + strings.Join(cols, ", ") + ")")
+		if idx.unique {
+			def = "UNIQUE " + def
+		}
+		out = append(out, map[string]interface{}{"index_name": name, "definition": def})
+	}
+	return out
+}
+
+// mysqlCell renders a catalog value as text: the driver returns strings for
+// text-protocol results and integers for binary ones.
+func mysqlCell(v interface{}) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	case []byte:
+		return string(t)
+	default:
+		return fmt.Sprint(t)
+	}
+}
+
 // pgTable splits a Postgres table name into a SQL expression for its schema
 // and a SQL literal for the bare table name. Both are quoted here, the only
 // place a Postgres table name enters SQL. An explicit schema is used as
@@ -319,6 +420,7 @@ WHERE tc.table_schema = %s AND tc.table_name = %s ORDER BY tc.constraint_type, k
 FROM information_schema.TABLE_CONSTRAINTS tc
 JOIN information_schema.KEY_COLUMN_USAGE kcu
   ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+  AND tc.TABLE_NAME = kcu.TABLE_NAME
 WHERE tc.TABLE_NAME = '%s' AND tc.TABLE_SCHEMA = DATABASE()
 ORDER BY tc.CONSTRAINT_TYPE, kcu.ORDINAL_POSITION`, table)}
 	case "sqlite", "sqlite3":
@@ -351,7 +453,7 @@ func rowEstimateQuery(dbType, table string) string {
 		schema, nameLit := pgTable(table)
 		return fmt.Sprintf(`SELECT c.reltuples::bigint AS n FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %s AND c.relname = %s`, schema, nameLit)
 	case "mysql":
-		return fmt.Sprintf("SELECT table_rows AS n FROM information_schema.tables WHERE table_name = '%s'", table)
+		return fmt.Sprintf("SELECT table_rows AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '%s'", table)
 	case "sqlite", "sqlite3":
 		return fmt.Sprintf("SELECT COUNT(*) AS n FROM `%s`", table)
 	case "oracle":
