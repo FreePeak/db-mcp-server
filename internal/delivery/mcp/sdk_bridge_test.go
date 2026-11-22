@@ -2,9 +2,12 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,7 +17,9 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 
+	"github.com/FreePeak/db-mcp-server/internal/domain"
 	"github.com/FreePeak/db-mcp-server/internal/usecase"
 )
 
@@ -431,4 +436,116 @@ func TestAdaptCortexHandlerLimitsListDatabasesToAllowlist(t *testing.T) {
 	require.False(t, result.IsError)
 	require.Len(t, result.Content, 1)
 	assert.Equal(t, "Available databases:\n\n1. a\n", result.Content[0].(*sdkmcp.TextContent).Text)
+}
+
+// readAuditRecords decodes every JSONL record in an audit file.
+func readAuditRecords(t *testing.T, path string) []map[string]interface{} {
+	t.Helper()
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer f.Close()
+	var out []map[string]interface{}
+	dec := json.NewDecoder(f)
+	for dec.More() {
+		var rec map[string]interface{}
+		require.NoError(t, dec.Decode(&rec))
+		out = append(out, rec)
+	}
+	return out
+}
+
+// TestAdaptCortexHandler_AuditsScopeDenial checks that a call refused by the
+// tool scope check is audited once, with its tool, target and statement, and
+// never reaches the handler.
+func TestAdaptCortexHandler_AuditsScopeDenial(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	require.NoError(t, usecase.EnableAuditLog(path))
+	t.Cleanup(usecase.DisableAuditLog)
+
+	calls := 0
+	handler := adaptCortexHandler(func(context.Context, cortexServer.ToolCallRequest) (interface{}, error) {
+		calls++
+		return nil, nil
+	})
+	request := &sdkmcp.CallToolRequest{
+		Params: &sdkmcp.CallToolParamsRaw{Name: "query_orders", Arguments: json.RawMessage(`{"query":"INSERT INTO orders VALUES (1)"}`)},
+		Extra:  &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{UserID: "reader", Scopes: []string{"db:read"}}},
+	}
+
+	result, err := handler(context.Background(), request)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Equal(t, 0, calls)
+
+	recs := readAuditRecords(t, path)
+	require.Len(t, recs, 1)
+	require.Equal(t, "denied", recs[0]["op"])
+	require.Equal(t, "query_orders", recs[0]["tool"])
+	require.Equal(t, "orders", recs[0]["database"])
+	require.Equal(t, "INSERT INTO orders VALUES (1)", recs[0]["statement"])
+	require.Equal(t, "reader", recs[0]["principal"])
+}
+
+// sqliteBridgeDB adapts an in-memory SQLite handle to domain.Database so the
+// bridge test can run a real use case behind the handler.
+type sqliteBridgeDB struct {
+	db *sql.DB
+}
+
+func (s sqliteBridgeDB) Query(ctx context.Context, query string, args ...interface{}) (domain.Rows, error) {
+	return s.db.QueryContext(ctx, query, args...)
+}
+func (s sqliteBridgeDB) Exec(ctx context.Context, statement string, args ...interface{}) (domain.Result, error) {
+	return s.db.ExecContext(ctx, statement, args...)
+}
+func (s sqliteBridgeDB) Begin(context.Context, *domain.TxOptions) (domain.Tx, error) {
+	return nil, errors.New("transactions are not used in this test")
+}
+func (s sqliteBridgeDB) IsReadOnly() bool { return false }
+func (s sqliteBridgeDB) MaxRows() int     { return 0 }
+
+// sqliteBridgeRepo serves one database for every ID.
+type sqliteBridgeRepo struct {
+	db domain.Database
+}
+
+func (r sqliteBridgeRepo) GetDatabase(string) (domain.Database, error) { return r.db, nil }
+func (r sqliteBridgeRepo) ListDatabases() []string                     { return nil }
+func (r sqliteBridgeRepo) GetDatabaseType(string) (string, error)      { return "sqlite", nil }
+func (r sqliteBridgeRepo) IsLazyLoading() bool                         { return false }
+
+// TestAdaptCortexHandler_RecordsToolOnSuccess checks that a call which runs
+// through the use case writes a normal query record carrying the tool name and
+// the token principal.
+func TestAdaptCortexHandler_RecordsToolOnSuccess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	require.NoError(t, usecase.EnableAuditLog(path))
+	t.Cleanup(usecase.DisableAuditLog)
+
+	raw, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = raw.Close() })
+	uc := usecase.NewDatabaseUseCase(sqliteBridgeRepo{db: sqliteBridgeDB{db: raw}})
+	handler := adaptCortexHandler(func(ctx context.Context, _ cortexServer.ToolCallRequest) (interface{}, error) {
+		text, err := uc.ExecuteQuery(ctx, "orders", "SELECT 1", nil)
+		if err != nil {
+			return nil, err
+		}
+		return &Response{Content: []TextContent{{Type: "text", Text: text}}}, nil
+	})
+	request := &sdkmcp.CallToolRequest{
+		Params: &sdkmcp.CallToolParamsRaw{Name: "query_orders", Arguments: json.RawMessage(`{"query":"SELECT 1"}`)},
+		Extra:  &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{UserID: "reader", Scopes: []string{"db:read"}}},
+	}
+
+	result, err := handler(context.Background(), request)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	recs := readAuditRecords(t, path)
+	require.Len(t, recs, 1)
+	require.Equal(t, "query", recs[0]["op"])
+	require.Equal(t, "orders", recs[0]["database"])
+	require.Equal(t, "query_orders", recs[0]["tool"])
+	require.Equal(t, "reader", recs[0]["principal"])
 }

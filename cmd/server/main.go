@@ -155,6 +155,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Auditing is mandatory when DB_MCP_AUDIT_REQUIRED is set. Checked after
+	// LoadConfig so values from .env count too.
+	if required := os.Getenv("DB_MCP_AUDIT_REQUIRED"); required == "true" || required == "1" {
+		if err := usecase.RequireAuditLog(); err != nil {
+			logger.Error("%v", err)
+			os.Exit(1)
+		}
+	}
+
 	// Only the streamable transport uses the API key; resolve it for the
 	// transport the configuration selected.
 	*apiKey, _, err = resolveAPIKeyForTransport(cfg.TransportMode, apiKeyFlag, apiKeyEnv, apiKeyFile)
@@ -416,7 +425,10 @@ func main() {
 		streamableHandler := authMiddleware(mcp.NewStreamableHTTPHandler(toolRegistry.ServerAdapter().SDKServer()))
 
 		mux := http.NewServeMux()
-		mux.Handle("/mcp", streamableHandler)
+		if err := mcp.MountStreamableRoutes(mux, os.Getenv, apiScopes, streamableHandler); err != nil {
+			logger.Error("%v", err)
+			os.Exit(1)
+		}
 
 		// Same unauthenticated side-port /health probe as SSE, so the image
 		// HEALTHCHECK works in Streamable mode too.

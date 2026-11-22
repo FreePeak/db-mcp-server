@@ -559,11 +559,14 @@ Values in a `.env` file are loaded first; real environment variables take preced
 | `DB_MCP_AGENT_KEYS_FILE` | empty | JSON file of per-agent key digests, scopes and database allowlists (see above) |
 | `DB_MCP_OIDC_ISSUER` | empty | OIDC issuer URL; when set, OIDC/JWT verification replaces the static pilot key |
 | `DB_MCP_OIDC_AUDIENCE` | empty | Required OIDC audience/client ID |
+| `DB_MCP_RESOURCE_URL` | empty | Public URL of `/mcp` (for example `https://db.example.com/mcp`); with `DB_MCP_OIDC_ISSUER` it serves OAuth protected resource metadata (RFC 9728) so MCP clients can discover the identity provider |
 | `LOG_LEVEL` | `info` | Log verbosity (`debug`, `info`, `warn`, `error`) |
 | `DISABLE_LOGGING` | `false` | `true`/`1` silences logging entirely |
 | `DB_TYPE`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | engine defaults | Single-database fallback when no JSON config exists |
 | `QUERY_TIMEOUT_SECONDS` | unset | Fills connections that don't set their own `query_timeout`; negative disables the cap. JSON configs keep precedence. |
 | `DB_MCP_AUDIT_LOG` | unset | Optional append-only JSONL audit path |
+| `DB_MCP_AUDIT_PRINCIPAL` | unset | Principal recorded for audit records with no authenticated caller (stdio sessions); a token principal always wins |
+| `DB_MCP_AUDIT_REQUIRED` | unset | `true`/`1` makes startup fail unless `DB_MCP_AUDIT_LOG` is set and its file can be opened |
 | `VERBOSE` | unset | `true`/`1` sets the startup log level to `debug` (the default is `error`, i.e. silent unless `LOG_LEVEL` is set) |
 | `MCP_DISABLE_LOGGING` | unset | `true`/`1` discards MCP protocol logs (writer-level switch, independent of `LOG_LEVEL`/`DISABLE_LOGGING`) |
 
