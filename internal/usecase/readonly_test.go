@@ -140,11 +140,15 @@ func TestExecuteStatement_WritableDatabaseAllowsExec(t *testing.T) {
 type fakeROTx struct {
 	rollbackCall int
 	rollbackErr  error
+	rows         domain.Rows
 }
 
 func (t *fakeROTx) Commit() error   { return nil }
 func (t *fakeROTx) Rollback() error { t.rollbackCall++; return t.rollbackErr }
 func (t *fakeROTx) Query(_ context.Context, _ string, _ ...interface{}) (domain.Rows, error) {
+	if t.rows != nil {
+		return t.rows, nil
+	}
 	return &fakeRows{columns: []string{"a"}, data: [][]interface{}{{"x"}}}, nil
 }
 func (t *fakeROTx) Exec(_ context.Context, _ string, _ ...interface{}) (domain.Result, error) {
@@ -193,5 +197,32 @@ func TestExecuteQuery_PostgresReadOnlyRollbackFailureIsReturned(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "connection reset") {
 		t.Fatalf("expected rollback error to surface, got: %v", err)
+	}
+}
+
+// panickingRows panics while the result is being read, standing in for a
+// formatter or driver failure mid-query.
+type panickingRows struct{ *fakeRows }
+
+func (panickingRows) Columns() ([]string, error) { panic("formatting failed") }
+
+// TestExecuteQuery_PostgresReadOnlyRollsBackOnPanic locks in that a panic while
+// the rows are formatted still rolls back the read-only transaction before it
+// unwinds. Otherwise the open transaction would hold its pooled connection.
+func TestExecuteQuery_PostgresReadOnlyRollsBackOnPanic(t *testing.T) {
+	tx := &fakeROTx{rows: panickingRows{newFakeRows(1)}}
+	db := &fakeDB{readOnly: true, beginTx: tx}
+	uc := NewDatabaseUseCase(&fakeRepo{db: db, dbType: "postgres"})
+
+	var recovered interface{}
+	func() {
+		defer func() { recovered = recover() }()
+		_, _ = uc.ExecuteQuery(context.Background(), "pg_prod", "SELECT * FROM users", nil)
+	}()
+	if recovered == nil {
+		t.Fatal("expected the formatting panic to propagate to the caller")
+	}
+	if tx.rollbackCall != 1 {
+		t.Fatalf("transaction must be rolled back when formatting panics; got %d rollbacks", tx.rollbackCall)
 	}
 }

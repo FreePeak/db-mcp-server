@@ -440,18 +440,22 @@ func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, par
 	// (slow_queries, stats, workload_suggestions fallback) reflects real
 	// traffic instead of staying empty on the primary execution path.
 	var out string
-	_, trackErr := dbtools.GetPerformanceAnalyzer().TrackQuery(ctx, query, params, func() (interface{}, error) {
+	_, trackErr := dbtools.GetPerformanceAnalyzer().TrackQuery(ctx, query, params, func() (_ interface{}, err error) {
 		rows, release, qerr := openRows(ctx, db, readOnlyTx, execQuery, params)
 		if qerr != nil {
 			return nil, fmt.Errorf("query execution failed%s: %w", cappedNote, qerr)
 		}
+		// Deferred so the read-only transaction is rolled back even when
+		// formatting panics. A release failure is returned only when no
+		// earlier error is set, so the format error keeps precedence.
+		defer func() {
+			if relErr := release(); relErr != nil && err == nil {
+				err = relErr
+			}
+		}()
 		s, ferr := formatQueryResults(rows, db.MaxRows(), databaseMaskingRules(db), mask || databaseMaskPII(db))
-		relErr := release()
 		if ferr != nil {
 			return nil, ferr
-		}
-		if relErr != nil {
-			return nil, relErr
 		}
 		out = s
 		return nil, nil
