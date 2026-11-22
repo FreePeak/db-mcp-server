@@ -18,7 +18,7 @@ func TestValidateTransportAuth(t *testing.T) {
 		{
 			name:      "streamable without key or OIDC is refused",
 			transport: "streamable",
-			wantErr:   "DB_MCP_API_KEY_FILE",
+			wantErr:   "DB_MCP_AGENT_KEYS_FILE",
 		},
 		{
 			name:      "streamable with API key",

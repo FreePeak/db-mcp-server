@@ -10,7 +10,7 @@ func validateTransportAuth(transport string, hasAPIKey, hasOIDC, allowInsecureSS
 	switch transport {
 	case "streamable":
 		if !hasAPIKey && !hasOIDC {
-			return errors.New("streamable HTTP requires OIDC configuration or DB_MCP_API_KEY or DB_MCP_API_KEY_FILE; refusing to start unauthenticated")
+			return errors.New("streamable HTTP requires OIDC configuration or DB_MCP_API_KEY or DB_MCP_API_KEY_FILE or DB_MCP_AGENT_KEYS_FILE; refusing to start unauthenticated")
 		}
 	case "sse":
 		if !allowInsecureSSE {
