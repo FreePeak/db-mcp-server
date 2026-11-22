@@ -245,6 +245,29 @@ JWKS signature validation, issuer/audience checks, and subject identity for
 shared deployments; database-specific scopes are still intentionally not
 enabled until that policy is defined.
 
+#### Tool scopes
+
+The scope a call needs is decided by the statement or operation it runs, not
+by the tool name alone:
+
+| Tool | `db:read` | `db:write` |
+|------|-----------|------------|
+| `query`, `query_<db>` | statement passes the SQL write guard as read-only | statement is a write (`DELETE`, `DROP`, `SELECT ... INTO`, a stacked or data-modifying write, `COPY`, unknown verb) |
+| `explain`, `explain_<db>` | statement is read-only | statement is a write (checked with or without `analyze`) |
+| `performance_<db>` | `stats`, `slow_queries`, `engine_slow_queries`, `suggest`, `suggest_indexes`, `workload_suggestions`, `index_health`, `db_health` | `reset`, `validate_suggestions`, any other action |
+| `schema`, `describe`, `health`, `filter_tables`, `list_databases` | always | never |
+| `timescaledb_*` | `list_hypertables`, `get_compression_settings`, `get_retention_policy`, `list_continuous_aggregates`, `get_continuous_aggregate_info`; `time_series_query` and `analyze_time_series` when the SQL they build is read-only | every other operation, including unknown ones |
+| `execute*`, `transaction*` | never | always |
+
+A call whose SQL, action, or operation is missing or not a string fails closed
+to `db:write`, as do unknown tool names. Arguments that are not a JSON object
+are rejected before the scope check. `db:admin` allows every tool. Stdio
+connections carry no token and are not scope-checked.
+
+The SQL check is the textual classifier in `internal/usecase/sql_guard.go`. It
+is a best-effort gate, not a parser or a sandbox, so run read-scoped clients
+against a least-privilege database user.
+
 ### Docker image
 
 The image defaults to the authenticated Streamable HTTP transport
