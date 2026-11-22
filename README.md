@@ -199,8 +199,27 @@ implementation.
 The `streamable` endpoint is backed by the maintained Go MCP SDK and supports
 stateful sessions, JSON or SSE responses, notifications, GET/DELETE session
 lifecycle, and JSON-RPC dispatch. The process refuses to start it without
-`DB_MCP_API_KEY`; keep it behind a private TLS gateway until the identity and
+an API key; keep it behind a private TLS gateway until the identity and
 conformance rollout is complete.
+
+Provide the key through exactly one source: `DB_MCP_API_KEY`, `DB_MCP_API_KEY_FILE`,
+or the `-api-key` flag. Setting more than one is a startup error. The flag is
+visible in the process list, so it logs a warning; prefer the file or env var.
+Use the file form with Docker or Kubernetes secrets:
+
+```bash
+# Docker secret mounted at /run/secrets/db_mcp_api_key
+docker run --rm -p 127.0.0.1:9092:9092 \
+  -e TRANSPORT_MODE=streamable \
+  -e DB_MCP_API_KEY_FILE=/run/secrets/db_mcp_api_key \
+  -v "$(pwd)/config.local.json:/app/config.json:ro" \
+  -v "$(pwd)/db_mcp_api_key:/run/secrets/db_mcp_api_key:ro" \
+  db-mcp-server:local
+```
+
+The key file is read once at startup. A rotated Kubernetes or Docker secret takes
+effect only after the server restarts. The key is not read for the stdio or SSE
+transports, so a blank key or a missing key file does not stop them.
 
 For browser-origin requests, set an explicit comma-separated allowlist:
 
@@ -397,7 +416,7 @@ export DB_CONFIG='{"connections":[...]}'
 - `-h, -host`: HTTP bind host (default: `127.0.0.1`)
 - `--version`: Print the build version and exit
 - `-allow-insecure-sse`: Explicitly allow legacy SSE for a private development proxy
-- `-api-key`: Bearer key for the experimental Streamable HTTP entrypoint (or use `DB_MCP_API_KEY`)
+- `-api-key`: Bearer key for the experimental Streamable HTTP entrypoint. Visible in the process list and logs a warning; prefer `DB_MCP_API_KEY_FILE` or `DB_MCP_API_KEY`
 - `-log-level`: Log level (`debug`, `info`, `warn`, `error`)
 - `-log-dir`: Directory for log files (default: `./logs` in current directory)
 - `-db-config`: Inline JSON database configuration
@@ -424,6 +443,7 @@ Values in a `.env` file are loaded first; real environment variables take preced
 | `SERVER_PORT` | `9092` | HTTP port |
 | `MCP_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed by experimental Streamable HTTP |
 | `DB_MCP_API_KEY` | empty | Bearer key for experimental Streamable HTTP; keep it in a secret manager |
+| `DB_MCP_API_KEY_FILE` | empty | Path to a file holding the Bearer key (trailing newline trimmed; an empty or whitespace-only file is an error). Use for Docker/Kubernetes secrets |
 | `DB_MCP_API_SCOPES` | `db:read` | Required/granted scopes: `db:read`, `db:write`, and/or `db:admin` |
 | `DB_MCP_OIDC_ISSUER` | empty | OIDC issuer URL; when set, OIDC/JWT verification replaces the static pilot key |
 | `DB_MCP_OIDC_AUDIENCE` | empty | Required OIDC audience/client ID |
