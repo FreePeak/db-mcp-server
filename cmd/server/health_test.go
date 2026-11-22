@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -23,14 +24,7 @@ import (
 // sessions. This test binds to an ephemeral port to avoid clashing with
 // a running server in CI.
 func TestHealthEndpoint_Returns200(t *testing.T) {
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, `{"status":"ok","databases":3,"transport":"sse"}`)
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", handler)
+	mux := newHealthHandler(3, "sse")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -73,11 +67,7 @@ func TestHealthEndpoint_Returns200(t *testing.T) {
 // on the health port; arbitrary paths must return 404 so the side server
 // can't be misused as a proxy.
 func TestHealthEndpoint_NotFoundOnUnknownRoute(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, "ok")
-	})
+	mux := newHealthHandler(0, "sse")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -100,6 +90,28 @@ func TestHealthEndpoint_NotFoundOnUnknownRoute(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+// TestHealthHandler_StreamableTransport verifies that the side health port
+// also answers in Streamable HTTP mode, so the image HEALTHCHECK does not mark
+// a correctly configured Streamable container unhealthy.
+func TestHealthHandler_StreamableTransport(t *testing.T) {
+	srv := httptest.NewServer(newHealthHandler(2, "streamable"))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/health")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	var decoded map[string]interface{}
+	require.NoError(t, json.Unmarshal(body, &decoded), "body: %s", string(body))
+	assert.Equal(t, "ok", decoded["status"])
+	assert.EqualValues(t, 2, decoded["databases"])
+	assert.Equal(t, "streamable", decoded["transport"])
 }
 
 func contextWithTimeout(d time.Duration) (ctx shutdownCtx, cancel func()) {

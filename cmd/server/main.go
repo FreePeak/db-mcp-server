@@ -85,7 +85,7 @@ func main() {
 	lazyLoading := flag.Bool("lazy-loading", false, "Enable lazy loading: connections established on first use (recommended for 10+ databases)")
 	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
 	unifiedTools := flag.Bool("unified-tools", false, "Register unified tools with database parameter instead of per-database tools")
-	healthPort := flag.Int("health-port", 9093, "Port for the /health HTTP endpoint (0 to disable; only used in SSE mode)")
+	healthPort := flag.Int("health-port", 9093, "Port for the /health HTTP endpoint (0 to disable; served in both SSE and Streamable HTTP modes)")
 	apiKey := flag.String("api-key", "", "API key required to authenticate HTTP/SSE clients (Authorization: Bearer <key>); visible in the process list, so prefer DB_MCP_API_KEY or DB_MCP_API_KEY_FILE. Empty disables auth. Applied to the streamable HTTP transport; compose with mcp.APIKeyAuth in your own reverse proxy for the SSE transport.")
 	flag.Parse()
 
@@ -158,6 +158,12 @@ func main() {
 	// transport the configuration selected.
 	*apiKey, _, err = resolveAPIKeyForTransport(cfg.TransportMode, apiKeyFlag, apiKeyEnv, apiKeyFile)
 	if err != nil {
+		logger.Error("%v", err)
+		os.Exit(1)
+	}
+
+	oidcIssuer := strings.TrimSpace(os.Getenv("DB_MCP_OIDC_ISSUER"))
+	if err := validateTransportAuth(cfg.TransportMode, *apiKey != "", oidcIssuer != "", *allowInsecureSSE); err != nil {
 		logger.Error("%v", err)
 		os.Exit(1)
 	}
@@ -249,10 +255,6 @@ func main() {
 	// Handle transport mode
 	switch cfg.TransportMode {
 	case "sse":
-		if !*allowInsecureSSE {
-			logger.Error("Legacy SSE is disabled by default because it has no built-in authentication; use STDIO or implement the Streamable transport, or pass -allow-insecure-sse only behind a trusted private proxy")
-			os.Exit(1)
-		}
 		if apiKeyFlag != "" || apiKeyEnv != "" || apiKeyFile != "" {
 			logger.Warn("An API key (-api-key, DB_MCP_API_KEY or DB_MCP_API_KEY_FILE) is not applied to the legacy Cortex SSE transport; enforce authentication at the trusted proxy")
 		}
@@ -276,32 +278,7 @@ func main() {
 
 		// Start the dedicated /health HTTP endpoint on a separate port so the
 		// MCP SSE server is not blocked by container/orchestrator probes.
-		// The endpoint returns 200 OK with a small JSON body describing the
-		// configured database count and uptime so monitoring tools can verify
-		// the server is alive without opening an MCP session.
-		var healthServer *http.Server
-		if *healthPort > 0 {
-			mux := http.NewServeMux()
-			mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				if _, err := fmt.Fprintf(w, `{"status":"ok","databases":%d,"transport":"%s"}`,
-					len(dbIDs), cfg.TransportMode); err != nil {
-					logger.Warn("health response write failed: %v", err)
-				}
-			})
-			healthServer = &http.Server{
-				Addr:              net.JoinHostPort(*serverHost, strconv.Itoa(*healthPort)),
-				Handler:           mux,
-				ReadHeaderTimeout: 5 * time.Second,
-			}
-			go func() {
-				logger.Info("Starting health endpoint on :%d/health", *healthPort)
-				if err := healthServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					logger.Warn("health endpoint error: %v", err)
-				}
-			}()
-		}
+		healthServer := startHealthServer(*serverHost, *healthPort, newHealthHandler(len(dbIDs), cfg.TransportMode))
 
 		// Start the server
 		errCh := make(chan error, 1)
@@ -398,7 +375,6 @@ func main() {
 		}
 
 		var authMiddleware func(http.Handler) http.Handler
-		oidcIssuer := strings.TrimSpace(os.Getenv("DB_MCP_OIDC_ISSUER"))
 		if oidcIssuer != "" {
 			oidcAudience := strings.TrimSpace(os.Getenv("DB_MCP_OIDC_AUDIENCE"))
 			if oidcAudience == "" {
@@ -414,16 +390,16 @@ func main() {
 			}
 			authMiddleware = mcp.OIDCBearerAuth(verifier, apiScopes)
 		} else {
-			if *apiKey == "" {
-				logger.Error("Streamable HTTP requires OIDC configuration or DB_MCP_API_KEY; refusing to start unauthenticated")
-				os.Exit(1)
-			}
 			authMiddleware = mcp.APIKeyAuthWithScopes(*apiKey, apiScopes)
 		}
 		streamableHandler := authMiddleware(mcp.NewStreamableHTTPHandler(toolRegistry.ServerAdapter().SDKServer()))
 
 		mux := http.NewServeMux()
 		mux.Handle("/mcp", streamableHandler)
+
+		// Same unauthenticated side-port /health probe as SSE, so the image
+		// HEALTHCHECK works in Streamable mode too.
+		healthServer := startHealthServer(*serverHost, *healthPort, newHealthHandler(len(dbIDs), cfg.TransportMode))
 
 		streamableServer := &http.Server{
 			Addr:              net.JoinHostPort(*serverHost, strconv.Itoa(cfg.ServerPort)),
@@ -448,6 +424,11 @@ func main() {
 
 		if err := streamableServer.Shutdown(shutdownCtx); err != nil {
 			logger.Error("Error during streamable HTTP shutdown: %v", err)
+		}
+		if healthServer != nil {
+			if err := healthServer.Shutdown(shutdownCtx); err != nil {
+				logger.Error("Error during health endpoint shutdown: %v", err)
+			}
 		}
 		dbUseCase.CloseTransactions()
 		if err := dbtools.CloseDatabase(); err != nil {
