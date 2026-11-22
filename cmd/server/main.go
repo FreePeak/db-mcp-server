@@ -13,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -168,6 +169,7 @@ func main() {
 		logger.Error("%v", err)
 		os.Exit(1)
 	}
+	writeAgentKeysWarning(os.Stderr, agentKeysWarning)
 	if agentKeysWarning != "" {
 		logger.Warn("%s", agentKeysWarning)
 	}
@@ -459,6 +461,15 @@ func main() {
 	}
 
 	logger.Info("Server shutdown complete")
+}
+
+// writeAgentKeysWarning prints a non-empty warning to w. Stdout carries MCP
+// traffic and stdio logs go to a file, so the operator sees it on stderr.
+func writeAgentKeysWarning(w io.Writer, warning string) {
+	if warning == "" {
+		return
+	}
+	fmt.Fprintln(w, warning) //nolint:errcheck // no other channel exists to report a failed stderr write
 }
 
 // agentKeysSettings resolves DB_MCP_AGENT_KEYS_FILE for the transport. It

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -41,6 +42,24 @@ func TestAgentKeysSettings(t *testing.T) {
 			} else {
 				assert.Contains(t, warn, tc.wantWarn)
 			}
+		})
+	}
+}
+
+func TestWriteAgentKeysWarning(t *testing.T) {
+	tests := []struct {
+		name    string
+		warning string
+		want    string
+	}{
+		{name: "empty warning writes nothing", warning: "", want: ""},
+		{name: "warning is newline-terminated", warning: "DB_MCP_AGENT_KEYS_FILE is ignored", want: "DB_MCP_AGENT_KEYS_FILE is ignored\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			writeAgentKeysWarning(&buf, tc.warning)
+			assert.Equal(t, tc.want, buf.String())
 		})
 	}
 }
