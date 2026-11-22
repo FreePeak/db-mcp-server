@@ -164,7 +164,7 @@ func main() {
 	}
 
 	oidcIssuer := strings.TrimSpace(os.Getenv("DB_MCP_OIDC_ISSUER"))
-	agentKeysFile, agentKeysWarning, err := agentKeysSettings(cfg.TransportMode, oidcIssuer, os.Getenv("DB_MCP_AGENT_KEYS_FILE"))
+	agentKeysFile, agentKeysWarning, err := agentKeysSettings(cfg.TransportMode, oidcIssuer, os.Getenv("DB_MCP_AGENT_KEYS_FILE"), *unifiedTools)
 	if err != nil {
 		logger.Error("%v", err)
 		os.Exit(1)
@@ -475,8 +475,8 @@ func writeAgentKeysWarning(w io.Writer, warning string) {
 // agentKeysSettings resolves DB_MCP_AGENT_KEYS_FILE for the transport. It
 // returns the trimmed path ("" when unset), a warning when a set file is ignored
 // because the transport is not streamable HTTP, and an error when the file
-// conflicts with OIDC.
-func agentKeysSettings(transport, oidcIssuer, path string) (string, string, error) {
+// conflicts with OIDC or the unified tools are off.
+func agentKeysSettings(transport, oidcIssuer, path string, unifiedTools bool) (string, string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return "", "", nil
@@ -486,6 +486,9 @@ func agentKeysSettings(transport, oidcIssuer, path string) (string, string, erro
 	}
 	if strings.TrimSpace(oidcIssuer) != "" {
 		return "", "", fmt.Errorf("DB_MCP_AGENT_KEYS_FILE cannot be combined with DB_MCP_OIDC_ISSUER")
+	}
+	if !unifiedTools {
+		return "", "", fmt.Errorf("DB_MCP_AGENT_KEYS_FILE requires the -unified-tools flag: agent keys can call only unified tools")
 	}
 	return path, "", nil
 }

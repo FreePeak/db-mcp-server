@@ -271,7 +271,10 @@ against a least-privilege database user.
 #### Per-agent keys (`DB_MCP_AGENT_KEYS_FILE`)
 
 Give each agent its own key, identity, scopes and database allowlist by pointing
-`DB_MCP_AGENT_KEYS_FILE` at a JSON list. Only SHA-256 digests are stored:
+`DB_MCP_AGENT_KEYS_FILE` at a JSON list. Only SHA-256 digests are stored.
+Agent keys can call only the unified tools, so start the server with
+`-unified-tools` (there is no environment variable for it). With the file set and
+the flag off, the server refuses to start:
 
 ```json
 [
@@ -332,6 +335,17 @@ docker run --rm -p 127.0.0.1:9092:9092 -p 127.0.0.1:9093:9093 \
   -e DB_MCP_API_KEY \
   -v "$(pwd)/config.local.json:/app/config.json:ro" \
   db-mcp-server:local
+```
+
+Agent keys need the unified tools, and the image's default command does not pass
+`-unified-tools`. Override the command so the server gets the flag:
+
+```bash
+docker run --rm -p 127.0.0.1:9092:9092 -p 127.0.0.1:9093:9093 \
+  -e DB_MCP_AGENT_KEYS_FILE=/app/agent-keys.json \
+  -v "$(pwd)/config.local.json:/app/config.json:ro" \
+  -v "$(pwd)/agent-keys.json:/app/agent-keys.json:ro" \
+  db-mcp-server:local /app/server -t streamable -h 0.0.0.0 -p 9092 -c /app/config.json -unified-tools
 ```
 
 Legacy SSE has no built-in authentication. It runs only when both variables are
