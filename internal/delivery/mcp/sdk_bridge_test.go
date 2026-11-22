@@ -223,6 +223,59 @@ func TestRequiredToolScope(t *testing.T) {
 	}
 }
 
+func TestRequiredToolScope_QueryWriteNeedsWrite(t *testing.T) {
+	cases := []struct {
+		name  string
+		tool  string
+		query string
+		want  string
+	}{
+		{"per-database insert", "query_orders", "INSERT INTO orders VALUES (1)", "db:write"},
+		{"per-database update", "query_orders", "UPDATE orders SET a = 1", "db:write"},
+		{"per-database select", "query_orders", "SELECT * FROM orders", "db:read"},
+		{"unified insert", "query", "INSERT INTO orders VALUES (1)", "db:write"},
+		{"unified select", "query", "SELECT 1", "db:read"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, requiredToolScope(tc.tool, map[string]interface{}{"query": tc.query}))
+		})
+	}
+}
+
+func TestRequiredToolScope_ExplainWrite(t *testing.T) {
+	require.Equal(t, "db:write", requiredToolScope("explain_orders", map[string]interface{}{"statement": "INSERT INTO orders VALUES (1)"}))
+	require.Equal(t, "db:read", requiredToolScope("explain_orders", map[string]interface{}{"statement": "SELECT 1"}))
+}
+
+func TestRequiredToolScope_UnknownToolFailsClosed(t *testing.T) {
+	arguments := map[string]interface{}{"query": "SELECT 1"}
+	require.Equal(t, "db:write", requiredToolScope("frobnicate_orders", arguments))
+
+	request := &sdkmcp.CallToolRequest{
+		Params: &sdkmcp.CallToolParamsRaw{Name: "frobnicate_orders"},
+		Extra:  &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{Scopes: []string{"db:read"}}},
+	}
+	require.False(t, toolScopeAllowed(request, arguments))
+}
+
+func TestAdaptCortexHandler_ReadTokenCannotWriteViaQuery(t *testing.T) {
+	calls := 0
+	handler := adaptCortexHandler(func(context.Context, cortexServer.ToolCallRequest) (interface{}, error) {
+		calls++
+		return &Response{Content: []TextContent{{Type: "text", Text: "ok"}}}, nil
+	})
+	request := &sdkmcp.CallToolRequest{
+		Params: &sdkmcp.CallToolParamsRaw{Name: "query", Arguments: json.RawMessage(`{"query":"INSERT INTO orders VALUES (1)"}`)},
+		Extra:  &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{Scopes: []string{"db:read"}}},
+	}
+
+	result, err := handler(context.Background(), request)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Equal(t, 0, calls, "a db:read token must not reach the handler for an INSERT")
+}
+
 func TestAdaptCortexHandlerPassesPrincipalToUseCase(t *testing.T) {
 	var seen usecase.Caller
 	handler := adaptCortexHandler(func(ctx context.Context, _ cortexServer.ToolCallRequest) (interface{}, error) {
@@ -231,7 +284,7 @@ func TestAdaptCortexHandlerPassesPrincipalToUseCase(t *testing.T) {
 	})
 
 	authed := &sdkmcp.CallToolRequest{
-		Params: &sdkmcp.CallToolParamsRaw{Name: "query"},
+		Params: &sdkmcp.CallToolParamsRaw{Name: "list_databases"},
 		Extra:  &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{UserID: "user@example.com", Scopes: []string{"db:read"}}},
 	}
 	_, err := handler(context.Background(), authed)
