@@ -190,8 +190,8 @@ private reverse proxy:
 ```
 
 Do not use this mode for a shared deployment. The legacy endpoint does not
-apply `DB_MCP_API_KEY`; terminate TLS, authentication, and network policy at the
-proxy. A future release will replace it with a maintained Streamable HTTP
+apply the API key (`DB_MCP_API_KEY`, `DB_MCP_API_KEY_FILE`, or `-api-key`);
+terminate TLS, authentication, and network policy at the proxy. A future release will replace it with a maintained Streamable HTTP
 implementation.
 
 ### Streamable HTTP (experimental)
@@ -199,8 +199,27 @@ implementation.
 The `streamable` endpoint is backed by the maintained Go MCP SDK and supports
 stateful sessions, JSON or SSE responses, notifications, GET/DELETE session
 lifecycle, and JSON-RPC dispatch. The process refuses to start it without
-`DB_MCP_API_KEY`; keep it behind a private TLS gateway until the identity and
+an API key; keep it behind a private TLS gateway until the identity and
 conformance rollout is complete.
+
+Provide the key through exactly one source: `DB_MCP_API_KEY`, `DB_MCP_API_KEY_FILE`,
+or the `-api-key` flag. Setting more than one is a startup error. The flag is
+visible in the process list, so it logs a warning; prefer the file or env var.
+Use the file form with Docker or Kubernetes secrets:
+
+```bash
+# Docker secret mounted at /run/secrets/db_mcp_api_key
+docker run --rm -p 127.0.0.1:9092:9092 \
+  -e TRANSPORT_MODE=streamable \
+  -e DB_MCP_API_KEY_FILE=/run/secrets/db_mcp_api_key \
+  -v "$(pwd)/config.local.json:/app/config.json:ro" \
+  -v "$(pwd)/db_mcp_api_key:/run/secrets/db_mcp_api_key:ro" \
+  db-mcp-server:local
+```
+
+The key file is read once at startup. A rotated Kubernetes or Docker secret takes
+effect only after the server restarts. The key is not read for the stdio or SSE
+transports, so a blank key or a missing key file does not stop them.
 
 For browser-origin requests, set an explicit comma-separated allowlist:
 
@@ -226,28 +245,62 @@ JWKS signature validation, issuer/audience checks, and subject identity for
 shared deployments; database-specific scopes are still intentionally not
 enabled until that policy is defined.
 
-### Docker development image
+#### Tool scopes
 
-The published image is a development/demo artifact, not an enterprise
-hardening recommendation. The current Dockerfile runs as an unprivileged
-user, omits an embedded config, and includes the legacy
-`-allow-insecure-sse` behavior for local Compose compatibility. It exposes a
-separate health port (`9093`) and is not suitable for public publication.
+The scope a call needs is decided by the statement or operation it runs, not
+by the tool name alone:
+
+| Tool | `db:read` | `db:write` |
+|------|-----------|------------|
+| `query`, `query_<db>` | statement passes the SQL write guard as read-only | statement is a write (`DELETE`, `DROP`, `SELECT ... INTO`, a stacked or data-modifying write, `COPY`, unknown verb) |
+| `explain`, `explain_<db>` | statement is read-only | statement is a write (checked with or without `analyze`) |
+| `performance_<db>` | `stats`, `slow_queries`, `engine_slow_queries`, `suggest`, `suggest_indexes`, `workload_suggestions`, `index_health`, `db_health` | `reset`, `validate_suggestions`, any other action |
+| `schema`, `describe`, `health`, `filter_tables`, `list_databases` | always | never |
+| `timescaledb_*` | `list_hypertables`, `get_compression_settings`, `get_retention_policy`, `list_continuous_aggregates`, `get_continuous_aggregate_info`; `time_series_query` and `analyze_time_series` when the SQL they build is read-only | every other operation, including unknown ones |
+| `execute*`, `transaction*` | never | always |
+
+A call whose SQL, action, or operation is missing or not a string fails closed
+to `db:write`, as do unknown tool names. Arguments that are not a JSON object
+are rejected before the scope check. `db:admin` allows every tool. Stdio
+connections carry no token and are not scope-checked.
+
+The SQL check is the textual classifier in `internal/usecase/sql_guard.go`. It
+is a best-effort gate, not a parser or a sandbox, so run read-scoped clients
+against a least-privilege database user.
+
+### Docker image
+
+The image defaults to the authenticated Streamable HTTP transport
+(`TRANSPORT_MODE=streamable`). It refuses to start without `DB_MCP_API_KEY`,
+`DB_MCP_API_KEY_FILE`, or OIDC configuration, and the container exits non-zero with an authentication
+error otherwise. It runs as an unprivileged user, omits an embedded config
+(mount one at `/app/config.json`), and serves an unauthenticated `/health`
+probe on port `9093` in both HTTP modes.
 
 ```bash
 # Build a local image from this source revision
 docker build -t db-mcp-server:local .
 
-# Keep it private; the image's default SSE mode is compatibility-only
-docker run --rm -p 127.0.0.1:9092:9092 \
-  -p 127.0.0.1:9093:9093 \
+# Default: Streamable HTTP. Export the key in your shell; it is passed through, not written to disk.
+docker run --rm -p 127.0.0.1:9092:9092 -p 127.0.0.1:9093:9093 \
+  -e DB_MCP_API_KEY \
   -v "$(pwd)/config.local.json:/app/config.json:ro" \
   db-mcp-server:local
 ```
 
-For a team deployment, wait for the authenticated Streamable transport and use
-a non-root, read-only-filesystem image with a private network, external secret
-store, and a TLS/OIDC gateway.
+Legacy SSE has no built-in authentication. It runs only when both variables are
+set explicitly, and only on a private network behind a trusted proxy:
+
+```bash
+docker run --rm -p 127.0.0.1:9092:9092 -p 127.0.0.1:9093:9093 \
+  -e TRANSPORT_MODE=sse -e ALLOW_INSECURE_SSE=true \
+  -v "$(pwd)/config.local.json:/app/config.json:ro" \
+  db-mcp-server:local
+```
+
+The image is a development and demo artifact, not a hardened public image. For a
+team deployment, put the Streamable endpoint behind a TLS/OIDC gateway with a
+private network and an external secret store.
 
 ### Source Code Installation
 
@@ -397,7 +450,7 @@ export DB_CONFIG='{"connections":[...]}'
 - `-h, -host`: HTTP bind host (default: `127.0.0.1`)
 - `--version`: Print the build version and exit
 - `-allow-insecure-sse`: Explicitly allow legacy SSE for a private development proxy
-- `-api-key`: Bearer key for the experimental Streamable HTTP entrypoint (or use `DB_MCP_API_KEY`)
+- `-api-key`: Bearer key for the experimental Streamable HTTP entrypoint. Visible in the process list and logs a warning; prefer `DB_MCP_API_KEY_FILE` or `DB_MCP_API_KEY`
 - `-log-level`: Log level (`debug`, `info`, `warn`, `error`)
 - `-log-dir`: Directory for log files (default: `./logs` in current directory)
 - `-db-config`: Inline JSON database configuration
@@ -420,10 +473,12 @@ Values in a `.env` file are loaded first; real environment variables take preced
 |---|---|---|
 | `CONFIG_PATH` / `DB_CONFIG_FILE` | `config.json` | Path to the multi-database JSON config |
 | `DB_CONFIG` | — | Inline JSON database configuration (used when no file is present) |
-| `TRANSPORT_MODE` | `stdio` | Transport mode when `-t` is not passed |
+| `TRANSPORT_MODE` | `stdio` (Docker image: `streamable`) | Transport mode when `-t` is not passed |
 | `SERVER_PORT` | `9092` | HTTP port |
 | `MCP_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed by experimental Streamable HTTP |
 | `DB_MCP_API_KEY` | empty | Bearer key for experimental Streamable HTTP; keep it in a secret manager |
+| `DB_MCP_API_KEY_FILE` | empty | Path to a file holding the Bearer key (trailing newline trimmed; an empty or whitespace-only file is an error). Use for Docker/Kubernetes secrets |
+| `ALLOW_INSECURE_SSE` | unset | Docker image only: `true` passes `-allow-insecure-sse` so `TRANSPORT_MODE=sse` can start |
 | `DB_MCP_API_SCOPES` | `db:read` | Required/granted scopes: `db:read`, `db:write`, and/or `db:admin` |
 | `DB_MCP_OIDC_ISSUER` | empty | OIDC issuer URL; when set, OIDC/JWT verification replaces the static pilot key |
 | `DB_MCP_OIDC_AUDIENCE` | empty | Required OIDC audience/client ID |
@@ -803,10 +858,11 @@ query_oracle_dev("SELECT employee_id, salary, RANK() OVER (ORDER BY salary DESC)
 
 ### Logs
 
-Enable verbose logging for troubleshooting:
+Enable verbose logging for troubleshooting (local use only: legacy SSE has no
+built-in authentication, so it needs `-allow-insecure-sse`):
 
 ```bash
-./bin/server -t sse -c config.json -v
+./bin/server -t sse -allow-insecure-sse -c config.json -v
 ```
 
 ## Testing

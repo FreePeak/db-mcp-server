@@ -142,11 +142,11 @@ func ResolveSecretReferences(conn *DatabaseConnectionConfig, baseDir string) err
 		return fmt.Errorf("cannot resolve secrets for a nil connection")
 	}
 	var err error
-	conn.Password, err = resolveSecretValue(conn.Password, conn.PasswordEnv, conn.PasswordFile, baseDir, "password")
+	conn.Password, err = ResolveSecretValue(conn.Password, conn.PasswordEnv, conn.PasswordFile, baseDir, "password")
 	if err != nil {
 		return fmt.Errorf("database %q: %w", conn.ID, err)
 	}
-	conn.EncryptionKey, err = resolveSecretValue(conn.EncryptionKey, conn.EncryptionKeyEnv, conn.EncryptionKeyFile, baseDir, "encryption_key")
+	conn.EncryptionKey, err = ResolveSecretValue(conn.EncryptionKey, conn.EncryptionKeyEnv, conn.EncryptionKeyFile, baseDir, "encryption_key")
 	if err != nil {
 		return fmt.Errorf("database %q: %w", conn.ID, err)
 	}
@@ -155,7 +155,9 @@ func ResolveSecretReferences(conn *DatabaseConnectionConfig, baseDir string) err
 	return nil
 }
 
-func resolveSecretValue(value, envName, fileName, baseDir, label string) (string, error) {
+// ResolveSecretValue returns the inline value, or the named environment variable
+// or secret file (trailing CR/LF trimmed) when one is set. label names the field in errors.
+func ResolveSecretValue(value, envName, fileName, baseDir, label string) (string, error) {
 	if envName != "" && fileName != "" {
 		return "", fmt.Errorf("%s cannot set both %s_env and %s_file", label, label, label)
 	}
