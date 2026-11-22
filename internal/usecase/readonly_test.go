@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -16,6 +17,7 @@ type fakeDB struct {
 	maxRows     int
 	queryResult domain.Rows
 	beginCalls  int
+	beginOpts   *domain.TxOptions
 	beginTx     domain.Tx
 }
 
@@ -37,6 +39,7 @@ func (fakeResult) RowsAffected() (int64, error) { return 0, nil }
 func (fakeResult) LastInsertId() (int64, error) { return 0, nil }
 func (f *fakeDB) Begin(ctx context.Context, opts *domain.TxOptions) (domain.Tx, error) {
 	f.beginCalls++
+	f.beginOpts = opts
 	if f.beginTx != nil {
 		return f.beginTx, nil
 	}
@@ -87,6 +90,7 @@ func TestExecuteQuery_ReadOnlyDatabaseRefusesWrites(t *testing.T) {
 		"UPDATE users SET admin = 1",
 		"DROP TABLE users",
 		"WITH del AS (DELETE FROM t RETURNING *) SELECT * FROM del",
+		"SELECT set_config('default_transaction_read_only','off',false)",
 	} {
 		db := &fakeDB{readOnly: true}
 		uc := NewDatabaseUseCase(&fakeRepo{db: db})
@@ -128,5 +132,97 @@ func TestExecuteStatement_WritableDatabaseAllowsExec(t *testing.T) {
 	_, _ = uc.ExecuteStatement(context.Background(), "pg_dev", "SELECT 1", nil)
 	if db.execCalls != 1 {
 		t.Fatalf("Exec should be invoked exactly once for a writable database; got %d", db.execCalls)
+	}
+}
+
+// fakeROTx records whether a read-only transaction was rolled back, so tests
+// can assert the transaction boundary.
+type fakeROTx struct {
+	rollbackCall int
+	rollbackErr  error
+	rows         domain.Rows
+}
+
+func (t *fakeROTx) Commit() error   { return nil }
+func (t *fakeROTx) Rollback() error { t.rollbackCall++; return t.rollbackErr }
+func (t *fakeROTx) Query(_ context.Context, _ string, _ ...interface{}) (domain.Rows, error) {
+	if t.rows != nil {
+		return t.rows, nil
+	}
+	return &fakeRows{columns: []string{"a"}, data: [][]interface{}{{"x"}}}, nil
+}
+func (t *fakeROTx) Exec(_ context.Context, _ string, _ ...interface{}) (domain.Result, error) {
+	return &fakeResult{}, nil
+}
+
+// TestExecuteQuery_PostgresReadOnlyRunsInRolledBackTx locks in the second half
+// of the read-only bypass fix: on a read-only PostgreSQL database every query
+// runs inside a READ ONLY transaction that is always rolled back, so a session
+// setting flipped by a SELECT (set_config with is_local=false) cannot persist
+// on the pooled connection after the call returns.
+func TestExecuteQuery_PostgresReadOnlyRunsInRolledBackTx(t *testing.T) {
+	tx := &fakeROTx{}
+	db := &fakeDB{readOnly: true, beginTx: tx}
+	uc := NewDatabaseUseCase(&fakeRepo{db: db, dbType: "postgres"})
+
+	if _, err := uc.ExecuteQuery(context.Background(), "pg_prod", "SELECT * FROM users", nil); err != nil {
+		t.Fatalf("expected SELECT to succeed on read-only postgres, got: %v", err)
+	}
+	if db.beginCalls != 1 {
+		t.Fatalf("expected one read-only transaction per query; Begin called %d times", db.beginCalls)
+	}
+	if db.beginOpts == nil || !db.beginOpts.ReadOnly {
+		t.Fatalf("transaction must be opened READ ONLY; got TxOptions %+v", db.beginOpts)
+	}
+	if db.queryCalls != 0 {
+		t.Fatalf("query must run inside the transaction, not on the pool; direct Query calls = %d", db.queryCalls)
+	}
+	if tx.rollbackCall != 1 {
+		t.Fatalf("transaction must be rolled back exactly once; got %d", tx.rollbackCall)
+	}
+}
+
+// TestExecuteQuery_PostgresReadOnlyRollbackFailureIsReturned locks in that a
+// failed rollback of the read-only transaction is reported to the caller. The
+// session-setting guarantee depends on the rollback, so a silent success would
+// hide a transaction that may not have been rolled back.
+func TestExecuteQuery_PostgresReadOnlyRollbackFailureIsReturned(t *testing.T) {
+	tx := &fakeROTx{rollbackErr: errors.New("connection reset")}
+	db := &fakeDB{readOnly: true, beginTx: tx}
+	uc := NewDatabaseUseCase(&fakeRepo{db: db, dbType: "postgres"})
+
+	_, err := uc.ExecuteQuery(context.Background(), "pg_prod", "SELECT * FROM users", nil)
+	if err == nil {
+		t.Fatal("expected error when the read-only transaction rollback fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "connection reset") {
+		t.Fatalf("expected rollback error to surface, got: %v", err)
+	}
+}
+
+// panickingRows panics while the result is being read, standing in for a
+// formatter or driver failure mid-query.
+type panickingRows struct{ *fakeRows }
+
+func (panickingRows) Columns() ([]string, error) { panic("formatting failed") }
+
+// TestExecuteQuery_PostgresReadOnlyRollsBackOnPanic locks in that a panic while
+// the rows are formatted still rolls back the read-only transaction before it
+// unwinds. Otherwise the open transaction would hold its pooled connection.
+func TestExecuteQuery_PostgresReadOnlyRollsBackOnPanic(t *testing.T) {
+	tx := &fakeROTx{rows: panickingRows{newFakeRows(1)}}
+	db := &fakeDB{readOnly: true, beginTx: tx}
+	uc := NewDatabaseUseCase(&fakeRepo{db: db, dbType: "postgres"})
+
+	var recovered interface{}
+	func() {
+		defer func() { recovered = recover() }()
+		_, _ = uc.ExecuteQuery(context.Background(), "pg_prod", "SELECT * FROM users", nil)
+	}()
+	if recovered == nil {
+		t.Fatal("expected the formatting panic to propagate to the caller")
+	}
+	if tx.rollbackCall != 1 {
+		t.Fatalf("transaction must be rolled back when formatting panics; got %d rollbacks", tx.rollbackCall)
 	}
 }
