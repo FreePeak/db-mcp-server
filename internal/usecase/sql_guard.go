@@ -110,7 +110,7 @@ func stripSQLLiterals(query string) string {
 			}
 		case c == '/' && i+1 < n && query[i+1] == '*':
 			i += 2
-			for i+1 < n && !(query[i] == '*' && query[i+1] == '/') {
+			for i+1 < n && (query[i] != '*' || query[i+1] != '/') {
 				i++
 			}
 			i = min(i+2, n)
