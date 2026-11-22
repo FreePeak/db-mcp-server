@@ -11,6 +11,7 @@
 - **Audit denied calls**: a tool call refused by the tool scope check or an agent key database allowlist is recorded with op `denied`, the reason in `error`, and the same target and caller fields as an executed call
 - **Audit default principal**: `DB_MCP_AUDIT_PRINCIPAL` labels audit records that have no authenticated principal, such as stdio sessions; a token principal always wins
 - **Mandatory audit log**: `DB_MCP_AUDIT_REQUIRED=true` (or `1`) makes startup fail unless `DB_MCP_AUDIT_LOG` is set and its file can be opened
+- **OIDC role grants** (`DB_MCP_OIDC_ROLES_FILE`): a JSON file maps one token claim to roles, each a grant of scopes, a database allowlist and an optional `max_query_cost`; the first matching role in file order applies, and a token matching no role is denied everything. Agent keys accept the same `max_query_cost`, and the lower of a connection limit and a caller limit is enforced. A roles file requires `-unified-tools`, and the server refuses to start without it
 - **Production controls guide**: `docs/governance.md` documents transport and authentication, tool scopes, read-only connections, PII masking, query limits and the audit log, with a worked pilot example; the README guardrails table links to it
 
 ### Changed (BREAKING)

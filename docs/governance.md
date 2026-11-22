@@ -11,9 +11,6 @@ Streamable HTTP refuses to start without authentication, and legacy SSE stays
 off unless you opt in. Tool scopes apply to every Streamable HTTP call, and the
 default scope is `db:read`.
 
-Paragraphs with a Status line describe code that is not on `main` yet. Remove
-the Status line when that code merges.
-
 ## Overview
 
 The server applies these controls in order for every request:
@@ -168,13 +165,9 @@ Rules:
 - Startup errors name the entry by its `id` (or by its position in the list when
   the `id` is missing). They never show the key.
 
-> **Status: lands with the OIDC roles PR.** An entry may also set
-> `max_query_cost`, a per-key cost ceiling. See [Query limits](#query-limits).
+An entry may also set `max_query_cost`, a per-key cost ceiling. See [Query limits](#query-limits).
 
 ### OIDC roles file
-
-> **Status: lands with the OIDC roles PR.** This section describes
-> `DB_MCP_OIDC_ROLES_FILE`, which is not on `main` yet.
 
 Map one token claim to grants. Set `DB_MCP_OIDC_ROLES_FILE` to a JSON document.
 It requires `DB_MCP_OIDC_ISSUER`. Startup fails without it.
@@ -252,8 +245,7 @@ is not reached. The denial is written to the audit log (see [Audit log](#audit-l
 
 An allowlist limits an agent key to some databases.
 
-> **Status: lands with the OIDC roles PR.** The same allowlist rules apply to
-> OIDC roles, and an OIDC token with no roles file has no allowlist.
+The same allowlist rules apply to OIDC roles. An OIDC token with no roles file has no allowlist.
 
 - A principal with an allowlist may call only the unified tools: `query`,
   `execute`, `transaction`, `performance`, `explain`, `describe`, `health`,
@@ -359,12 +351,10 @@ never leave the database, also restrict access with database grants or views.
 `"max_rows": N` truncates a result at N rows. The result ends with a notice:
 `Truncated: showing first N rows (max_rows=N)`. `0` means no cap.
 
-On PostgreSQL (including TimescaleDB), MySQL and SQLite, the query tool also
-adds `LIMIT N+1` to a SELECT or WITH statement that has no bounding clause of its
-own (`LIMIT`, `OFFSET`, `FETCH`, `FOR`, `INTO` or `LOCK`). The engine then stops
-at the cap instead of sending every row. Statements the server cannot rewrite
-safely, all other statements, and Oracle results are truncated on the client
-instead.
+On PostgreSQL (including TimescaleDB), MySQL and SQLite, the query tool adds
+`LIMIT N+1` where the statement can be rewritten, so the engine stops at the cap
+instead of sending every row. Otherwise the result is truncated after N rows on
+the client.
 
 ### Cost limit: `max_query_cost`
 
@@ -389,12 +379,11 @@ limit. The unit is planner cost, not time.
 - Other statement types are not gated by this limit.
 - `0` (default) means off.
 
-> **Status: lands with the OIDC roles PR.** A caller grant from an agent key or
-> an OIDC role can also carry `max_query_cost`. The effective limit is the
-> smaller non-zero value of the database limit and the caller limit, and the
-> same check covers explain with `analyze=true`. On an engine without a cost
-> estimate, such as SQLite or Oracle, a caller limit denies every `SELECT` and
-> `WITH` for that caller.
+A caller grant from an agent key or an OIDC role can also carry
+`max_query_cost`. The effective limit is the smaller non-zero value of the
+database limit and the caller limit, and the same check covers explain with
+`analyze=true`. On an engine without a cost estimate, such as SQLite or Oracle,
+a caller limit denies every `SELECT` and `WITH` for that caller.
 
 ### Query timeout: `query_timeout`
 

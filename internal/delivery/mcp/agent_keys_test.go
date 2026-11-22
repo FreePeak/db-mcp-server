@@ -38,9 +38,9 @@ func agentKeyDigest(key string) string {
 
 func testAgentKeys() []AgentKey {
 	return []AgentKey{
-		{ID: "agent-a", KeySHA256: agentKeyDigest(testAgentKeyA), Scopes: []string{"db:read"}, Databases: []string{"sales"}},
-		{ID: "agent-b", KeySHA256: agentKeyDigest(testAgentKeyB), Scopes: []string{"db:read", "db:write"}, Databases: []string{"prod"}},
-		{ID: "agent-c", KeySHA256: agentKeyDigest(testAgentKeyC), Scopes: []string{"db:admin"}, Databases: []string{"*"}},
+		{ID: "agent-a", KeySHA256: agentKeyDigest(testAgentKeyA), Grant: Grant{Scopes: []string{"db:read"}, Databases: []string{"sales"}}},
+		{ID: "agent-b", KeySHA256: agentKeyDigest(testAgentKeyB), Grant: Grant{Scopes: []string{"db:read", "db:write"}, Databases: []string{"prod"}}},
+		{ID: "agent-c", KeySHA256: agentKeyDigest(testAgentKeyC), Grant: Grant{Scopes: []string{"db:admin"}, Databases: []string{"*"}}},
 	}
 }
 
@@ -152,6 +152,11 @@ func TestLoadAgentKeys_StartupValidation(t *testing.T) {
 			name:    "valid file loads",
 			body:    `[{"id":"agent-a","key_sha256":"` + validDigest + `","scopes":["db:read"],"databases":["sales"]},{"id":"agent-b","key_sha256":"` + otherDigest + `","scopes":["db:read","db:write"],"databases":["*"]}]`,
 			wantIDs: []string{"agent-a", "agent-b"},
+		},
+		{
+			name:    "max_query_cost is a known field",
+			body:    `[{"id":"agent-a","key_sha256":"` + validDigest + `","scopes":["db:read"],"databases":["sales"],"max_query_cost":1000}]`,
+			wantIDs: []string{"agent-a"},
 		},
 		{
 			name:    "missing id",
@@ -360,6 +365,34 @@ func TestAgentKeysEndToEndOverStreamableHTTP(t *testing.T) {
 	require.True(t, callAs(testAgentKeyB, "sales").IsError, "agent-b is denied sales")
 	require.False(t, callAs(testAgentKeyC, "sales").IsError, "agent-c (\"*\") may use sales")
 	require.Equal(t, []string{"agent-a", "agent-b", "agent-c"}, principals, "denied calls must not reach the use case")
+}
+
+// TestAgentKey_MaxQueryCostReachesCaller checks that a key's max_query_cost
+// travels from the verified token into the audit caller that the use case
+// reads for the cost gate.
+func TestAgentKey_MaxQueryCostReachesCaller(t *testing.T) {
+	keys := testAgentKeys()
+	keys[0].MaxQueryCost = 1000
+	mw, err := AgentKeyAuth(keys, "", nil)
+	require.NoError(t, err)
+	status, token := serveWithAuth(t, mw, "Bearer "+testAgentKeyA)
+	require.Equal(t, http.StatusNoContent, status)
+	require.NotNil(t, token)
+
+	var seen usecase.Caller
+	handler := adaptCortexHandler(func(ctx context.Context, _ cortexServer.ToolCallRequest) (interface{}, error) {
+		seen = usecase.CallerFromContext(ctx)
+		return &Response{Content: []TextContent{{Type: "text", Text: "ok"}}}, nil
+	})
+	request := &sdkmcp.CallToolRequest{
+		Params: &sdkmcp.CallToolParamsRaw{Name: "query", Arguments: json.RawMessage(`{"database":"sales","query":"SELECT 1"}`)},
+		Extra:  &sdkmcp.RequestExtra{TokenInfo: token},
+	}
+	result, err := handler(context.Background(), request)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	assert.Equal(t, "agent-a", seen.Principal)
+	assert.Equal(t, 1000.0, seen.MaxQueryCost)
 }
 
 // TestAgentKey_ReadScopeCannotWriteViaQuery authenticates agent-a, which holds

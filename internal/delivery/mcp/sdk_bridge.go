@@ -320,6 +320,9 @@ func callerFromRequest(request *sdkmcp.CallToolRequest) usecase.Caller {
 	var caller usecase.Caller
 	if request.Extra != nil && request.Extra.TokenInfo != nil {
 		caller.Principal = request.Extra.TokenInfo.UserID
+		if limit, ok := request.Extra.TokenInfo.Extra["max_query_cost"].(float64); ok {
+			caller.MaxQueryCost = limit
+		}
 	}
 	if request.Session != nil {
 		caller.Session = request.Session.ID()
