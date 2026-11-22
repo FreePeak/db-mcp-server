@@ -13,6 +13,9 @@
 ### Changed (BREAKING)
 - **The Docker image defaults to authenticated Streamable HTTP**: `TRANSPORT_MODE` now defaults to `streamable`, and the container refuses to start without an API key or OIDC configuration. The API key may come from `DB_MCP_API_KEY` or `DB_MCP_API_KEY_FILE`. To migrate, either provide an API key (`DB_MCP_API_KEY` or `DB_MCP_API_KEY_FILE`) or OIDC configuration (`DB_MCP_OIDC_ISSUER` and `DB_MCP_OIDC_AUDIENCE`); or, for a private development setup only, opt into legacy SSE, which has no built-in authentication, by setting both `TRANSPORT_MODE=sse` and `ALLOW_INSECURE_SSE=true`
 
+### Fixed
+- **Read-only PostgreSQL connections keep the read-only session default when `options` is set**: a connection with `read_only: true` and its own `options` value now gets `-c default_transaction_read_only=on` appended to that value instead of losing it, so both the operator's flags and the read-only default apply
+
 ## [v1.14.1] - 2026-11-17
 ### Fixed
 - Special characters in credentials no longer corrupt connection strings (#106): Oracle DSNs are assembled through URL userinfo encoding, so a password like `pa#ss` (or any `# @ / % ? :` character) connects instead of failing with an invalid-port or escape parse error; PostgreSQL key=value values (host, user, password, dbname, SSL cert/key/CA paths) containing spaces, single quotes or backslashes are quoted per lib/pq's parser rules — passwords like `pa ss`, `'pass` and `pa\ss` previously truncated or corrupted the DSN. MySQL DSN building was verified already correct and now has regression coverage
