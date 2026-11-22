@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -51,7 +51,7 @@ jobs:
       security-events: write # Trivy SARIF upload to code scanning
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Backfill mode (issue #83): when dispatched with a tag input, check
           # out that existing tag; otherwise use the default triggering ref.
