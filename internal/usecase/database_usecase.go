@@ -477,16 +477,19 @@ func openRows(ctx context.Context, conn domain.Database, readOnlyTx bool, query 
 	if err != nil {
 		return nil, nil, err
 	}
+	rollback := func() {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			logger.Error("error rolling back read-only transaction: %v", rbErr)
+		}
+	}
 	rows, err := tx.Query(ctx, query, params...)
 	if err != nil {
-		_ = tx.Rollback()
+		rollback()
 		return nil, nil, err
 	}
 	return rows, func() {
 		closeRows(rows)
-		if rbErr := tx.Rollback(); rbErr != nil {
-			logger.Error("error rolling back read-only transaction: %v", rbErr)
-		}
+		rollback()
 	}, nil
 }
 
