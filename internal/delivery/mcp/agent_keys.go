@@ -1,12 +1,14 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -40,9 +42,6 @@ type agentKeyEntry struct {
 // database checks happen per tool call, so the middleware itself requires no
 // scopes.
 func AgentKeyAuth(keys []AgentKey, legacyKey string, legacyScopes []string) (func(http.Handler) http.Handler, error) {
-	if err := validateAgentKeys(keys); err != nil {
-		return nil, err
-	}
 	entries := make([]agentKeyEntry, 0, len(keys))
 	for _, key := range keys {
 		digest, err := hex.DecodeString(key.KeySHA256)
@@ -87,8 +86,13 @@ func LoadAgentKeys(path string) ([]AgentKey, error) {
 		return nil, err
 	}
 	var keys []AgentKey
-	if err := json.Unmarshal([]byte(data), &keys); err != nil {
+	dec := json.NewDecoder(strings.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&keys); err != nil {
 		return nil, fmt.Errorf("parse agent keys file: %w", err)
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, fmt.Errorf("parse agent keys file: trailing data after the list")
 	}
 	if len(keys) == 0 {
 		return nil, fmt.Errorf("agent keys file contains no entries")
@@ -120,6 +124,10 @@ func validateAgentKeys(keys []AgentKey) error {
 		digest, err := hex.DecodeString(key.KeySHA256)
 		if err != nil || len(digest) != sha256.Size {
 			return fmt.Errorf("agent key %q: key_sha256 must be 64 hex characters", key.ID)
+		}
+		emptyKeyDigest := sha256.Sum256(nil)
+		if bytes.Equal(digest, emptyKeyDigest[:]) {
+			return fmt.Errorf("agent key %q: key_sha256 is the SHA-256 of an empty key", key.ID)
 		}
 		if _, dup := seenDigests[string(digest)]; dup {
 			return fmt.Errorf("agent key %q: duplicate key_sha256", key.ID)

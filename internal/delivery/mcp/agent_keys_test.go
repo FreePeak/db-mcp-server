@@ -229,6 +229,21 @@ func TestLoadAgentKeys_StartupValidation(t *testing.T) {
 			wantErr: `agent key "agent-a": at least one scope is required`,
 		},
 		{
+			name:    "unknown field",
+			body:    `[{"id":"agent-a","key_sha256":"` + validDigest + `","scopes":["db:read"],"databases":["sales"],"expires_at":"2030-01-01"}]`,
+			wantErr: `parse agent keys file: json: unknown field "expires_at"`,
+		},
+		{
+			name:    "digest of the empty string",
+			body:    `[{"id":"agent-a","key_sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","scopes":["db:read"],"databases":["sales"]}]`,
+			wantErr: `agent key "agent-a": key_sha256 is the SHA-256 of an empty key`,
+		},
+		{
+			name:    "trailing data after the list",
+			body:    `[{"id":"agent-a","key_sha256":"` + validDigest + `","scopes":["db:read"],"databases":["sales"]}] []`,
+			wantErr: "parse agent keys file: trailing data",
+		},
+		{
 			name:    "invalid json",
 			body:    `[{"id":`,
 			wantErr: "parse agent keys file",
