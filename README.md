@@ -107,7 +107,7 @@ The server follows Clean Architecture principles with these layers:
 - **Unified Interface**: Consistent interaction patterns across different database types
 - **Connection Management**: Simple configuration for multiple database connections
 - **Health Check**: Automatic validation of database connectivity on startup
-- **Production Guardrails**: Per-database `read_only` enforcement (blocks writes through both `query_*` and `execute_*` tools), `max_rows` result truncation with explicit notices, and per-query timeouts
+- **Production Guardrails**: Per-database `read_only` checks (best-effort, applied to both `query_*` and `execute_*` tools; use least-privilege database users for a hard guarantee), `max_rows` result truncation with explicit notices, and per-query timeouts
 
 ### Production Guardrails
 
@@ -115,10 +115,10 @@ Protect agent sessions against runaway queries and accidental writes:
 
 | Setting | Scope | Effect |
 |---------|-------|--------|
-| `"read_only": true` | per database | Blocks write statements (`INSERT`, `UPDATE`, `DELETE`, DDL, data-modifying CTEs, stacked writes) through **both** query and execute tools, **and** enforces rejection at the database engine itself on PostgreSQL/TimescaleDB (`default_transaction_read_only=on`) and MySQL (`transaction_read_only=1`); SQLite opens `mode=ro`. Classification strips comments and string literals and defaults to deny for unrecognized statements. |
+| `"read_only": true` | per database | Best-effort defense in depth, not a security boundary. A textual check runs for both query and execute tools and rejects statements it does not recognize. Functions called from a `SELECT` may not be recognized, so the check can miss a write. Engine session defaults are a second layer, not a security boundary on their own: PostgreSQL/TimescaleDB sessions start with `default_transaction_read_only=on`, MySQL with `transaction_read_only=1`, and SQLite opens `mode=ro`. Oracle has no session-level read-only switch; the connector refuses to connect with credentials that hold write privileges. For strong guarantees, connect with a database account that only has SELECT privileges. |
 | `"max_rows": 1000` | per database | Truncates result sets at N rows and appends an explicit `Truncated: showing first N rows (max_rows=N)` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. On PostgreSQL (including TimescaleDB), MySQL and SQLite the query tool also appends `LIMIT max_rows+1` to a single SELECT/WITH statement with no LIMIT, OFFSET, FETCH, FOR, INTO or LOCK clause of its own and not ending in a VALUES list, so the database stops at the cap; statements containing a backslash, `#` or a MySQL `/*!` comment are sent unchanged; select-list functions with side effects (for example `nextval()`) run for at most max_rows+1 rows; an explicit `LIMIT` sends the query unchanged; Oracle results are truncated client-side only. |
 | `"masking_rules": [...]` | per database | Masks values of result columns whose **name** matches a rule's regex before they leave the server — applies to every query shape including `SELECT *`. Strategies: `"fixed_string"` (replace with `value`), `"null"`, and `"partial"` (`keep_last` trailing characters visible; shorter values fully masked). First matching rule wins; invalid patterns or unknown strategies abort config load (fail closed); masked-cell counts are reported in the result footer. Renaming a column with an alias bypasses name matching by design. See [docs/design/column-masking-scoping.md](docs/design/column-masking-scoping.md). |
-| `"mask_pii": true` | per database | Redacts PII in query results by **content shape**, not just column name: emails, phone numbers, credit-card numbers (Luhn-checked), SSNs, IPv4 addresses and 19+ digit identifiers are replaced with `[EMAIL]`/`[PHONE]`/`[CREDIT_CARD]`/`[SSN]`/`[IP_ADDRESS]`/`[LONG_NUMBER]` wherever they appear — including inside free-text columns no rule covers. Column names like `email`/`card_number`/`iban` are redacted whole. Operator-controlled: once set, an agent **cannot** turn it off (the per-query `mask_pii` parameter is additive only). Composes with `masking_rules`. |
+| `"mask_pii": true` | per database | Redacts PII in query results by **content shape**, not just column name: emails, phone numbers, Luhn-valid card numbers, SSNs, IPv4 addresses and 19+ digit identifiers are replaced with `[EMAIL]`/`[PHONE]`/`[CREDIT_CARD]`/`[SSN]`/`[IP_ADDRESS]`/`[LONG_NUMBER]` when they appear as a whole pattern inside a single cell, including free-text columns. Best-effort: values split across columns, non-standard formats, and names or addresses are not detected, and masking runs after the database has returned the data. Columns named like `email`/`card_number`/`iban` are redacted whole. Operator-controlled: once set, an agent **cannot** turn it off (the per-query `mask_pii` parameter is additive only). Composes with `masking_rules`. |
 | `"query_timeout": 30` | per database | Cancels statements that exceed the timeout in seconds; enforced at the repository layer for every tool (queries, statements, transactions, explain, schema inspection). Unset defaults to 30s; `-1` disables. Env-only deployments can set `QUERY_TIMEOUT_SECONDS` to fill connections without an explicit value (JSON keeps precedence). |
 
 | `DB_MCP_AUDIT_LOG=/path/audit.jsonl` | process | Appends one JSONL record per executed statement — timestamp, op (`query`/`execute`/`tx_*`), database, statement (capped at 10k chars), duration, error. Includes rejected attempts against read-only databases. Best-effort writes never fail a query; file is created with `0600`. |
@@ -135,7 +135,7 @@ Example line (placeholder values):
 {"ts":"2026-11-18T10:15:30.123456789Z","op":"query","database":"app","statement":"SELECT id FROM orders LIMIT 5","duration_ms":1.234,"principal":"user@example.com","session":"mcp-session-example","rows":5}
 ```
 
-> **Defense in depth**: read-only is enforced in three layers — application classifier, engine session defaults, and (recommended) least-privilege database users. Oracle currently relies on the classifier plus user privileges.
+> **Defense in depth**: read-only is best-effort and is not a guarantee. The layers are the application check, engine session defaults (not a security boundary on their own), and the database user's privileges. For strong guarantees, connect with a database account that only has SELECT privileges.
 
 ## Supported Databases
 
@@ -957,6 +957,22 @@ All tests run automatically on every pull request via GitHub Actions. The CI pip
 - **Integration Tests**: Tests against MySQL, PostgreSQL, SQLite, and Oracle databases
 - **Regression Tests**: Comprehensive tests ensuring backward compatibility
 - **Linting**: Code quality checks with golangci-lint
+
+## Production-Grade Controls
+
+Teams that want AI agents to query production databases without raw credentials
+need more than the basics. The core already provides best-effort read-only checks (defense in depth, not a
+guarantee; SELECT-only database users are the real control), PII masking, a row cap (`max_rows`), an audit log
+(`DB_MCP_AUDIT_LOG`, which records the caller's principal and session), and authentication on the streamable
+HTTP `/mcp` endpoint (static API key or OIDC bearer token). The legacy SSE transport has no built-in
+authentication and is disabled unless `-allow-insecure-sse` is passed; see
+[Production Guardrails](#production-guardrails) and [Streamable HTTP](#streamable-http-experimental).
+Per-agent roles and permissions, distinct per-agent identities or keys beyond the API-key or OIDC principal,
+query cost limits, and a managed deployment (PostgreSQL and MySQL first) are in development with design
+partners and are not shipped yet.
+
+To discuss your requirements, [open a new issue](https://github.com/FreePeak/db-mcp-server/issues/new)
+and describe your setup: the databases, how your agents connect, and which controls you need.
 
 ## Contributing
 
