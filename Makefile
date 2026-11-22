@@ -15,9 +15,9 @@ build-example:
 run-stdio: build
 	TRANSPORT_MODE=stdio ./bin/server
 
-# Run the server in SSE mode
+# Run the server in legacy SSE mode (local use only: SSE has no built-in authentication)
 run-sse: clean build
-	TRANSPORT_MODE=sse ./bin/server -t sse -p 9090 -h 127.0.0.1 -c config.json
+	TRANSPORT_MODE=sse ./bin/server -t sse -allow-insecure-sse -p 9090 -h 127.0.0.1 -c config.json
 
 # Build and run the example client
 client:
@@ -98,9 +98,9 @@ docker-build-multiarch:
 	docker buildx rm multiplatform-builder
 
 # Run the Docker container in Streamable HTTP mode (the image default).
-# DB_MCP_API_KEY is passed through from the host environment; the server refuses to start without it.
+# Pass DB_MCP_API_KEY through from the host environment, or mount a key file and set DB_MCP_API_KEY_FILE; the server refuses to start without one of them.
 docker-run:
-	docker run -d --name db-mcp-server -p 9092:9092 -e DB_MCP_API_KEY -v $(PWD)/config.json:/app/config.json -v $(PWD)/logs:/app/logs db-mcp-server:${TAG:-latest}
+	docker run -d --name db-mcp-server -p 127.0.0.1:9092:9092 -e DB_MCP_API_KEY -v $(PWD)/config.json:/app/config.json -v $(PWD)/logs:/app/logs db-mcp-server:${TAG:-latest}
 
 # Run Docker container in STDIO mode (for debugging)
 docker-run-stdio:

@@ -190,8 +190,8 @@ private reverse proxy:
 ```
 
 Do not use this mode for a shared deployment. The legacy endpoint does not
-apply `DB_MCP_API_KEY`; terminate TLS, authentication, and network policy at the
-proxy. A future release will replace it with a maintained Streamable HTTP
+apply the API key (`DB_MCP_API_KEY`, `DB_MCP_API_KEY_FILE`, or `-api-key`);
+terminate TLS, authentication, and network policy at the proxy. A future release will replace it with a maintained Streamable HTTP
 implementation.
 
 ### Streamable HTTP (experimental)
@@ -248,8 +248,8 @@ enabled until that policy is defined.
 ### Docker image
 
 The image defaults to the authenticated Streamable HTTP transport
-(`TRANSPORT_MODE=streamable`). It refuses to start without `DB_MCP_API_KEY` or
-OIDC configuration, and the container exits non-zero with an authentication
+(`TRANSPORT_MODE=streamable`). It refuses to start without `DB_MCP_API_KEY`,
+`DB_MCP_API_KEY_FILE`, or OIDC configuration, and the container exits non-zero with an authentication
 error otherwise. It runs as an unprivileged user, omits an embedded config
 (mount one at `/app/config.json`), and serves an unauthenticated `/health`
 probe on port `9093` in both HTTP modes.
@@ -835,10 +835,11 @@ query_oracle_dev("SELECT employee_id, salary, RANK() OVER (ORDER BY salary DESC)
 
 ### Logs
 
-Enable verbose logging for troubleshooting:
+Enable verbose logging for troubleshooting (local use only: legacy SSE has no
+built-in authentication, so it needs `-allow-insecure-sse`):
 
 ```bash
-./bin/server -t sse -c config.json -v
+./bin/server -t sse -allow-insecure-sse -c config.json -v
 ```
 
 ## Testing
