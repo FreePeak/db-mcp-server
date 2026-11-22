@@ -419,6 +419,14 @@ func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, par
 		}
 	}
 
+	// Cost gate (agent path only): estimate the statement that will actually
+	// run, including any injected LIMIT, before the engine executes it.
+	if capRows {
+		if err := uc.enforceQueryCost(ctx, dbID, db, execQuery, params); err != nil {
+			return "", err
+		}
+	}
+
 	// PostgreSQL read-only queries run inside a READ ONLY transaction that
 	// is always rolled back. A SELECT can flip a session setting such as
 	// set_config('default_transaction_read_only','off',false); the rollback

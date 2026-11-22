@@ -86,6 +86,9 @@ type Config struct {
 	// Result guardrails (all engines)
 	MaxRows int // Maximum rows returned per query; 0 means unlimited
 
+	// MaxQueryCost is the EXPLAIN cost ceiling for agent queries; 0 means off.
+	MaxQueryCost float64
+
 	// MaskPII enforces content-based PII masking on every query against this
 	// database, regardless of per-request parameters.
 	MaskPII bool
@@ -775,6 +778,22 @@ func (d *database) MaxRows() int {
 // database. Empty means no masking is applied.
 func (d *database) MaskingRules() []MaskingRule {
 	return d.config.MaskingRules
+}
+
+// MaxQueryCost returns the EXPLAIN cost ceiling for agent queries. Zero means off.
+func (d *database) MaxQueryCost() float64 {
+	return d.config.MaxQueryCost
+}
+
+// SupportsQueryCost reports whether max_query_cost can be enforced for an
+// engine type. Only PostgreSQL (and TimescaleDB) and MySQL expose a planner
+// cost in EXPLAIN output.
+func SupportsQueryCost(dbType string) bool {
+	switch dbType {
+	case "postgres", "timescale", "timescaledb", "mysql":
+		return true
+	}
+	return false
 }
 
 // MaskPII reports whether content-based PII masking is enforced for this

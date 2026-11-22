@@ -45,7 +45,7 @@ LABEL org.opencontainers.image.title="DB MCP Server" \
 
 # Set environment variables
 ENV SERVER_PORT=9092
-ENV TRANSPORT_MODE=sse
+ENV TRANSPORT_MODE=streamable
 ENV CONFIG_PATH=/app/config.json
 ENV HOME=/app
 
@@ -62,6 +62,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # Run as the unprivileged application user.
 USER app
 
-# Legacy SSE is retained only for this development image. Shared deployments
-# must use STDIO or a real authenticated Streamable HTTP endpoint.
-CMD ["/bin/bash", "-c", "/app/server -t ${TRANSPORT_MODE} -h 0.0.0.0 -allow-insecure-sse -p ${SERVER_PORT} -c ${CONFIG_PATH}"]
+# The default is the authenticated Streamable HTTP transport, which refuses to
+# start without DB_MCP_API_KEY, DB_MCP_API_KEY_FILE or OIDC. Legacy SSE (no built-in auth) is passed
+# through only when the operator sets TRANSPORT_MODE=sse and ALLOW_INSECURE_SSE=true.
+CMD ["/bin/bash", "-c", "args=(-t \"$TRANSPORT_MODE\" -h 0.0.0.0 -p \"$SERVER_PORT\" -c \"$CONFIG_PATH\"); if [ \"${ALLOW_INSECURE_SSE:-}\" = true ]; then args+=(-allow-insecure-sse); fi; exec /app/server \"${args[@]}\""]
