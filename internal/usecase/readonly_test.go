@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -16,6 +17,7 @@ type fakeDB struct {
 	maxRows     int
 	queryResult domain.Rows
 	beginCalls  int
+	beginOpts   *domain.TxOptions
 	beginTx     domain.Tx
 }
 
@@ -37,6 +39,7 @@ func (fakeResult) RowsAffected() (int64, error) { return 0, nil }
 func (fakeResult) LastInsertId() (int64, error) { return 0, nil }
 func (f *fakeDB) Begin(ctx context.Context, opts *domain.TxOptions) (domain.Tx, error) {
 	f.beginCalls++
+	f.beginOpts = opts
 	if f.beginTx != nil {
 		return f.beginTx, nil
 	}
@@ -136,10 +139,11 @@ func TestExecuteStatement_WritableDatabaseAllowsExec(t *testing.T) {
 // can assert the transaction boundary.
 type fakeROTx struct {
 	rollbackCall int
+	rollbackErr  error
 }
 
 func (t *fakeROTx) Commit() error   { return nil }
-func (t *fakeROTx) Rollback() error { t.rollbackCall++; return nil }
+func (t *fakeROTx) Rollback() error { t.rollbackCall++; return t.rollbackErr }
 func (t *fakeROTx) Query(_ context.Context, _ string, _ ...interface{}) (domain.Rows, error) {
 	return &fakeRows{columns: []string{"a"}, data: [][]interface{}{{"x"}}}, nil
 }
@@ -163,10 +167,31 @@ func TestExecuteQuery_PostgresReadOnlyRunsInRolledBackTx(t *testing.T) {
 	if db.beginCalls != 1 {
 		t.Fatalf("expected one read-only transaction per query; Begin called %d times", db.beginCalls)
 	}
+	if db.beginOpts == nil || !db.beginOpts.ReadOnly {
+		t.Fatalf("transaction must be opened READ ONLY; got TxOptions %+v", db.beginOpts)
+	}
 	if db.queryCalls != 0 {
 		t.Fatalf("query must run inside the transaction, not on the pool; direct Query calls = %d", db.queryCalls)
 	}
 	if tx.rollbackCall != 1 {
 		t.Fatalf("transaction must be rolled back exactly once; got %d", tx.rollbackCall)
+	}
+}
+
+// TestExecuteQuery_PostgresReadOnlyRollbackFailureIsReturned locks in that a
+// failed rollback of the read-only transaction is reported to the caller. The
+// session-setting guarantee depends on the rollback, so a silent success would
+// hide a transaction that may not have been rolled back.
+func TestExecuteQuery_PostgresReadOnlyRollbackFailureIsReturned(t *testing.T) {
+	tx := &fakeROTx{rollbackErr: errors.New("connection reset")}
+	db := &fakeDB{readOnly: true, beginTx: tx}
+	uc := NewDatabaseUseCase(&fakeRepo{db: db, dbType: "postgres"})
+
+	_, err := uc.ExecuteQuery(context.Background(), "pg_prod", "SELECT * FROM users", nil)
+	if err == nil {
+		t.Fatal("expected error when the read-only transaction rollback fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "connection reset") {
+		t.Fatalf("expected rollback error to surface, got: %v", err)
 	}
 }

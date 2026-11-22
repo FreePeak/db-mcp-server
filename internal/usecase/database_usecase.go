@@ -445,10 +445,13 @@ func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, par
 		if qerr != nil {
 			return nil, fmt.Errorf("query execution failed%s: %w", cappedNote, qerr)
 		}
-		defer release()
 		s, ferr := formatQueryResults(rows, db.MaxRows(), databaseMaskingRules(db), mask || databaseMaskPII(db))
+		relErr := release()
 		if ferr != nil {
 			return nil, ferr
+		}
+		if relErr != nil {
+			return nil, relErr
 		}
 		out = s
 		return nil, nil
@@ -463,33 +466,37 @@ func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, par
 // openRows runs query and returns its rows with a release func the caller must
 // call once the rows are consumed. With readOnlyTx the statement runs in a READ
 // ONLY transaction and release rolls it back, so a session setting changed by
-// the statement does not outlive the call.
-func openRows(ctx context.Context, conn domain.Database, readOnlyTx bool, query string, params []interface{}) (domain.Rows, func(), error) {
+// the statement does not outlive the call. release returns the rollback error,
+// if any, so a failed rollback is not reported as success.
+func openRows(ctx context.Context, conn domain.Database, readOnlyTx bool, query string, params []interface{}) (domain.Rows, func() error, error) {
 	if !readOnlyTx {
 		rows, err := conn.Query(ctx, query, params...)
 		if err != nil {
 			return nil, nil, err
 		}
-		return rows, func() { closeRows(rows) }, nil
+		return rows, func() error { closeRows(rows); return nil }, nil
 	}
 
 	tx, err := conn.Begin(ctx, &domain.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, nil, err
 	}
-	rollback := func() {
+	rollback := func() error {
 		if rbErr := tx.Rollback(); rbErr != nil {
-			logger.Error("error rolling back read-only transaction: %v", rbErr)
+			return fmt.Errorf("rolling back read-only transaction: %w", rbErr)
 		}
+		return nil
 	}
 	rows, err := tx.Query(ctx, query, params...)
 	if err != nil {
-		rollback()
+		if rbErr := rollback(); rbErr != nil {
+			logger.Error("%v", rbErr)
+		}
 		return nil, nil, err
 	}
-	return rows, func() {
+	return rows, func() error {
 		closeRows(rows)
-		rollback()
+		return rollback()
 	}, nil
 }
 
