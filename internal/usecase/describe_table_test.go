@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/FreePeak/db-mcp-server/internal/domain"
 )
 
 func TestIsPlainIdentifier(t *testing.T) {
@@ -147,4 +149,65 @@ func TestDescribeTable_RejectsInjectionInput(t *testing.T) {
 			t.Fatalf("unexpected error for %q: %v", bad, err)
 		}
 	}
+}
+
+// TestPostgresBuilders_EscapeTableName checks that every Postgres builder
+// emits the table name as one escaped SQL literal. IndexHealth passes catalog
+// names straight into these builders without isPlainIdentifier, so a quote in
+// a name must not end the literal early.
+func TestPostgresBuilders_EscapeTableName(t *testing.T) {
+	cases := []struct {
+		table string
+		lit   string
+	}{
+		{`x' OR '1'='1`, `'x'' OR ''1''=''1'`},
+		{`it's`, `'it''s'`},
+		{`public.it's`, `'it''s'`},
+	}
+	for _, tc := range cases {
+		queries := map[string]string{
+			"columns":     columnQueries("postgres", tc.table)[0],
+			"indexes":     indexQueries("postgres", tc.table)[0],
+			"constraints": constraintQueries("postgres", tc.table)[0],
+			"rowEstimate": rowEstimateQuery("postgres", tc.table),
+		}
+		for builder, q := range queries {
+			if !strings.Contains(q, tc.lit) {
+				t.Errorf("%s(%q): expected escaped literal %s in SQL, got:\n%s", builder, tc.table, tc.lit, q)
+			}
+		}
+	}
+}
+
+// recordingPGDB records every catalog query and serves one public table name
+// for the table-list query, so RelationshipGraph runs its real describe path.
+type recordingPGDB struct {
+	*fakeDB
+	queries []string
+}
+
+func (r *recordingPGDB) Query(ctx context.Context, q string, args ...interface{}) (domain.Rows, error) {
+	r.queries = append(r.queries, q)
+	if strings.Contains(q, "pg_tables") {
+		return &fakeRows{columns: []string{"table_name"}, data: [][]interface{}{{"authors"}}}, nil
+	}
+	return &fakeRows{columns: []string{"column_name"}}, nil
+}
+
+// TestRelationshipGraph_PostgresQualifiesPublicTables checks that each listed
+// public table is described as public.<name>, so search_path cannot resolve
+// the bare name to a same-named table in another schema.
+func TestRelationshipGraph_PostgresQualifiesPublicTables(t *testing.T) {
+	db := &recordingPGDB{fakeDB: &fakeDB{}}
+	uc := NewDatabaseUseCase(&fakeRepo{db: db, dbType: "postgres"})
+	if _, err := uc.RelationshipGraph(context.Background(), "pg1"); err != nil {
+		t.Fatalf("relationship graph failed: %v", err)
+	}
+	want := "WHERE table_schema = 'public' AND table_name = 'authors'"
+	for _, q := range db.queries {
+		if strings.Contains(q, want) {
+			return
+		}
+	}
+	t.Fatalf("expected a describe query for public.authors containing %q; recorded queries:\n%s", want, strings.Join(db.queries, "\n---\n"))
 }
