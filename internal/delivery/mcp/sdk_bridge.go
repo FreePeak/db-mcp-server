@@ -58,13 +58,18 @@ func adaptCortexHandler(handler func(context.Context, cortexServer.ToolCallReque
 				return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "invalid tool arguments: " + err.Error()}
 			}
 		}
+		caller := callerFromRequest(request)
+		caller.Tool = request.Params.Name
+		ctx = usecase.WithCaller(ctx, caller)
 		if !toolScopeAllowed(request, arguments) {
+			const reason = "the authenticated principal lacks the required database scope"
+			dbID, statement := deniedCallTarget(request.Params.Name, arguments)
+			usecase.AuditDenied(ctx, dbID, statement, reason)
 			return &sdkmcp.CallToolResult{
 				IsError: true,
-				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "the authenticated principal lacks the required database scope"}},
+				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: reason}},
 			}, nil
 		}
-		ctx = usecase.WithCaller(ctx, callerFromRequest(request))
 		result, err := handler(ctx, cortexServer.ToolCallRequest{
 			Name:       request.Params.Name,
 			Parameters: arguments,
@@ -77,6 +82,20 @@ func adaptCortexHandler(handler func(context.Context, cortexServer.ToolCallReque
 		}
 		return convertCortexResult(result)
 	}
+}
+
+// deniedCallTarget names the database and statement a refused call addressed,
+// for the audit record. The database falls back to the ID in the tool name.
+func deniedCallTarget(name string, arguments map[string]interface{}) (dbID, statement string) {
+	dbID = getStringParam(arguments, "database")
+	if dbID == "" {
+		dbID = extractDatabaseIDFromName(name)
+	}
+	statement = getStringParam(arguments, "query")
+	if statement == "" {
+		statement = getStringParam(arguments, "statement")
+	}
+	return dbID, statement
 }
 
 func toolScopeAllowed(request *sdkmcp.CallToolRequest, arguments map[string]interface{}) bool {

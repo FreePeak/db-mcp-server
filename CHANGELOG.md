@@ -4,6 +4,10 @@
 ### Added
 - **Server-side row cap (Auto-LIMIT)**: when a connection sets `max_rows`, a single SELECT or WITH statement sent through the query tool gets `LIMIT max_rows+1` appended on PostgreSQL (including TimescaleDB), MySQL and SQLite, so the database stops producing rows past the cap instead of streaming the whole result to be truncated client-side; the existing `Truncated: showing first N rows` notice still fires. Statements that already bound or lock their rows (`LIMIT`, `OFFSET`, `FETCH`, `FOR`, `INTO`, `LOCK`), compound statements ending in a `VALUES` list, multi-statement input and non-SELECT statements are left unchanged, as are statements containing a backslash, `#` or a MySQL `/*!` comment, which the literal stripper cannot model. Select-list functions with side effects (for example `nextval()`) run for at most max_rows+1 rows. Internal tool queries are never rewritten, Oracle is not rewritten (client-side truncation still applies there), and when a capped query fails the error names the appended LIMIT so an explicit LIMIT can be added
 - **Audit record attribution**: `DB_MCP_AUDIT_LOG` records gain optional `principal` (authenticated caller), `session` (MCP session ID) and `rows` (rows shown for a query, rows affected for a write) fields; each is omitted when unknown, so existing consumers keep working
+- **Audit tool name**: `DB_MCP_AUDIT_LOG` records gain a `tool` field with the MCP tool name of the call
+- **Audit denied calls**: a tool call refused by the database scope check is recorded with op `denied`, the reason in `error`, and the same target and caller fields as an executed call
+- **Audit default principal**: `DB_MCP_AUDIT_PRINCIPAL` labels audit records that have no authenticated principal, such as stdio sessions; a token principal always wins
+- **Mandatory audit log**: `DB_MCP_AUDIT_REQUIRED=true` (or `1`) makes startup fail unless `DB_MCP_AUDIT_LOG` is set and its file can be opened
 
 ## [v1.14.1] - 2026-11-17
 ### Fixed

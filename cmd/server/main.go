@@ -154,6 +154,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Auditing is mandatory when DB_MCP_AUDIT_REQUIRED is set. Checked after
+	// LoadConfig so values from .env count too.
+	if required := os.Getenv("DB_MCP_AUDIT_REQUIRED"); required == "true" || required == "1" {
+		if err := usecase.RequireAuditLog(); err != nil {
+			logger.Error("%v", err)
+			os.Exit(1)
+		}
+	}
+
 	// Only the streamable transport uses the API key; resolve it for the
 	// transport the configuration selected.
 	*apiKey, _, err = resolveAPIKeyForTransport(cfg.TransportMode, apiKeyFlag, apiKeyEnv, apiKeyFile)
