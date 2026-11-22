@@ -3,6 +3,8 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -31,6 +33,7 @@ type auditRecord struct {
 	DurMS     float64 `json:"duration_ms"`
 	Principal string  `json:"principal,omitempty"`
 	Session   string  `json:"session,omitempty"`
+	Tool      string  `json:"tool,omitempty"`
 	Rows      *int    `json:"rows,omitempty"`
 	Error     string  `json:"error,omitempty"`
 }
@@ -40,6 +43,7 @@ type auditRecord struct {
 type Caller struct {
 	Principal string // authenticated identity; empty when unauthenticated
 	Session   string // MCP session ID; empty when the transport has none
+	Tool      string // MCP tool name of the call; empty outside tools/call
 }
 
 type callerKey struct{}
@@ -72,7 +76,31 @@ type auditLogger struct {
 	mu sync.Mutex
 	w  *os.File
 
+	// defaultPrincipal labels records whose caller has no principal, such as
+	// stdio sessions. Read from DB_MCP_AUDIT_PRINCIPAL when the sink opens.
+	defaultPrincipal string
+
 	once sync.Once // lazy DB_MCP_AUDIT_LOG pickup on first record
+}
+
+// AuditDenied records a call refused before it reached the engine, such as a
+// tool scope denial. Caller fields come from ctx; nothing is written while the
+// audit log is disabled.
+func AuditDenied(ctx context.Context, dbID, statement, reason string) {
+	audit.record(ctx, "denied", dbID, statement, 0, nil, errors.New(reason))
+}
+
+// RequireAuditLog opens the DB_MCP_AUDIT_LOG sink now and fails when the path
+// is unset or cannot be opened. Startup calls it when auditing is mandatory.
+func RequireAuditLog() error {
+	path := os.Getenv("DB_MCP_AUDIT_LOG")
+	if path == "" {
+		return errors.New("DB_MCP_AUDIT_REQUIRED is set but DB_MCP_AUDIT_LOG is empty")
+	}
+	if err := EnableAuditLog(path); err != nil {
+		return fmt.Errorf("DB_MCP_AUDIT_LOG %s cannot be opened: %w", path, err)
+	}
+	return nil
 }
 
 var audit = &auditLogger{}
@@ -112,6 +140,7 @@ func openAuditSink(path string) error {
 	if err != nil {
 		return err
 	}
+	principal := os.Getenv("DB_MCP_AUDIT_PRINCIPAL")
 	audit.mu.Lock()
 	defer audit.mu.Unlock()
 	if audit.w != nil {
@@ -120,6 +149,7 @@ func openAuditSink(path string) error {
 		}
 	}
 	audit.w = f
+	audit.defaultPrincipal = principal
 	return nil
 }
 
@@ -150,14 +180,19 @@ func (a *auditLogger) record(ctx context.Context, op, dbID, statement string, du
 		stmt = stmt[:auditStatementCap] + "...[truncated]"
 	}
 	caller := CallerFromContext(ctx)
+	principal := caller.Principal
+	if principal == "" {
+		principal = a.defaultPrincipal
+	}
 	rec := auditRecord{
 		TS:        time.Now().UTC().Format(time.RFC3339Nano),
 		Op:        op,
 		Database:  dbID,
 		Statement: stmt,
 		DurMS:     float64(dur.Microseconds()) / 1000.0,
-		Principal: caller.Principal,
+		Principal: principal,
 		Session:   caller.Session,
+		Tool:      caller.Tool,
 		Rows:      rows,
 	}
 	if execErr != nil {
