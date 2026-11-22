@@ -146,7 +146,7 @@ func TestAudit_EnvVarSinkOpensOnFirstRecord(t *testing.T) {
 
 	first := make(chan struct{})
 	go func() {
-		audit.record("query", "db", "SELECT 1", 0, nil)
+		audit.record(context.Background(), "query", "db", "SELECT 1", 0, nil, nil)
 		close(first)
 	}()
 	select {
@@ -164,7 +164,7 @@ func TestAudit_EnvVarSinkOpensOnFirstRecord(t *testing.T) {
 		t.Fatalf("expected 1 record after first call, got %d", len(recs))
 	}
 
-	audit.record("query", "db", "SELECT 2", 0, nil)
+	audit.record(context.Background(), "query", "db", "SELECT 2", 0, nil, nil)
 	if recs := readAuditLines(t, path); len(recs) != 2 {
 		t.Fatalf("expected 2 records after second call, got %d", len(recs))
 	}
@@ -292,6 +292,116 @@ func TestAudit_OmitsCallerAndRowsWhenUnknown(t *testing.T) {
 	for _, key := range []string{"principal", "session", "rows"} {
 		if _, ok := fields[key]; ok {
 			t.Errorf("field %q must be omitted when unknown, line: %s", key, raw)
+		}
+	}
+}
+
+// TestAudit_TruncatedQueryRecordsCappedRows checks that a query cut off by
+// max_rows records the rows shown, not the rows the query would have matched.
+func TestAudit_TruncatedQueryRecordsCappedRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := EnableAuditLog(path); err != nil {
+		t.Fatalf("enable failed: %v", err)
+	}
+	t.Cleanup(DisableAuditLog)
+
+	db := cappedSQLite{sqliteDB: &sqliteDB{db: openSQLiteForTest(t)}, maxRows: 3}
+	uc := NewDatabaseUseCase(&fakeRepo{db: db, dbType: "sqlite"})
+	ctx := WithCaller(context.Background(), Caller{Principal: "user@example.com", Session: "mcp-session-example"})
+
+	if _, err := uc.ExecuteQueryMasked(ctx, "db", "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 10) SELECT x FROM c", nil, false); err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
+
+	recs := readAuditLines(t, path)
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record, got %d: %+v", len(recs), recs)
+	}
+	if recs[0].Rows == nil || *recs[0].Rows != 3 {
+		t.Errorf("truncated query rows = %v, want 3 (max_rows)", recs[0].Rows)
+	}
+}
+
+// TestAudit_FailedQueryOmitsRows checks that a query that errors records the
+// error and leaves out rows, since no rows were shown.
+func TestAudit_FailedQueryOmitsRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := EnableAuditLog(path); err != nil {
+		t.Fatalf("enable failed: %v", err)
+	}
+	t.Cleanup(DisableAuditLog)
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: openSQLiteForTest(t)}, dbType: "sqlite"})
+	if _, err := uc.ExecuteQuery(context.Background(), "db", "SELECT v FROM missing_table", nil); err == nil {
+		t.Fatal("expected query against a missing table to fail")
+	}
+
+	recs := readAuditLines(t, path)
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record, got %d: %+v", len(recs), recs)
+	}
+	if recs[0].Error == "" {
+		t.Error("failed query record must carry the error")
+	}
+	if recs[0].Rows != nil {
+		t.Errorf("failed query record must omit rows, got %d", *recs[0].Rows)
+	}
+}
+
+// TestAudit_RollbackFailureOmitsRows checks that a query whose cleanup fails
+// after its rows were formatted is recorded as failed without a row count,
+// because the call returns an error.
+func TestAudit_RollbackFailureOmitsRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := EnableAuditLog(path); err != nil {
+		t.Fatalf("enable failed: %v", err)
+	}
+	t.Cleanup(DisableAuditLog)
+
+	db := &fakeDB{readOnly: true, beginTx: &fakeTx{rollbackErr: true}}
+	uc := NewDatabaseUseCase(&fakeRepo{db: db, dbType: "postgres"})
+	if _, err := uc.ExecuteQuery(context.Background(), "db", "SELECT 1", nil); err == nil {
+		t.Fatal("expected rollback failure to surface as an error")
+	}
+
+	recs := readAuditLines(t, path)
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record, got %d: %+v", len(recs), recs)
+	}
+	if recs[0].Error == "" {
+		t.Error("record must carry the rollback error")
+	}
+	if recs[0].Rows != nil {
+		t.Errorf("failed call must omit rows, got %d", *recs[0].Rows)
+	}
+}
+
+// TestAudit_UnauthenticatedQueryOmitsPrincipalAndSession checks the stdio or
+// unauthenticated path end to end: no caller on the context means the record
+// carries neither principal nor session.
+func TestAudit_UnauthenticatedQueryOmitsPrincipalAndSession(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := EnableAuditLog(path); err != nil {
+		t.Fatalf("enable failed: %v", err)
+	}
+	t.Cleanup(DisableAuditLog)
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: &sqliteDB{db: openSQLiteForTest(t)}, dbType: "sqlite"})
+	if _, err := uc.ExecuteQuery(context.Background(), "db", "SELECT 1", nil); err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read audit file: %v", err)
+	}
+	var fields map[string]interface{}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("corrupt audit line: %v", err)
+	}
+	for _, key := range []string{"principal", "session"} {
+		if _, ok := fields[key]; ok {
+			t.Errorf("field %q must be omitted for an unauthenticated call, line: %s", key, raw)
 		}
 	}
 }

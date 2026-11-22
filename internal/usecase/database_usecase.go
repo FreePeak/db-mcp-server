@@ -441,6 +441,7 @@ func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, par
 	// (slow_queries, stats, workload_suggestions fallback) reflects real
 	// traffic instead of staying empty on the primary execution path.
 	var out string
+	var rowCount int
 	_, trackErr := dbtools.GetPerformanceAnalyzer().TrackQuery(ctx, query, params, func() (_ interface{}, err error) {
 		rows, release, qerr := openRows(ctx, db, readOnlyTx, execQuery, params)
 		if qerr != nil {
@@ -459,13 +460,16 @@ func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, par
 			return nil, ferr
 		}
 		out = s
-		auditRows = &n
+		rowCount = n
 		return nil, nil
 	})
 	if trackErr != nil {
 		return "", trackErr
 	}
 
+	// Recorded only once the call has succeeded, so an error raised after the
+	// rows were formatted does not leave a row count on a failed call.
+	auditRows = &rowCount
 	return out, nil
 }
 
