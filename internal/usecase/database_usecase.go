@@ -418,6 +418,14 @@ func (uc *DatabaseUseCase) runQuery(ctx context.Context, dbID, query string, par
 		}
 	}
 
+	// Cost gate (agent path only): estimate the statement that will actually
+	// run, including any injected LIMIT, before the engine executes it.
+	if capRows {
+		if err := uc.enforceQueryCost(ctx, dbID, db, execQuery, params); err != nil {
+			return "", err
+		}
+	}
+
 	// Execute query with performance tracking so the in-process tracker
 	// (slow_queries, stats, workload_suggestions fallback) reflects real
 	// traffic instead of staying empty on the primary execution path.

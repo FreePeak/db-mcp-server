@@ -153,6 +153,15 @@ func (a *DatabaseAdapter) QueryTimeout() int {
 	return 0
 }
 
+// MaxQueryCost returns the EXPLAIN cost ceiling for agent queries against
+// this database, mirroring MaxRows. Zero means off.
+func (a *DatabaseAdapter) MaxQueryCost() float64 {
+	if m, ok := a.db.(interface{ MaxQueryCost() float64 }); ok {
+		return m.MaxQueryCost()
+	}
+	return 0
+}
+
 // MaskPII reports whether content-based PII masking is enforced for this
 // database, mirroring MaxRows/QueryTimeout. Absent on fakes and engines that
 // do not implement it, which means "not enforced".

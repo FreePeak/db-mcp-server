@@ -183,6 +183,9 @@ func LoadConfig(logDir string) (*Config, error) {
 	if err := validateMaskingRules(config.MultiDBConfig.Connections); err != nil {
 		return nil, err
 	}
+	if err := validateMaxQueryCost(config.MultiDBConfig.Connections); err != nil {
+		return nil, err
+	}
 
 	return config, nil
 }
@@ -228,6 +231,22 @@ func validateMaskingRules(conns []db.DatabaseConnectionConfig) error {
 			default:
 				return fmt.Errorf("%s: unknown strategy %q (want fixed_string, null, or partial)", where, rule.Strategy)
 			}
+		}
+	}
+	return nil
+}
+
+// validateMaxQueryCost rejects a negative cost ceiling and a ceiling on an
+// engine without an EXPLAIN cost estimate. Such a ceiling would either never
+// trigger or allow every query, so the server must not start with it.
+func validateMaxQueryCost(conns []db.DatabaseConnectionConfig) error {
+	for i := range conns {
+		conn := conns[i]
+		if conn.MaxQueryCost < 0 {
+			return fmt.Errorf("database %q max_query_cost must not be negative, got %v", conn.ID, conn.MaxQueryCost)
+		}
+		if conn.MaxQueryCost > 0 && !db.SupportsQueryCost(conn.Type) {
+			return fmt.Errorf("database %q sets max_query_cost but engine %q has no EXPLAIN cost estimate (supported: postgres, timescaledb, mysql)", conn.ID, conn.Type)
 		}
 	}
 	return nil

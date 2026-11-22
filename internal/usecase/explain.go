@@ -62,6 +62,16 @@ func (uc *DatabaseUseCase) ExecuteExplain(ctx context.Context, dbID, statement s
 		return "", fmt.Errorf("failed to get database type: %w", err)
 	}
 
+	// analyze executes the statement, so its estimate is checked first when
+	// the database has a cost limit.
+	if analyze {
+		if limit := databaseMaxQueryCost(db); limit > 0 {
+			if err := uc.checkQueryCost(ctx, dbID, db, dbType, statement, nil, limit); err != nil {
+				return "", err
+			}
+		}
+	}
+
 	// Oracle requires two steps: populate PLAN_TABLE, then display it.
 	// Note EXPLAIN PLAN FOR writes to PLAN_TABLE, so it fails on
 	// engine-level read-only sessions — an intentional safety property.

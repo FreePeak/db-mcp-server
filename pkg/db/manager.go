@@ -67,6 +67,10 @@ type DatabaseConnectionConfig struct {
 	// Result guardrails (all engines)
 	MaxRows int `json:"max_rows,omitempty"` // Maximum rows returned per query; 0 means unlimited
 
+	// MaxQueryCost rejects agent queries whose EXPLAIN estimate exceeds this
+	// value, in planner cost units (PostgreSQL and MySQL only); 0 means off.
+	MaxQueryCost float64 `json:"max_query_cost,omitempty"`
+
 	// MaskPII enforces content-based PII masking on every query against this
 	// database. Operator-controlled: an agent cannot opt out of it.
 	MaskPII bool `json:"mask_pii,omitempty"`
@@ -381,6 +385,7 @@ func buildDatabaseConfig(cfg DatabaseConnectionConfig) Config {
 
 	// Result guardrails (all engines)
 	dbConfig.MaxRows = cfg.MaxRows
+	dbConfig.MaxQueryCost = cfg.MaxQueryCost
 	dbConfig.MaskingRules = cfg.MaskingRules
 	dbConfig.MaskPII = cfg.MaskPII
 
