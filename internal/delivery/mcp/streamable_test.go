@@ -109,6 +109,15 @@ func TestStreamableHTTPHandler_RejectsNonJSONContentType(t *testing.T) {
 	assert.Equal(t, http.StatusUnsupportedMediaType, rec.Code)
 }
 
+func TestStreamableHTTPHandler_AcceptsJSONContentTypeWithParameters(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(initializeBody(1)))
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	rec := httptest.NewRecorder()
+	newTestHandler().ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
 func TestStreamableHTTPHandler_APIKeyMiddlewareRejectsMissingKey(t *testing.T) {
 	handler := APIKeyAuth("secret")(newTestHandler())
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(initializeBody(1)))

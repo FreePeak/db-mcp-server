@@ -14,7 +14,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.23'
+        go-version: '1.26'
         check-latest: true
 
     - name: Check out code
@@ -111,7 +111,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.23'
+        go-version: '1.26'
         check-latest: true
 
     - name: Check out code
@@ -275,7 +275,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.23'
+        go-version: '1.26'
         check-latest: true
 
     - name: Check out code
@@ -295,11 +295,24 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/go/bin/golangci-lint
-        key: ${{ runner.os }}-golangci-lint-v1.64.8
+        key: ${{ runner.os }}-golangci-lint-v2.15.0
 
     - name: Install golangci-lint
       if: steps.cache.outputs.cache-hit != 'true'
-      run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.64.8
+      run: |
+        # install.sh cannot verify v2.15.0: the checksums file also lists each
+        # archive's .sbom.json, and its unanchored grep matches both lines.
+        # Fetch the archive and check it against its exact checksum line.
+        V=2.15.0
+        ARCHIVE=golangci-lint-${V}-linux-amd64.tar.gz
+        BASE=https://github.com/golangci/golangci-lint/releases/download/v${V}
+        WORK=$(mktemp -d)
+        curl -sSfL -o "$WORK/$ARCHIVE" "$BASE/$ARCHIVE"
+        curl -sSfL -o "$WORK/checksums.txt" "$BASE/golangci-lint-${V}-checksums.txt"
+        (cd "$WORK" && grep " ${ARCHIVE}\$" checksums.txt | sha256sum -c -)
+        tar -xzf "$WORK/$ARCHIVE" -C "$WORK"
+        mkdir -p "$(go env GOPATH)/bin"
+        install -m 0755 "$WORK/golangci-lint-${V}-linux-amd64/golangci-lint" "$(go env GOPATH)/bin/golangci-lint"
 
     - name: Run golangci-lint
       run: golangci-lint run --timeout=5m
