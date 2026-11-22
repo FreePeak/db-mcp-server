@@ -135,6 +135,50 @@ func TestReadOnlyOracleRefusesWritableCredentials(t *testing.T) {
 	}
 }
 
+// TestReadOnlyPostgresKeepsOperatorOptions_Live verifies on a live server that
+// a read_only PostgreSQL connection whose operator also sets `options` gets
+// both the operator's search_path and the read-only session default. Requires
+// the docker-compose.test.yml PostgreSQL on 15432; skips when unreachable.
+func TestReadOnlyPostgresKeepsOperatorOptions_Live(t *testing.T) {
+	database, err := NewDatabase(Config{
+		Type:     "postgres",
+		Host:     "localhost",
+		Port:     15432,
+		User:     "user1",
+		Password: "password1",
+		Name:     "db1",
+		ReadOnly: true,
+		Options:  map[string]string{"options": "-c search_path=public"},
+	})
+	if err != nil {
+		t.Fatalf("failed to create database: %v", err)
+	}
+	if err := database.Connect(); err != nil {
+		if isConnRefused(err) {
+			t.Skipf("postgres test container not reachable, skipping: %v", err)
+		}
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	var readOnly, searchPath string
+	if err := database.QueryRow(ctx, "SHOW default_transaction_read_only").Scan(&readOnly); err != nil {
+		t.Fatalf("SHOW default_transaction_read_only failed: %v", err)
+	}
+	if readOnly != "on" {
+		t.Fatalf("default_transaction_read_only = %q, want %q", readOnly, "on")
+	}
+	if err := database.QueryRow(ctx, "SHOW search_path").Scan(&searchPath); err != nil {
+		t.Fatalf("SHOW search_path failed: %v", err)
+	}
+	if searchPath != "public" {
+		t.Fatalf("operator search_path not applied: got %q, want %q", searchPath, "public")
+	}
+}
+
 func isConnRefused(err error) bool {
 	return err != nil && (strings.Contains(err.Error(), "connection refused") ||
 		strings.Contains(err.Error(), "connect: no such file") ||
