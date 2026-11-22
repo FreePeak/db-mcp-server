@@ -126,8 +126,8 @@ Protect agent sessions against runaway queries and accidental writes:
 Each record also says **who** ran the statement and **how much** it touched. These fields are additive and omitted when unknown, so existing consumers keep working:
 
 - `principal`: the authenticated caller. For OIDC it is the token subject (`sub`); for the static API key it is `api-key`. Omitted for stdio and other unauthenticated transports.
-- `session`: the MCP session ID, when the transport has one (Streamable HTTP). Omitted otherwise.
-- `rows`: rows returned by a query, or rows affected by an execute or transaction execute. Omitted when the engine did not report it, for example when the statement failed before running.
+- `session`: the MCP session ID, when the transport has one (Streamable HTTP). It is written to the owner-only (`0600`) audit file. Omitted otherwise.
+- `rows`: the number of rows shown for a query, capped at `max_rows` when the result is truncated (a query matching 100 rows with `max_rows=3` records `rows: 3`); rows affected for an execute; rows affected for a transaction execute, counted before commit, so a later rollback does not change the recorded count. Omitted when the statement failed or the engine did not report a count.
 
 Example line (placeholder values):
 
