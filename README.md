@@ -116,18 +116,26 @@ Protect agent sessions against runaway queries and accidental writes:
 | Setting | Scope | Effect |
 |---------|-------|--------|
 | `"read_only": true` | per database | Best-effort defense in depth, not a security boundary. A textual check runs for both query and execute tools and rejects statements it does not recognize. Functions called from a `SELECT` may not be recognized, so the check can miss a write. Engine session defaults are a second layer, not a security boundary on their own: PostgreSQL/TimescaleDB sessions start with `default_transaction_read_only=on`, MySQL with `transaction_read_only=1`, and SQLite opens `mode=ro`. Oracle has no session-level read-only switch; the connector refuses to connect with credentials that hold write privileges. For strong guarantees, connect with a database account that only has SELECT privileges. |
-| `"max_rows": 1000` | per database | Truncates result sets at N rows and appends an explicit `Truncated: showing first N rows (max_rows=N)` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. On PostgreSQL (including TimescaleDB), MySQL and SQLite the query tool also appends `LIMIT max_rows+1` to a single SELECT/WITH statement with no LIMIT, OFFSET, FETCH, FOR, INTO or LOCK clause of its own and not ending in a VALUES list, so the database stops at the cap; statements containing a backslash, `#` or a MySQL `/*!` comment are sent unchanged; select-list functions with side effects (for example `nextval()`) run for at most max_rows+1 rows; an explicit `LIMIT` sends the query unchanged; Oracle results are truncated client-side only. |
-| `"masking_rules": [...]` | per database | Masks values of result columns whose **name** matches a rule's regex before they leave the server — applies to every query shape including `SELECT *`. Strategies: `"fixed_string"` (replace with `value`), `"null"`, and `"partial"` (`keep_last` trailing characters visible; shorter values fully masked). First matching rule wins; invalid patterns or unknown strategies abort config load (fail closed); masked-cell counts are reported in the result footer. Renaming a column with an alias bypasses name matching by design. See [docs/design/column-masking-scoping.md](docs/design/column-masking-scoping.md). |
+| `"max_rows": 1000` | per database | Truncates result sets at N rows and appends an explicit `Truncated: showing first N rows (max_rows=N)` notice so the model knows to refine its query instead of losing context. `0` (default) means unlimited. `LIMIT max_rows+1` is added where the statement can be rewritten (PostgreSQL/TimescaleDB, MySQL, SQLite), so the database stops at the cap; otherwise the result is truncated after N rows. Select-list functions with side effects (for example `nextval()`) run for at most max_rows+1 rows. |
+| `"masking_rules": [...]` | per database | Masks values of result columns whose **name** matches a rule's regex before they leave the server — applies to every query shape including `SELECT *`. Strategies: `"fixed_string"` (replace with `value`), `"null"`, and `"partial"` (`keep_last` trailing characters visible; shorter values fully masked). First matching rule wins; invalid patterns or unknown strategies abort config load (fail closed); masked-cell counts are reported in the result footer. `masking_rules` match the result column name returned by the database; `mask_pii` also detects common PII formats in values. See [docs/design/column-masking-scoping.md](docs/design/column-masking-scoping.md). |
 | `"mask_pii": true` | per database | Redacts PII in query results by **content shape**, not just column name: emails, phone numbers, Luhn-valid card numbers, SSNs, IPv4 addresses and 19+ digit identifiers are replaced with `[EMAIL]`/`[PHONE]`/`[CREDIT_CARD]`/`[SSN]`/`[IP_ADDRESS]`/`[LONG_NUMBER]` when they appear as a whole pattern inside a single cell, including free-text columns. Best-effort: values split across columns, non-standard formats, and names or addresses are not detected, and masking runs after the database has returned the data. Columns named like `email`/`card_number`/`iban` are redacted whole. Operator-controlled: once set, an agent **cannot** turn it off (the per-query `mask_pii` parameter is additive only). Composes with `masking_rules`. |
 | `"query_timeout": 30` | per database | Cancels statements that exceed the timeout in seconds; enforced at the repository layer for every tool (queries, statements, transactions, explain, schema inspection). Unset defaults to 30s; `-1` disables. Env-only deployments can set `QUERY_TIMEOUT_SECONDS` to fill connections without an explicit value (JSON keeps precedence). |
-
-| `DB_MCP_AUDIT_LOG=/path/audit.jsonl` | process | Appends one JSONL record per executed statement — timestamp, op (`query`/`execute`/`tx_*`), database, statement (capped at 10k chars), duration, error. Includes rejected attempts against read-only databases. Best-effort writes never fail a query; file is created with `0600`. |
+| `"max_query_cost": 50000` | per database | Denies a `SELECT` or `WITH` through the query tool when its `EXPLAIN` planner-cost estimate is above the limit. Explain with `analyze=true` is estimated first and refused above the limit. PostgreSQL, TimescaleDB and MySQL only; startup fails on other engines and on a negative value. An estimate that cannot be obtained or read denies the query. `0` (default) means off. A caller limit from an agent key or OIDC role can lower it further. See [docs/governance.md](docs/governance.md#cost-limit-max_query_cost). |
+| `DB_MCP_API_KEY` or `DB_MCP_API_KEY_FILE` | process | Shared Bearer key for Streamable HTTP. Set exactly one source (flag, env or file); Streamable HTTP refuses to start without authentication. Calls with this key use the principal `api-key`. The key file is read once at startup. |
+| `DB_MCP_OIDC_ISSUER` + `DB_MCP_OIDC_AUDIENCE` | process | OIDC bearer tokens on Streamable HTTP: discovery at startup, signature, issuer and audience checks, and the `sub` claim as the principal. When set, OIDC replaces the shared key. |
+| `DB_MCP_API_SCOPES` | process | Scopes granted to the shared key (default `db:read`) and required on every request under OIDC, except that a roles file supplies each token's scopes instead. Each tool call also needs its own scope: `db:read`, `db:write` or `db:admin`. See [Tool scopes](#tool-scopes). |
+| `DB_MCP_AGENT_KEYS_FILE` | process | Per-agent keys: each agent gets a digest, an `id` (its audit principal), scopes and a database allowlist. Streamable HTTP only; cannot be combined with OIDC. Every agent key, `"*"` included, uses the unified tools only, so the server needs `-unified-tools`. |
+| `DB_MCP_OIDC_ROLES_FILE` | process | Maps one token claim to a grant (scopes, databases, optional `max_query_cost`). The first matching role in file order applies; a token that matches no role is denied everything. Requires `DB_MCP_OIDC_ISSUER` and `-unified-tools`. |
+| `DB_MCP_RESOURCE_URL` | process | Serves RFC 9728 protected resource metadata at `/.well-known/oauth-protected-resource` and adds a `WWW-Authenticate` challenge to `/mcp` 401 and 403 responses. Requires `DB_MCP_OIDC_ISSUER`. |
+| `DB_MCP_AUDIT_LOG=/path/audit.jsonl` | process | Appends one JSONL record per executed statement — timestamp, op (`query`/`execute`/`tx_*`), database, statement (capped at 10,000 bytes), duration, error. Includes rejected attempts against read-only databases. Best-effort writes never fail a query; file is created with `0600`. Also records calls refused by a tool scope or by an agent key's database allowlist (`op: "denied"`, Streamable HTTP only) and the `tool` field; `DB_MCP_AUDIT_REQUIRED=true` makes startup fail unless the log opens, and `DB_MCP_AUDIT_PRINCIPAL` labels records that have no principal (stdio). |
 
 Each record also says **who** ran the statement and **how much** it touched. These fields are additive and omitted when unknown, so existing consumers keep working:
 
-- `principal`: the authenticated caller. For OIDC it is the token subject (`sub`); for the static API key it is `api-key`. Omitted for stdio and other unauthenticated transports.
+- `principal`: the authenticated caller. For OIDC it is the token subject (`sub`); for the static API key it is `api-key`; for a per-agent key it is the key's `id`. Omitted for stdio and other unauthenticated transports, unless `DB_MCP_AUDIT_PRINCIPAL` labels them.
 - `session`: the MCP session ID, when the transport has one (Streamable HTTP). It is written to the owner-only (`0600`) audit file. Omitted otherwise.
 - `rows`: the number of rows shown for a query, capped at `max_rows` when the result is truncated (a query matching 100 rows with `max_rows=3` records `rows: 3`); rows affected for an execute; rows affected for a transaction execute, counted before commit, so a later rollback does not change the recorded count. Omitted when the statement failed or the engine did not report a count.
+- `tool`: the MCP tool name of the call, such as `query` or `execute`. Written for calls that come through Streamable HTTP; stdio and SSE calls do not carry it.
+- `op: "denied"`: a call refused by a tool scope, or by an agent key's database allowlist, before it reached the database. `error` holds the reason and `rows` is omitted. Written only for Streamable HTTP.
 
 Example line (placeholder values):
 
@@ -136,6 +144,9 @@ Example line (placeholder values):
 ```
 
 > **Defense in depth**: read-only is best-effort and is not a guarantee. The layers are the application check, engine session defaults (not a security boundary on their own), and the database user's privileges. For strong guarantees, connect with a database account that only has SELECT privileges.
+
+The production controls guide, with the agent keys file format, the authorization rules and a
+worked pilot example, is in [docs/governance.md](docs/governance.md).
 
 ## Supported Databases
 
@@ -820,7 +831,6 @@ For these clients, launch the server with the `--unified-tools` flag to register
 ```
 
 **Context-window cost (measured, `TestToolTokenBenchmark`, re-verified 2026-08 via `scripts/token-benchmark.sh`):** unified mode costs ~1.25–1.6k tokens **regardless of how many databases are connected**, while per-database mode costs ~800 tokens per database (7 tools each) — 10 connected databases ≈ 8k tokens, an 80% wire-payload saving with unified. With one database only, per-database naming is slightly cheaper; unified wins from two databases onward and scales flat thereafter. Re-measure the real wire payload yourself with `scripts/token-benchmark.sh`; methodology and results in [docs/benchmark-token-efficiency.md](docs/benchmark-token-efficiency.md).
-```
 
 In unified mode, each tool accepts a required `database` parameter that names
 which database the call should target. See the [Configuration](#configuration)
@@ -1044,12 +1054,11 @@ Teams that want AI agents to query production databases without raw credentials
 need more than the basics. The core already provides best-effort read-only checks (defense in depth, not a
 guarantee; SELECT-only database users are the real control), PII masking, a row cap (`max_rows`), an audit log
 (`DB_MCP_AUDIT_LOG`, which records the caller's principal and session), and authentication on the streamable
-HTTP `/mcp` endpoint (static API key or OIDC bearer token). The legacy SSE transport has no built-in
+HTTP `/mcp` endpoint (static API key, per-agent API keys or OIDC bearer token). The legacy SSE transport has no built-in
 authentication and is disabled unless `-allow-insecure-sse` is passed; see
 [Production Guardrails](#production-guardrails) and [Streamable HTTP](#streamable-http-experimental).
-Per-agent roles and permissions, distinct per-agent identities or keys beyond the API-key or OIDC principal,
-query cost limits, and a managed deployment (PostgreSQL and MySQL first) are in development with design
-partners and are not shipped yet.
+Shipped: per-agent keys with scopes and database allowlists (`DB_MCP_AGENT_KEYS_FILE`), OIDC role grants with
+optional per-caller cost limits (`DB_MCP_OIDC_ROLES_FILE`), and query cost limits (`max_query_cost`). In development with design partners and not shipped yet: a managed deployment (PostgreSQL and MySQL first).
 
 To discuss your requirements, [open a new issue](https://github.com/FreePeak/db-mcp-server/issues/new)
 and describe your setup: the databases, how your agents connect, and which controls you need.
