@@ -86,7 +86,7 @@ func main() {
 	logDir := flag.String("log-dir", "", "Directory for log files (default: ./logs in current directory)")
 	unifiedTools := flag.Bool("unified-tools", false, "Register unified tools with database parameter instead of per-database tools")
 	healthPort := flag.Int("health-port", 9093, "Port for the /health HTTP endpoint (0 to disable; served in both SSE and Streamable HTTP modes)")
-	apiKey := flag.String("api-key", os.Getenv("DB_MCP_API_KEY"), "API key required to authenticate HTTP/SSE clients (Authorization: Bearer <key>); empty disables auth. Applied to the streamable HTTP transport; compose with mcp.APIKeyAuth in your own reverse proxy for the SSE transport.")
+	apiKey := flag.String("api-key", "", "API key required to authenticate HTTP/SSE clients (Authorization: Bearer <key>); visible in the process list, so prefer DB_MCP_API_KEY or DB_MCP_API_KEY_FILE. Empty disables auth. Applied to the streamable HTTP transport; compose with mcp.APIKeyAuth in your own reverse proxy for the SSE transport.")
 	flag.Parse()
 
 	if *showVersion {
@@ -97,6 +97,13 @@ func main() {
 	// Initialize logger with custom log directory
 	logger.Initialize(logger.Config{Level: *logLevel, LogDir: *logDir})
 	pkgLogger.Initialize(*logLevel)
+
+	// Snapshot the key inputs before config.LoadConfig reads .env, as the key
+	// has always been taken from the process environment at startup.
+	apiKeyFlag, apiKeyEnv, apiKeyFile := *apiKey, os.Getenv("DB_MCP_API_KEY"), os.Getenv("DB_MCP_API_KEY_FILE")
+	if apiKeyFlag != "" {
+		logger.Warn("-api-key is visible in the process list; prefer DB_MCP_API_KEY_FILE (for example a Docker or Kubernetes secret) or DB_MCP_API_KEY")
+	}
 
 	// Prioritize flags with actual values
 	finalConfigPath := *configFile
@@ -144,6 +151,14 @@ func main() {
 	cfg, err := config.LoadConfig(*logDir)
 	if err != nil {
 		logger.Error("Failed to load configuration: %v", err)
+		os.Exit(1)
+	}
+
+	// Only the streamable transport uses the API key; resolve it for the
+	// transport the configuration selected.
+	*apiKey, _, err = resolveAPIKeyForTransport(cfg.TransportMode, apiKeyFlag, apiKeyEnv, apiKeyFile)
+	if err != nil {
+		logger.Error("%v", err)
 		os.Exit(1)
 	}
 
@@ -238,8 +253,8 @@ func main() {
 			logger.Error("Legacy SSE is disabled by default because it has no built-in authentication; use STDIO or implement the Streamable transport, or pass -allow-insecure-sse only behind a trusted private proxy")
 			os.Exit(1)
 		}
-		if *apiKey != "" {
-			logger.Warn("DB_MCP_API_KEY is not applied to the legacy Cortex SSE transport; enforce authentication at the trusted proxy")
+		if apiKeyFlag != "" || apiKeyEnv != "" || apiKeyFile != "" {
+			logger.Warn("An API key (-api-key, DB_MCP_API_KEY or DB_MCP_API_KEY_FILE) is not applied to the legacy Cortex SSE transport; enforce authentication at the trusted proxy")
 		}
 		logger.Info("Starting SSE server on port %d", cfg.ServerPort)
 

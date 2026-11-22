@@ -36,6 +36,10 @@ var scanWriteKeywords = map[string]bool{
 	"REVOKE":   true,
 	"VACUUM":   true,
 	"REINDEX":  true,
+	// PostgreSQL session-state change reachable from a SELECT; it can lift the
+	// read-only default for the pooled connection. Defense in depth only: the
+	// query path also runs read-only databases in a rolled-back READ ONLY tx.
+	"SET_CONFIG": true,
 }
 
 // leadingOnlyWriteKeywords mutate data but double as ordinary function names
@@ -106,7 +110,7 @@ func stripSQLLiterals(query string) string {
 			}
 		case c == '/' && i+1 < n && query[i+1] == '*':
 			i += 2
-			for i+1 < n && !(query[i] == '*' && query[i+1] == '/') {
+			for i+1 < n && (query[i] != '*' || query[i+1] != '/') {
 				i++
 			}
 			i = min(i+2, n)
@@ -114,8 +118,13 @@ func stripSQLLiterals(query string) string {
 			i = skipQuoted(query, i, '\'', '\'')
 			b.WriteByte(' ')
 		case c == '"':
-			i = skipQuoted(query, i, '"', '"')
-			b.WriteByte(' ')
+			end := skipQuoted(query, i, '"', '"')
+			if isQuotedSetConfigCall(query, i, end) {
+				b.WriteString(" set_config ")
+			} else {
+				b.WriteByte(' ')
+			}
+			i = end
 		case c == '`':
 			i = skipQuoted(query, i, '`', '`')
 			b.WriteByte(' ')
@@ -154,6 +163,16 @@ func skipQuoted(query string, pos int, open, close byte) int {
 		i++
 	}
 	return n
+}
+
+// isQuotedSetConfigCall reports whether the double-quoted identifier at
+// query[start:end] names set_config and is followed by "(", so it is a call.
+// A quoted set_config that is not called stays an ordinary identifier.
+func isQuotedSetConfigCall(query string, start, end int) bool {
+	if end-start < 2 || query[end-1] != '"' || !strings.EqualFold(query[start+1:end-1], "set_config") {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimLeft(query[end:], " \t\r\n"), "(")
 }
 
 // skipDollarQuoted returns the index just past a PostgreSQL dollar-quoted

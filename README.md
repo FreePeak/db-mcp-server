@@ -123,6 +123,18 @@ Protect agent sessions against runaway queries and accidental writes:
 
 | `DB_MCP_AUDIT_LOG=/path/audit.jsonl` | process | Appends one JSONL record per executed statement — timestamp, op (`query`/`execute`/`tx_*`), database, statement (capped at 10k chars), duration, error. Includes rejected attempts against read-only databases. Best-effort writes never fail a query; file is created with `0600`. |
 
+Each record also says **who** ran the statement and **how much** it touched. These fields are additive and omitted when unknown, so existing consumers keep working:
+
+- `principal`: the authenticated caller. For OIDC it is the token subject (`sub`); for the static API key it is `api-key`. Omitted for stdio and other unauthenticated transports.
+- `session`: the MCP session ID, when the transport has one (Streamable HTTP). It is written to the owner-only (`0600`) audit file. Omitted otherwise.
+- `rows`: the number of rows shown for a query, capped at `max_rows` when the result is truncated (a query matching 100 rows with `max_rows=3` records `rows: 3`); rows affected for an execute; rows affected for a transaction execute, counted before commit, so a later rollback does not change the recorded count. Omitted when the statement failed or the engine did not report a count.
+
+Example line (placeholder values):
+
+```json
+{"ts":"2026-11-18T10:15:30.123456789Z","op":"query","database":"app","statement":"SELECT id FROM orders LIMIT 5","duration_ms":1.234,"principal":"user@example.com","session":"mcp-session-example","rows":5}
+```
+
 > **Defense in depth**: read-only is enforced in three layers — application classifier, engine session defaults, and (recommended) least-privilege database users. Oracle currently relies on the classifier plus user privileges.
 
 ## Supported Databases
@@ -187,14 +199,43 @@ implementation.
 The `streamable` endpoint is backed by the maintained Go MCP SDK and supports
 stateful sessions, JSON or SSE responses, notifications, GET/DELETE session
 lifecycle, and JSON-RPC dispatch. The process refuses to start it without
-`DB_MCP_API_KEY`; keep it behind a private TLS gateway until the identity and
+an API key; keep it behind a private TLS gateway until the identity and
 conformance rollout is complete.
+
+Provide the key through exactly one source: `DB_MCP_API_KEY`, `DB_MCP_API_KEY_FILE`,
+or the `-api-key` flag. Setting more than one is a startup error. The flag is
+visible in the process list, so it logs a warning; prefer the file or env var.
+Use the file form with Docker or Kubernetes secrets:
+
+```bash
+# Docker secret mounted at /run/secrets/db_mcp_api_key
+docker run --rm -p 127.0.0.1:9092:9092 \
+  -e TRANSPORT_MODE=streamable \
+  -e DB_MCP_API_KEY_FILE=/run/secrets/db_mcp_api_key \
+  -v "$(pwd)/config.local.json:/app/config.json:ro" \
+  -v "$(pwd)/db_mcp_api_key:/run/secrets/db_mcp_api_key:ro" \
+  db-mcp-server:local
+```
+
+The key file is read once at startup. A rotated Kubernetes or Docker secret takes
+effect only after the server restarts. The key is not read for the stdio or SSE
+transports, so a blank key or a missing key file does not stop them.
 
 For browser-origin requests, set an explicit comma-separated allowlist:
 
 ```bash
 MCP_ALLOWED_ORIGINS=https://agent.example.com
 ```
+
+The SDK applies these request rules to the `streamable` endpoint:
+
+- When the server listens on a loopback address (the default `-h 127.0.0.1`),
+  a request whose `Host` header is not a loopback name is rejected with `403`.
+- Each `MCP_ALLOWED_ORIGINS` entry must be `scheme://host[:port]`, with no
+  path, query, fragment, or trailing slash. Invalid entries are logged and
+  ignored, so browser requests from that origin still get `403`.
+- A JSON `Content-Type` may carry parameters, such as
+  `application/json; charset=utf-8`.
 
 The built-in static bearer key is a bounded pilot mechanism. It grants
 `db:read` by default; set `DB_MCP_API_SCOPES=db:read,db:write` only for a
@@ -239,6 +280,9 @@ team deployment, put the Streamable endpoint behind a TLS/OIDC gateway with a
 private network and an external secret store.
 
 ### Source Code Installation
+
+Building from source requires Go 1.25 or newer (`go.mod` sets `go 1.25.0`).
+CI and the published Docker and npm release builds use Go 1.26.
 
 ```bash
 # Clone the repository
@@ -383,7 +427,7 @@ export DB_CONFIG='{"connections":[...]}'
 - `-h, -host`: HTTP bind host (default: `127.0.0.1`)
 - `--version`: Print the build version and exit
 - `-allow-insecure-sse`: Explicitly allow legacy SSE for a private development proxy
-- `-api-key`: Bearer key for the experimental Streamable HTTP entrypoint (or use `DB_MCP_API_KEY`)
+- `-api-key`: Bearer key for the experimental Streamable HTTP entrypoint. Visible in the process list and logs a warning; prefer `DB_MCP_API_KEY_FILE` or `DB_MCP_API_KEY`
 - `-log-level`: Log level (`debug`, `info`, `warn`, `error`)
 - `-log-dir`: Directory for log files (default: `./logs` in current directory)
 - `-db-config`: Inline JSON database configuration
@@ -410,6 +454,7 @@ Values in a `.env` file are loaded first; real environment variables take preced
 | `SERVER_PORT` | `9092` | HTTP port |
 | `MCP_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed by experimental Streamable HTTP |
 | `DB_MCP_API_KEY` | empty | Bearer key for experimental Streamable HTTP; keep it in a secret manager |
+| `DB_MCP_API_KEY_FILE` | empty | Path to a file holding the Bearer key (trailing newline trimmed; an empty or whitespace-only file is an error). Use for Docker/Kubernetes secrets |
 | `ALLOW_INSECURE_SSE` | unset | Docker image only: `true` passes `-allow-insecure-sse` so `TRANSPORT_MODE=sse` can start |
 | `DB_MCP_API_SCOPES` | `db:read` | Required/granted scopes: `db:read`, `db:write`, and/or `db:admin` |
 | `DB_MCP_OIDC_ISSUER` | empty | OIDC issuer URL; when set, OIDC/JWT verification replaces the static pilot key |
