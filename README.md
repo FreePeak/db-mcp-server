@@ -205,6 +205,10 @@ docker run --rm -p 127.0.0.1:9092:9092 \
   db-mcp-server:local
 ```
 
+The key file is read once at startup. A rotated Kubernetes or Docker secret takes
+effect only after the server restarts. The key is not read for the stdio or SSE
+transports, so a blank key or a missing key file does not stop them.
+
 For browser-origin requests, set an explicit comma-separated allowlist:
 
 ```bash
