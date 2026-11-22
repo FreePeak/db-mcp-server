@@ -486,6 +486,41 @@ func TestAdaptCortexHandler_AuditsScopeDenial(t *testing.T) {
 	require.Equal(t, "reader", recs[0]["principal"])
 }
 
+// TestAgentKey_DatabaseDenialIsAudited checks that a call refused by an agent
+// key's database allowlist is audited once, under the key id as principal and
+// the tool name, and never reaches the handler.
+func TestAgentKey_DatabaseDenialIsAudited(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	require.NoError(t, usecase.EnableAuditLog(path))
+	t.Cleanup(usecase.DisableAuditLog)
+
+	calls := 0
+	handler := adaptCortexHandler(func(context.Context, cortexServer.ToolCallRequest) (interface{}, error) {
+		calls++
+		return nil, nil
+	})
+	request := &sdkmcp.CallToolRequest{
+		Params: &sdkmcp.CallToolParamsRaw{Name: "query", Arguments: json.RawMessage(`{"database":"other","query":"SELECT 1"}`)},
+		Extra: &sdkmcp.RequestExtra{TokenInfo: &sdkAuth.TokenInfo{
+			UserID: "agent-a",
+			Scopes: []string{"db:read"},
+			Extra:  map[string]any{"databases": []string{"sales"}},
+		}},
+	}
+
+	result, err := handler(context.Background(), request)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Equal(t, 0, calls)
+
+	recs := readAuditRecords(t, path)
+	require.Len(t, recs, 1)
+	require.Equal(t, "denied", recs[0]["op"])
+	require.Equal(t, "agent-a", recs[0]["principal"])
+	require.Equal(t, "query", recs[0]["tool"])
+	require.Equal(t, "other", recs[0]["database"])
+}
+
 // sqliteBridgeDB adapts an in-memory SQLite handle to domain.Database so the
 // bridge test can run a real use case behind the handler.
 type sqliteBridgeDB struct {

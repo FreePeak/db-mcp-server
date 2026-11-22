@@ -8,7 +8,7 @@
 - **Audit record attribution**: `DB_MCP_AUDIT_LOG` records gain optional `principal` (authenticated caller), `session` (MCP session ID) and `rows` (rows shown for a query, rows affected for a write) fields; each is omitted when unknown, so existing consumers keep working
 - **Per-agent API keys**: `DB_MCP_AGENT_KEYS_FILE` gives each agent its own key (stored as a SHA-256 digest), identity, scopes and database allowlist on Streamable HTTP. Scope and allowlist are checked on every tool call, and the audit record names the key `id` as the principal. Agent keys require the `-unified-tools` flag, because they can call only unified tool names; the server refuses to start with the file set and the flag off. TimescaleDB tools are not available to agent keys, and `list_databases` lists only the allowlisted databases
 - **Audit tool name**: `DB_MCP_AUDIT_LOG` records gain a `tool` field with the MCP tool name of the call
-- **Audit denied calls**: a tool call refused by the database scope check is recorded with op `denied`, the reason in `error`, and the same target and caller fields as an executed call
+- **Audit denied calls**: a tool call refused by the tool scope check or an agent key database allowlist is recorded with op `denied`, the reason in `error`, and the same target and caller fields as an executed call
 - **Audit default principal**: `DB_MCP_AUDIT_PRINCIPAL` labels audit records that have no authenticated principal, such as stdio sessions; a token principal always wins
 - **Mandatory audit log**: `DB_MCP_AUDIT_REQUIRED=true` (or `1`) makes startup fail unless `DB_MCP_AUDIT_LOG` is set and its file can be opened
 

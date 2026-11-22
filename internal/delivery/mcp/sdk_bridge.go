@@ -73,6 +73,8 @@ func adaptCortexHandler(handler func(context.Context, cortexServer.ToolCallReque
 		}
 		if !toolDatabaseAllowed(request, arguments) {
 			const reason = "the authenticated principal is not allowed to use this database"
+			dbID, statement := deniedCallTarget(request.Params.Name, arguments)
+			usecase.AuditDenied(ctx, dbID, statement, reason)
 			return &sdkmcp.CallToolResult{
 				IsError: true,
 				Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: reason}},
