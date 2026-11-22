@@ -92,6 +92,11 @@ func TestLoadOIDCRoles_RejectsEmptyClaimOrDuplicateValue(t *testing.T) {
 			wantErr: "value is required",
 		},
 		{
+			name:    "value with whitespace",
+			body:    `{"claim": "groups", "roles": [{"value": "db analysts", "scopes": ["db:read"], "databases": ["*"]}]}`,
+			wantErr: `OIDC role "db analysts": value must not contain whitespace`,
+		},
+		{
 			name:    "duplicate value",
 			body:    `{"claim": "groups", "roles": [{"value": "a", "scopes": ["db:read"], "databases": ["*"]}, {"value": "a", "scopes": ["db:write"], "databases": ["*"]}]}`,
 			wantErr: `OIDC role "a": duplicate value`,

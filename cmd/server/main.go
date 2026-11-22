@@ -178,6 +178,11 @@ func main() {
 		logger.Error("%v", err)
 		os.Exit(1)
 	}
+	oidcRolesFile, err := oidcRolesSettings(oidcIssuer, os.Getenv("DB_MCP_OIDC_ROLES_FILE"), *unifiedTools)
+	if err != nil {
+		logger.Error("%v", err)
+		os.Exit(1)
+	}
 	writeAgentKeysWarning(os.Stderr, agentKeysWarning)
 	if agentKeysWarning != "" {
 		logger.Warn("%s", agentKeysWarning)
@@ -401,12 +406,8 @@ func main() {
 				os.Exit(1)
 			}
 			var roles *mcp.OIDCRoles
-			if rolesPath := strings.TrimSpace(os.Getenv("DB_MCP_OIDC_ROLES_FILE")); rolesPath != "" {
-				if err := requireUnifiedTools(*unifiedTools, "DB_MCP_OIDC_ROLES_FILE"); err != nil {
-					logger.Error("%v", err)
-					os.Exit(1)
-				}
-				roles, err = mcp.LoadOIDCRoles(rolesPath)
+			if oidcRolesFile != "" {
+				roles, err = mcp.LoadOIDCRoles(oidcRolesFile)
 				if err != nil {
 					logger.Error("Failed to load DB_MCP_OIDC_ROLES_FILE: %v", err)
 					os.Exit(1)
@@ -500,6 +501,24 @@ func writeAgentKeysWarning(w io.Writer, warning string) {
 		return
 	}
 	fmt.Fprintln(w, warning) //nolint:errcheck // no other channel exists to report a failed stderr write
+}
+
+// oidcRolesSettings resolves DB_MCP_OIDC_ROLES_FILE. Roles reach requests only
+// through OIDC, so a roles file without an issuer is refused rather than
+// silently ignored, and so is one without -unified-tools. It returns the
+// trimmed path ("" when unset).
+func oidcRolesSettings(oidcIssuer, path string, unifiedTools bool) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", nil
+	}
+	if strings.TrimSpace(oidcIssuer) == "" {
+		return "", fmt.Errorf("DB_MCP_OIDC_ROLES_FILE is set but DB_MCP_OIDC_ISSUER is empty; roles apply only through OIDC")
+	}
+	if err := requireUnifiedTools(unifiedTools, "DB_MCP_OIDC_ROLES_FILE"); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // agentKeysSettings resolves DB_MCP_AGENT_KEYS_FILE for the transport. It

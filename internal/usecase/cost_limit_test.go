@@ -197,6 +197,21 @@ func TestRunQuery_CostGate_CallerLimitApplies(t *testing.T) {
 	}
 }
 
+func TestRunQuery_CostGate_CallerLimitNoEstimateEngineDenies(t *testing.T) {
+	db := &costDB{limit: 0, plan: pgPlanCheap}
+	uc := newCostUseCase(db, "sqlite")
+	ctx := WithCaller(context.Background(), Caller{Principal: "agent-a", MaxQueryCost: 1000})
+
+	_, err := uc.ExecuteQueryMasked(ctx, "lite1", "SELECT 1", nil, false)
+	want := `max_query_cost: engine "sqlite" has no cost estimate on database "lite1"`
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("caller limit on an engine without cost estimates must fail closed with %q, got: %v", want, err)
+	}
+	if db.realCount() != 0 {
+		t.Fatalf("denied query must never reach the engine, sent: %q", db.sent)
+	}
+}
+
 func TestRunQuery_CostGate_AllowsBelow(t *testing.T) {
 	db := &costDB{limit: 1000, plan: pgPlanCheap}
 	uc := newCostUseCase(db, "postgres")

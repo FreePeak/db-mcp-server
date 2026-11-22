@@ -66,3 +66,33 @@ func TestWriteAgentKeysWarning(t *testing.T) {
 		})
 	}
 }
+
+func TestOIDCRolesSettings(t *testing.T) {
+	tests := []struct {
+		name     string
+		oidc     string
+		path     string
+		unified  bool
+		wantPath string
+		wantErr  string
+	}{
+		{name: "unset"},
+		{name: "whitespace-only path is unset", oidc: "test-issuer", path: "   "},
+		{name: "roles with issuer uses trimmed path", oidc: "test-issuer", path: " roles.json ", unified: true, wantPath: "roles.json"},
+		{name: "roles without issuer is refused", path: "roles.json", wantErr: "DB_MCP_OIDC_ROLES_FILE is set but DB_MCP_OIDC_ISSUER is empty"},
+		{name: "roles without unified tools is refused", oidc: "test-issuer", path: "roles.json", wantErr: "requires the -unified-tools flag"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path, err := oidcRolesSettings(tc.oidc, tc.path, tc.unified)
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+				assert.Contains(t, err.Error(), "DB_MCP_OIDC_ROLES_FILE")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantPath, path)
+		})
+	}
+}

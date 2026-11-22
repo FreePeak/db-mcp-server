@@ -6,6 +6,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // OIDCRoles maps one token claim onto grants. The grant for a token is the
@@ -40,6 +41,11 @@ func LoadOIDCRoles(path string) (*OIDCRoles, error) {
 	for i, role := range roles.Roles {
 		if strings.TrimSpace(role.Value) == "" {
 			return nil, fmt.Errorf("OIDC role #%d: value is required", i+1)
+		}
+		// claimStrings splits claims on whitespace, so a value containing
+		// whitespace could never match.
+		if strings.ContainsFunc(role.Value, unicode.IsSpace) {
+			return nil, fmt.Errorf("OIDC role %q: value must not contain whitespace", role.Value)
 		}
 		if _, dup := seen[role.Value]; dup {
 			return nil, fmt.Errorf("OIDC role %q: duplicate value", role.Value)
