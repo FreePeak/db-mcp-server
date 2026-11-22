@@ -296,8 +296,8 @@ the query tool only. Schema, explain and performance output is not masked.
 
 ### Column rules: `masking_rules`
 
-Each rule has a `pattern` (a regex on the output column name), a `strategy` and
-optional settings.
+Each rule has a `pattern` (a regex matched against the result column name the
+database returns), a `strategy` and optional settings.
 
 | Strategy | Effect |
 |----------|--------|
@@ -305,24 +305,26 @@ optional settings.
 | `null` | Replaces the value with null. |
 | `partial` | Keeps the last `keep_last` characters visible. Shorter values are fully masked. |
 
-The first matching rule wins. An invalid regex or an unknown strategy is a
-startup error. The server does not parse SQL, so the rule sees only the
-column names the query returns.
+For each result column, the first rule whose pattern matches the column name
+applies. An invalid regex or an unknown strategy is a startup error. The server
+does not parse SQL, so rules match names only.
 
 ### Content rules: `mask_pii`
 
-`"mask_pii": true` masks values by their shape, in any column. It replaces
-these values when they appear as a whole pattern inside a cell:
+`"mask_pii": true` does two things.
 
-- emails, with `[EMAIL]`
-- phone numbers, with `[PHONE]`
-- card numbers that pass a Luhn check, with `[CREDIT_CARD]`
-- SSN-shaped values (`###-##-####`), with `[SSN]`
-- IPv4 addresses, with `[IP_ADDRESS]`
-- digit runs of 19 or more digits, with `[LONG_NUMBER]`
+- Columns whose names look like PII are replaced whole. Names containing
+  fragments such as `email`, `phone`, `ssn`, `card_number`, `credit_card` or
+  `iban` are covered.
+- Values in every column are scanned for common PII formats. A format is
+  replaced when it appears as a whole pattern inside a cell:
 
-Columns whose names contain fragments such as `email`, `phone`, `ssn`,
-`card_number`, `credit_card` or `iban` are replaced whole.
+  - emails, with `[EMAIL]`
+  - phone numbers, with `[PHONE]`
+  - card numbers that pass a Luhn check, with `[CREDIT_CARD]`
+  - SSN-shaped values (`###-##-####`), with `[SSN]`
+  - IPv4 addresses, with `[IP_ADDRESS]`
+  - digit runs of 19 or more digits, with `[LONG_NUMBER]`
 
 The operator sets `mask_pii` in the config. A caller cannot turn it off. A query
 can only ask for masking on top of it. A missing or non-boolean `mask_pii`
@@ -331,6 +333,9 @@ parameter means the caller did not ask.
 Limits: detection is best effort. Values split across columns, unusual formats,
 names and street addresses are not detected. Masking runs after the database
 returns the data. The statement still reads the raw values.
+
+Masking reduces accidental exposure of PII in query results. Where data must
+never leave the database, also restrict access with database grants or views.
 
 ## Query limits
 
@@ -359,6 +364,7 @@ limit. The unit is planner cost, not time.
   is denied.
 - The query tool refuses `EXPLAIN ANALYZE` when a limit applies, because it
   runs the statement.
+- Explain with `analyze=true` is estimated first and refused above the limit.
 - Other statement types are not gated by this limit.
 
 > **Status:** the caller limit below is not on `main` yet. It comes from the
@@ -366,10 +372,9 @@ limit. The unit is planner cost, not time.
 
 A caller grant can also carry `max_query_cost` (see the roles and keys files).
 For a call, the effective limit is the smaller non-zero value of the database
-limit and the caller limit. A caller limit on an engine without an estimate,
-such as SQLite or Oracle, denies every `SELECT` and `WITH` for that caller.
-The explain tool with `analyze=true` checks the estimate first when a limit
-applies.
+limit and the caller limit. The same check covers explain with `analyze=true`.
+A caller limit on an engine without an estimate, such as SQLite or Oracle,
+denies every `SELECT` and `WITH` for that caller.
 
 ### Query timeout: `query_timeout`
 
