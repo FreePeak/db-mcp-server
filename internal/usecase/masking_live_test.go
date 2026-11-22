@@ -68,3 +68,51 @@ func TestExecuteQuery_MaskingLive(t *testing.T) {
 		})
 	}
 }
+
+// TestExecuteQueryMaskedPath_Live drives the entry the query tool uses
+// (ExecuteQueryMasked with mask_pii absent, so mask=false) against each live
+// engine and asserts the operator's name-based rule masks the column. Skips
+// when the compose stack is unreachable (see openLive).
+func TestExecuteQueryMaskedPath_Live(t *testing.T) {
+	rules := []db.MaskingRule{{Pattern: "(?i)^email$", Strategy: "fixed_string", Value: "***MASKED***"}}
+
+	cases := []struct {
+		name   string
+		driver string
+		dsn    string
+		dbID   string
+	}{
+		{"postgres", "postgres", "host=localhost port=15432 user=user1 password=password1 dbname=db1 sslmode=disable", "pg_query_path"},
+		{"mysql", "mysql", "user1:password1@tcp(localhost:13306)/db1?parseTime=true", "my_query_path"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := openLive(t, tc.driver, tc.dsn)
+			for _, s := range []string{
+				`DROP TABLE IF EXISTS mask_path_users`,
+				`CREATE TABLE mask_path_users (id INTEGER PRIMARY KEY, email VARCHAR(200))`,
+				`INSERT INTO mask_path_users (id, email) VALUES (1, 'alice@example.com')`,
+			} {
+				if _, err := g.db.Exec(s); err != nil {
+					t.Fatalf("seed failed on %s: %v", tc.driver, err)
+				}
+			}
+			uc := NewDatabaseUseCase(&fakeRepo{db: &maskedDB{Database: g, rules: rules}, dbType: tc.driver})
+
+			out, err := uc.ExecuteQueryMasked(context.Background(), tc.dbID, "SELECT id, email FROM mask_path_users", nil, false)
+			if err != nil {
+				t.Fatalf("query path failed on %s: %v", tc.driver, err)
+			}
+			if !strings.Contains(out, "***MASKED***") {
+				t.Errorf("expected fixed_string mask through query path on %s, got:\n%s", tc.driver, out)
+			}
+			if strings.Contains(out, "alice@example.com") {
+				t.Errorf("raw email leaked through query path on %s:\n%s", tc.driver, out)
+			}
+			if !strings.Contains(out, "Masked cells: 1") {
+				t.Errorf("expected masked-cell footer on %s, got:\n%s", tc.driver, out)
+			}
+		})
+	}
+}

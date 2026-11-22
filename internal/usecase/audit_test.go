@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/FreePeak/db-mcp-server/internal/domain"
 )
@@ -132,6 +133,41 @@ func TestAudit_TruncatesHugeStatements(t *testing.T) {
 func TestAudit_DisabledIsNoop(t *testing.T) {
 	DisableAuditLog()
 	audit.record(context.Background(), "query", "db", "SELECT 1", 0, nil, nil) // must not panic or write
+}
+
+// TestAudit_EnvVarSinkOpensOnFirstRecord covers the DB_MCP_AUDIT_LOG path
+// on its own: no EnableAuditLog call consumes the lazy initializer first, so
+// the first record must open the env sink without re-entering that Once.
+func TestAudit_EnvVarSinkOpensOnFirstRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	t.Setenv("DB_MCP_AUDIT_LOG", path)
+	DisableAuditLog()
+	audit.once = sync.Once{}
+
+	first := make(chan struct{})
+	go func() {
+		audit.record("query", "db", "SELECT 1", 0, nil)
+		close(first)
+	}()
+	select {
+	case <-first:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first audited record blocked: DB_MCP_AUDIT_LOG sink never opened")
+	}
+	// Registered after the wait: a hung record holds audit.mu, so a cleanup
+	// that calls DisableAuditLog would block on the failure path too.
+	t.Cleanup(func() {
+		DisableAuditLog()
+		audit.once = sync.Once{}
+	})
+	if recs := readAuditLines(t, path); len(recs) != 1 {
+		t.Fatalf("expected 1 record after first call, got %d", len(recs))
+	}
+
+	audit.record("query", "db", "SELECT 2", 0, nil)
+	if recs := readAuditLines(t, path); len(recs) != 2 {
+		t.Fatalf("expected 2 records after second call, got %d", len(recs))
+	}
 }
 
 // readonlyDB forces IsReadOnly so the rejection path is auditable.

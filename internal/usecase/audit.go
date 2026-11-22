@@ -83,7 +83,7 @@ var audit = &auditLogger{}
 func (a *auditLogger) initFromEnv() {
 	a.once.Do(func() {
 		if path := os.Getenv("DB_MCP_AUDIT_LOG"); path != "" {
-			if err := EnableAuditLog(path); err != nil {
+			if err := openAuditSink(path); err != nil {
 				// The once is consumed either way: a failed env path never
 				// retries mid-run; an explicit EnableAuditLog can still win
 				// because it sets w directly.
@@ -97,6 +97,17 @@ func (a *auditLogger) initFromEnv() {
 // it directly (tests, future config plumbing); the server picks the env
 // variable up automatically.
 func EnableAuditLog(path string) error {
+	if err := openAuditSink(path); err != nil {
+		return err
+	}
+	// Mark the lazy initializer done so an explicit enable wins over env.
+	audit.once.Do(func() {})
+	return nil
+}
+
+// openAuditSink swaps path in as the sink. It must not touch audit.once:
+// initFromEnv calls it from inside that Once.
+func openAuditSink(path string) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
@@ -109,8 +120,6 @@ func EnableAuditLog(path string) error {
 		}
 	}
 	audit.w = f
-	// Mark the lazy initializer done so an explicit enable wins over env.
-	audit.once.Do(func() {})
 	return nil
 }
 

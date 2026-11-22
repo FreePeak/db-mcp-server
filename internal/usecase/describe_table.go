@@ -230,15 +230,30 @@ func rowsToMaps(rows interface {
 	return out, nil
 }
 
+// pgTable splits a Postgres table name into a SQL expression for its schema
+// and the bare table name. An explicit schema is used as given; an
+// unqualified name is resolved through search_path the way a query would
+// resolve it, so same-named tables in other schemas (Supabase's auth.users
+// next to public.users) are not mixed in. quote_ident keeps the lookup
+// exact-case, matching the table_name comparison ("User" from Prisma).
+func pgTable(table string) (schemaExpr, name string) {
+	if i := strings.LastIndex(table, "."); i >= 0 {
+		return fmt.Sprintf("'%s'", table[:i]), table[i+1:]
+	}
+	schemaExpr = fmt.Sprintf("(SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.oid = to_regclass(quote_ident('%s')))", table)
+	return schemaExpr, table
+}
+
 // columnQueries returns engine-appropriate catalog queries, best first.
 func columnQueries(dbType, table string) []string {
 	switch dbType {
 	case "postgres", "timescale", "timescaledb":
-		return []string{fmt.Sprintf(`SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name = '%s' ORDER BY ordinal_position`, table)}
+		schema, name := pgTable(table)
+		return []string{fmt.Sprintf(`SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema = %s AND table_name = '%s' ORDER BY ordinal_position`, schema, name)}
 	case "mysql":
 		return []string{fmt.Sprintf("SHOW COLUMNS FROM `%s`", table)}
 	case "sqlite", "sqlite3":
-		return []string{fmt.Sprintf("SELECT name AS column_name, type AS data_type, \"notnull\" AS is_nullable, dflt_value AS column_default FROM pragma_table_info('%s')", table)}
+		return []string{fmt.Sprintf("SELECT name AS column_name, type AS data_type, CASE WHEN \"notnull\" = 0 THEN 'YES' ELSE 'NO' END AS is_nullable, dflt_value AS column_default FROM pragma_table_info('%s')", table)}
 	case "oracle":
 		return []string{fmt.Sprintf(`SELECT column_name, data_type, nullable AS is_nullable, data_default AS column_default FROM user_tab_columns WHERE table_name = UPPER('%s') ORDER BY column_id`, table)}
 	default:
@@ -249,7 +264,8 @@ func columnQueries(dbType, table string) []string {
 func indexQueries(dbType, table string) []string {
 	switch dbType {
 	case "postgres", "timescale", "timescaledb":
-		return []string{fmt.Sprintf(`SELECT indexname AS index_name, indexdef AS definition FROM pg_indexes WHERE tablename = '%s'`, table)}
+		schema, name := pgTable(table)
+		return []string{fmt.Sprintf(`SELECT indexname AS index_name, indexdef AS definition FROM pg_indexes WHERE schemaname = %s AND tablename = '%s'`, schema, name)}
 	case "mysql":
 		return []string{fmt.Sprintf("SHOW INDEX FROM `%s`", table)}
 	case "sqlite", "sqlite3":
@@ -271,6 +287,7 @@ func indexQueries(dbType, table string) []string {
 func constraintQueries(dbType, table string) []string {
 	switch dbType {
 	case "postgres", "timescale", "timescaledb":
+		schema, name := pgTable(table)
 		return []string{fmt.Sprintf(`SELECT tc.constraint_name, tc.constraint_type, kcu.column_name,
        ccu.table_name AS referenced_table, ccu.column_name AS referenced_column
 FROM information_schema.table_constraints tc
@@ -278,7 +295,7 @@ JOIN information_schema.key_column_usage kcu
   ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
 LEFT JOIN information_schema.constraint_column_usage ccu
   ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
-WHERE tc.table_name = '%s' ORDER BY tc.constraint_type, kcu.ordinal_position`, table)}
+WHERE tc.table_schema = %s AND tc.table_name = '%s' ORDER BY tc.constraint_type, kcu.ordinal_position`, schema, name)}
 	case "mysql":
 		return []string{fmt.Sprintf(`SELECT tc.CONSTRAINT_NAME AS constraint_name, tc.CONSTRAINT_TYPE AS constraint_type,
        kcu.COLUMN_NAME AS column_name, kcu.REFERENCED_TABLE_NAME AS referenced_table,
@@ -315,7 +332,8 @@ WHERE tc.table_name = '%s' ORDER BY tc.constraint_type, kcu.ordinal_position`, t
 func rowEstimateQuery(dbType, table string) string {
 	switch dbType {
 	case "postgres", "timescale", "timescaledb":
-		return fmt.Sprintf(`SELECT reltuples::bigint AS n FROM pg_class WHERE relname = '%s'`, table)
+		schema, name := pgTable(table)
+		return fmt.Sprintf(`SELECT c.reltuples::bigint AS n FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %s AND c.relname = '%s'`, schema, name)
 	case "mysql":
 		return fmt.Sprintf("SELECT table_rows AS n FROM information_schema.tables WHERE table_name = '%s'", table)
 	case "sqlite", "sqlite3":
