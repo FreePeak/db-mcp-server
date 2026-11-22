@@ -8,10 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	sdkAuth "github.com/modelcontextprotocol/go-sdk/auth"
+
+	"github.com/FreePeak/db-mcp-server/pkg/db"
 )
 
 // allDatabases is the databases value that grants every configured database.
@@ -81,12 +82,12 @@ func AgentKeyAuth(keys []AgentKey, legacyKey string, legacyScopes []string) (fun
 
 // LoadAgentKeys reads and validates the DB_MCP_AGENT_KEYS_FILE JSON list.
 func LoadAgentKeys(path string) ([]AgentKey, error) {
-	data, err := os.ReadFile(path)
+	data, err := db.ResolveSecretValue("", "", path, "", "agent keys")
 	if err != nil {
-		return nil, fmt.Errorf("read agent keys file: %w", err)
+		return nil, err
 	}
 	var keys []AgentKey
-	if err := json.Unmarshal(data, &keys); err != nil {
+	if err := json.Unmarshal([]byte(data), &keys); err != nil {
 		return nil, fmt.Errorf("parse agent keys file: %w", err)
 	}
 	if len(keys) == 0 {

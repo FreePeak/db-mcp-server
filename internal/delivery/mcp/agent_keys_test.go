@@ -261,6 +261,28 @@ func TestLoadAgentKeys_MissingFile(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestLoadAgentKeys_RejectsNonFileAndEmptyPaths(t *testing.T) {
+	dir := t.TempDir()
+	empty := filepath.Join(dir, "empty.json")
+	require.NoError(t, os.WriteFile(empty, nil, 0o600))
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr string
+	}{
+		{name: "directory", path: dir, wantErr: "not a regular file"},
+		{name: "empty file", path: empty, wantErr: "is empty"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadAgentKeys(tc.path)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
 type bearerTransport struct {
 	token string
 	base  http.RoundTripper
