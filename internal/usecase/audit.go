@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"sync"
@@ -28,7 +29,43 @@ type auditRecord struct {
 	Database  string  `json:"database"`
 	Statement string  `json:"statement"`
 	DurMS     float64 `json:"duration_ms"`
+	Principal string  `json:"principal,omitempty"`
+	Session   string  `json:"session,omitempty"`
+	Rows      *int    `json:"rows,omitempty"`
 	Error     string  `json:"error,omitempty"`
+}
+
+// Caller identifies who issued a request for audit attribution. The delivery
+// layer sets it on the context; the use case only reads it.
+type Caller struct {
+	Principal string // authenticated identity; empty when unauthenticated
+	Session   string // MCP session ID; empty when the transport has none
+}
+
+type callerKey struct{}
+
+// WithCaller returns a copy of ctx that carries caller for audit records.
+func WithCaller(ctx context.Context, caller Caller) context.Context {
+	return context.WithValue(ctx, callerKey{}, caller)
+}
+
+// CallerFromContext returns the caller set by WithCaller, or the zero Caller.
+func CallerFromContext(ctx context.Context) Caller {
+	caller, ok := ctx.Value(callerKey{}).(Caller)
+	if !ok {
+		return Caller{}
+	}
+	return caller
+}
+
+// knownRows turns a driver's rows-affected report into an audit count; nil
+// when the driver could not report one, so the field is omitted.
+func knownRows(n int64, err error) *int {
+	if err != nil {
+		return nil
+	}
+	v := int(n)
+	return &v
 }
 
 type auditLogger struct {
@@ -100,7 +137,7 @@ func DisableAuditLog() {
 
 // record writes one line; failures are logged and dropped — auditing must
 // never turn into an availability problem for the queries it observes.
-func (a *auditLogger) record(op, dbID, statement string, dur time.Duration, execErr error) {
+func (a *auditLogger) record(ctx context.Context, op, dbID, statement string, dur time.Duration, rows *int, execErr error) {
 	a.initFromEnv()
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -112,12 +149,16 @@ func (a *auditLogger) record(op, dbID, statement string, dur time.Duration, exec
 	if len(stmt) > auditStatementCap {
 		stmt = stmt[:auditStatementCap] + "...[truncated]"
 	}
+	caller := CallerFromContext(ctx)
 	rec := auditRecord{
 		TS:        time.Now().UTC().Format(time.RFC3339Nano),
 		Op:        op,
 		Database:  dbID,
 		Statement: stmt,
 		DurMS:     float64(dur.Microseconds()) / 1000.0,
+		Principal: caller.Principal,
+		Session:   caller.Session,
+		Rows:      rows,
 	}
 	if execErr != nil {
 		rec.Error = execErr.Error()
