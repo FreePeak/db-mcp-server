@@ -14,6 +14,16 @@ const (
 	apiKeySourceFile = "DB_MCP_API_KEY_FILE"
 )
 
+// resolveAPIKeyForTransport resolves the API key only for the transports that
+// use it. Other transports never read the key inputs, so a blank key or an
+// unreadable key file must not stop them from starting.
+func resolveAPIKeyForTransport(transport, flagKey, envKey, keyFile string) (string, string, error) {
+	if transport != "streamable" {
+		return "", "", nil
+	}
+	return resolveAPIKey(flagKey, envKey, keyFile)
+}
+
 // resolveAPIKey returns the API key from the single source that is set, and the
 // name of that source. It returns an empty key and source when none is set; the
 // caller decides whether that is fatal.
