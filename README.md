@@ -283,11 +283,18 @@ the flag off, the server refuses to start:
 ]
 ```
 
-Generate a digest from the key you hand to the agent:
+Generate a random key for each agent, and store only its SHA-256 digest in the
+file. The key is the agent's bearer token, so give it to the agent and keep it
+out of the file:
 
 ```bash
-printf '%s' "$KEY" | shasum -a 256 | cut -d' ' -f1
+KEY="$(openssl rand -hex 32)"                          # give this to the agent
+printf '%s' "$KEY" | shasum -a 256 | cut -d' ' -f1     # put this in key_sha256
 ```
+
+Keys do not expire. To rotate, generate a new key, replace the entry's
+`key_sha256` (or add a new entry and remove the old one), and restart the server:
+the file is read only at startup.
 
 - `scopes` is required: one or more of `db:read`, `db:write`, `db:admin`.
 - `databases` is required and must be non-empty. List database ids from the
@@ -300,9 +307,16 @@ printf '%s' "$KEY" | shasum -a 256 | cut -d' ' -f1
 - Scope and allowlist both apply to every call. An allowlisted key may call only
   the unified tools (`query`, `execute`, `transaction`, `performance`, `explain`,
   `describe`, `health`, `schema`, `filter_tables`) with a `database` argument;
-  per-database tool names (`query_<id>`) are denied. `list_databases` is always
-  callable and lists only the databases in the key's allowlist (`"*"` lists all).
-  The audit log records the entry `id` as the principal.
+  per-database tool names (`query_<id>`) are denied. TimescaleDB tools
+  (`timescaledb_*`) are not in that list, so agent keys cannot use them.
+  `list_databases` is always callable and lists only the databases in the key's
+  allowlist (`"*"` lists all). The audit log records the entry `id` as the
+  principal.
+- Discovery is not limited by the allowlist. `tools/list` returns the unified
+  tool descriptions and the `database` parameter description, and both name every
+  configured database id to any authenticated key. The allowlist controls which
+  databases a key can use, not which ids it can see. Do not rely on database ids
+  being secret.
 - Streamable HTTP only. With stdio or SSE the file is ignored: the server logs a
   warning and prints it to stderr (stdout carries MCP traffic).
 - Cannot be combined with OIDC. With streamable HTTP, setting
@@ -312,10 +326,12 @@ printf '%s' "$KEY" | shasum -a 256 | cut -d' ' -f1
   still works after the agent keys are checked, and it is the only key a
   streamable server needs when no agent keys file is set.
 
-The server refuses to start on: invalid JSON; an empty file (`[]`); a missing
-or empty `scopes` or `databases`; a missing, blank or whitespace-padded `id`; a
-duplicate `id` or `key_sha256`; a `key_sha256` that is not 64 hex characters; an
-unknown scope. Errors name the entry id, never the key.
+The server refuses to start on: invalid JSON; an unknown field (for example
+`expires_at`, since keys do not expire); data after the list; an empty file
+(`[]`); a missing or empty `scopes` or `databases`; a missing, blank or
+whitespace-padded `id`; a duplicate `id` or `key_sha256`; a `key_sha256` that is
+not 64 hex characters or is the SHA-256 of the empty string; an unknown scope; and
+the file set without `-unified-tools`. Errors name the entry id, never the key.
 
 ### Docker image
 
