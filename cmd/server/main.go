@@ -162,6 +162,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	oidcIssuer := strings.TrimSpace(os.Getenv("DB_MCP_OIDC_ISSUER"))
+	if err := validateTransportAuth(cfg.TransportMode, *apiKey != "", oidcIssuer != "", *allowInsecureSSE); err != nil {
+		logger.Error("%v", err)
+		os.Exit(1)
+	}
+
 	// Pass the already-validated canonical object through unchanged. In
 	// particular, result guardrails and resolved SQLite paths must not be
 	// reconstructed by a second parser here.
@@ -249,10 +255,6 @@ func main() {
 	// Handle transport mode
 	switch cfg.TransportMode {
 	case "sse":
-		if !*allowInsecureSSE {
-			logger.Error("Legacy SSE is disabled by default because it has no built-in authentication; use STDIO or implement the Streamable transport, or pass -allow-insecure-sse only behind a trusted private proxy")
-			os.Exit(1)
-		}
 		if apiKeyFlag != "" || apiKeyEnv != "" || apiKeyFile != "" {
 			logger.Warn("An API key (-api-key, DB_MCP_API_KEY or DB_MCP_API_KEY_FILE) is not applied to the legacy Cortex SSE transport; enforce authentication at the trusted proxy")
 		}
@@ -373,7 +375,6 @@ func main() {
 		}
 
 		var authMiddleware func(http.Handler) http.Handler
-		oidcIssuer := strings.TrimSpace(os.Getenv("DB_MCP_OIDC_ISSUER"))
 		if oidcIssuer != "" {
 			oidcAudience := strings.TrimSpace(os.Getenv("DB_MCP_OIDC_AUDIENCE"))
 			if oidcAudience == "" {
@@ -389,10 +390,6 @@ func main() {
 			}
 			authMiddleware = mcp.OIDCBearerAuth(verifier, apiScopes)
 		} else {
-			if *apiKey == "" {
-				logger.Error("Streamable HTTP requires OIDC configuration or DB_MCP_API_KEY; refusing to start unauthenticated")
-				os.Exit(1)
-			}
 			authMiddleware = mcp.APIKeyAuthWithScopes(*apiKey, apiScopes)
 		}
 		streamableHandler := authMiddleware(mcp.NewStreamableHTTPHandler(toolRegistry.ServerAdapter().SDKServer()))
