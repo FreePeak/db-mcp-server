@@ -118,8 +118,13 @@ func stripSQLLiterals(query string) string {
 			i = skipQuoted(query, i, '\'', '\'')
 			b.WriteByte(' ')
 		case c == '"':
-			i = skipQuoted(query, i, '"', '"')
-			b.WriteByte(' ')
+			end := skipQuoted(query, i, '"', '"')
+			if isQuotedSetConfigCall(query, i, end) {
+				b.WriteString(" set_config ")
+			} else {
+				b.WriteByte(' ')
+			}
+			i = end
 		case c == '`':
 			i = skipQuoted(query, i, '`', '`')
 			b.WriteByte(' ')
@@ -158,6 +163,16 @@ func skipQuoted(query string, pos int, open, close byte) int {
 		i++
 	}
 	return n
+}
+
+// isQuotedSetConfigCall reports whether the double-quoted identifier at
+// query[start:end] names set_config and is followed by "(", so it is a call.
+// A quoted set_config that is not called stays an ordinary identifier.
+func isQuotedSetConfigCall(query string, start, end int) bool {
+	if end-start < 2 || query[end-1] != '"' || !strings.EqualFold(query[start+1:end-1], "set_config") {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimLeft(query[end:], " \t\r\n"), "(")
 }
 
 // skipDollarQuoted returns the index just past a PostgreSQL dollar-quoted
