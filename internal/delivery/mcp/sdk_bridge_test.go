@@ -126,4 +126,5 @@ func TestAdaptCortexHandlerPassesPrincipalToUseCase(t *testing.T) {
 	_, err = handler(context.Background(), unauthenticated)
 	require.NoError(t, err)
 	require.Empty(t, seen.Principal)
+	require.Empty(t, seen.Session)
 }
