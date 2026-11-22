@@ -1,81 +1,87 @@
+version: "2"
 run:
-  timeout: 5m
   allow-parallel-runners: true
-  issues:
-    exclude-dirs:
-      - vendor
-      - bin
-
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
     - govet
     - ineffassign
-    - staticcheck
-    - unused
     - misspell
     - revive
-    - gofmt
-    - goimports
-
-# gofmt/goimports are declared under linters (v1 syntax) because CI pins
-# golangci-lint v1.64.8: the v2-only "formatters" block was silently ignored,
-# so formatting was never checked on a pull request.
-linters-settings:
-  gofmt:
-    simplify: true
-  goimports:
-    local-prefixes: github.com/FreePeak/db-mcp-server
-  revive:
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      exclude-functions:
+        - os.Setenv
+    revive:
+      rules:
+        - name: var-naming
+          severity: warning
+          disabled: false
+        - name: exported
+          severity: warning
+          disabled: false
+    staticcheck:
+      # QF1012 is style-only (WriteString(Sprintf) to Fprintf); v1.64.8 never ran quickfix checks.
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -QF1012
+  exclusions:
+    generated: lax
     rules:
-      - name: var-naming
-        severity: warning
-        disabled: false
-      - name: exported
-        severity: warning
-        disabled: false
-  errcheck:
-    # Report about not checking of errors in type assertions: `a := b.(MyStruct)`.
-    check-type-assertions: true
-    # Report about assignment of errors to blank identifier: `num, _ := strconv.Atoi(numStr)`.
-    check-blank: true
-    # List of functions to exclude from error checking (useful for os.Setenv)
-    exclude-functions:
-      - os.Setenv
-
+      - path: internal/delivery/mcp/tool_registry.go
+        text: Error return value of `tr.registerTool` is not checked
+      - path: internal/delivery/mcp/tool_registry.go
+        text: Error return value of `tr.createToolAlias` is not checked
+      - path: cmd/server/main.go
+        text: Error return value of `os.Setenv` is not checked
+      - linters:
+          - errcheck
+        path: _test\.go$
+      - linters:
+          - unused
+        path: pkg/dbtools/dbtools.go
+        text: func `_loadConfigFromFile` is unused
+      - linters:
+          - unused
+        path: pkg/dbtools/dbtools.go
+        text: func `_getEnv` is unused
+      - linters:
+          - unused
+        path: pkg/dbtools/dbtools.go
+        text: func `_getIntEnv` is unused
+      - linters:
+          - unused
+        path: pkg/dbtools/dbtools.go
+        text: func `_loadConfigFromEnv` is unused
+      - path: (.+)\.go$
+        text: exported \w+ (\S*['.]*)([a-zA-Z'.*]*) should have comment or be unexported
+    paths:
+      - vendor/
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-dirs:
-    - vendor/
-  exclude:
-    - "exported \\w+ (\\S*['.]*)([a-zA-Z'.*]*) should have comment or be unexported"
-  # Excluding the specific errors that are reported but that we can't reproduce locally  
-  exclude-rules:
-    - path: internal/delivery/mcp/tool_registry.go
-      text: "Error return value of `tr.registerTool` is not checked"
-    - path: internal/delivery/mcp/tool_registry.go  
-      text: "Error return value of `tr.createToolAlias` is not checked"
-    - path: cmd/server/main.go
-      text: "Error return value of `os.Setenv` is not checked"
-    - path: _test\.go$
-      linters:
-        - errcheck
-    - path: pkg/dbtools/dbtools.go
-      text: "func `_loadConfigFromFile` is unused"
-      linters:
-        - unused
-    - path: pkg/dbtools/dbtools.go
-      text: "func `_getEnv` is unused"
-      linters:
-        - unused
-    - path: pkg/dbtools/dbtools.go
-      text: "func `_getIntEnv` is unused"
-      linters:
-        - unused
-    - path: pkg/dbtools/dbtools.go
-      text: "func `_loadConfigFromEnv` is unused"
-      linters:
-        - unused 
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/FreePeak/db-mcp-server
+  exclusions:
+    generated: lax
+    paths:
+      - vendor/
