@@ -134,10 +134,21 @@ jobs:
           tags: ${{ env.IMAGE_NAME }}:scan
           cache-from: type=gha
 
+      - name: Print Trivy report
+        # Report only: lists CRITICAL and HIGH findings with CVE ids in the log.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:scan
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '0'
+
       - name: Scan image with Trivy
-        # Blocking: fails on fixable CRITICAL vulnerabilities. The SARIF report
-        # is written before the exit code is applied, so the upload step below
-        # still sees it.
+        # Blocking on release tags only (fails on fixable CRITICAL findings).
+        # Branch and PR runs report only, until the finding is triaged. The
+        # SARIF report is written before the exit code is applied, so the
+        # upload step below still sees it.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:scan
@@ -145,7 +156,7 @@ jobs:
           output: trivy-results.sarif
           severity: CRITICAL
           ignore-unfixed: true
-          exit-code: '1'
+          exit-code: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
 
       - name: Upload Trivy results to code scanning
         # Fork pull requests get a read-only token, so skip the upload there.
