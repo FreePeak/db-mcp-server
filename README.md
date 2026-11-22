@@ -299,13 +299,14 @@ printf '%s' "$KEY" | shasum -a 256 | cut -d' ' -f1
   `describe`, `health`, `schema`, `filter_tables`) with a `database` argument;
   per-database tool names (`query_<id>`) are denied. `list_databases` still lists
   every database. The audit log records the entry `id` as the principal.
-- Streamable HTTP only. With any other transport the file is ignored and a
-  warning is logged.
+- Streamable HTTP only. With stdio or SSE the file is ignored: the server logs a
+  warning and prints it to stderr (stdout carries MCP traffic).
+- Cannot be combined with OIDC. With streamable HTTP, setting
+  `DB_MCP_OIDC_ISSUER` together with this file is a startup error.
 - `DB_MCP_API_SCOPES` applies only to the legacy key (`DB_MCP_API_KEY` or
-  `DB_MCP_API_KEY_FILE`), never to agent keys. The file cannot be combined with
-  OIDC. The legacy key, when also set, still works after the agent keys are
-  checked, and it is the only key a streamable server needs when no agent keys
-  file is set.
+  `DB_MCP_API_KEY_FILE`), never to agent keys. The legacy key, when also set,
+  still works after the agent keys are checked, and it is the only key a
+  streamable server needs when no agent keys file is set.
 
 The server refuses to start on: invalid JSON; an empty file (`[]`); a missing
 or empty `scopes` or `databases`; a missing, blank or whitespace-padded `id`; a
@@ -316,7 +317,7 @@ unknown scope. Errors name the entry id, never the key.
 
 The image defaults to the authenticated Streamable HTTP transport
 (`TRANSPORT_MODE=streamable`). It refuses to start without `DB_MCP_API_KEY`,
-`DB_MCP_API_KEY_FILE`, or OIDC configuration, and the container exits non-zero with an authentication
+`DB_MCP_API_KEY_FILE`, `DB_MCP_AGENT_KEYS_FILE`, or OIDC configuration, and the container exits non-zero with an authentication
 error otherwise. It runs as an unprivileged user, omits an embedded config
 (mount one at `/app/config.json`), and serves an unauthenticated `/health`
 probe on port `9093` in both HTTP modes.
