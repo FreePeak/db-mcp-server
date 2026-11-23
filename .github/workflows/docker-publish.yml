@@ -58,7 +58,7 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
