@@ -152,3 +152,45 @@ func TestRelationshipGraph_PostgresSchemas_Live(t *testing.T) {
 		t.Fatalf("graph resolved describe_books to describe_other, got:\n%s", graph)
 	}
 }
+
+// TestDescribeTable_MySQL_Live checks that describe returns named columns and
+// indexes and only this table's primary key when other tables have one too.
+// Requires docker-compose.test.yml or any MySQL on port 13306.
+func TestDescribeTable_MySQL_Live(t *testing.T) {
+	g := openLive(t, "mysql", "user1:password1@tcp(localhost:13306)/db1?parseTime=true")
+	for _, stmt := range []string{
+		"DROP TABLE IF EXISTS describe_items, describe_other",
+		"CREATE TABLE describe_other (other_id INT PRIMARY KEY)",
+		"CREATE TABLE describe_items (id INT PRIMARY KEY, email VARCHAR(255) NOT NULL, status VARCHAR(16) DEFAULT 'active', UNIQUE KEY uq_email (email), KEY idx_status (status, email))",
+	} {
+		if _, err := g.db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	t.Cleanup(func() { _, _ = g.db.Exec("DROP TABLE IF EXISTS describe_items, describe_other") })
+
+	uc := NewDatabaseUseCase(&fakeRepo{db: g, dbType: "mysql"})
+	info, err := uc.DescribeTable(context.Background(), "mysql1", "describe_items")
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	var cols []string
+	for _, c := range info["columns"].([]map[string]interface{}) {
+		cols = append(cols, fmt.Sprintf("%v %v", c["column_name"], c["data_type"]))
+	}
+	if strings.Join(cols, ",") != "id int,email varchar(255),status varchar(16)" {
+		t.Fatalf("unexpected columns: %v", cols)
+	}
+	idx := map[string]string{}
+	for _, ix := range info["indexes"].([]map[string]interface{}) {
+		idx[fmt.Sprint(ix["index_name"])] = fmt.Sprint(ix["definition"])
+	}
+	if idx["PRIMARY"] != "UNIQUE BTREE (id)" || idx["idx_status"] != "BTREE (status, email)" {
+		t.Fatalf("unexpected indexes: %v", idx)
+	}
+	for _, c := range info["constraints"].([]map[string]interface{}) {
+		if fmt.Sprint(c["column_name"]) == "other_id" {
+			t.Fatalf("constraints include another table's primary key: %v", info["constraints"])
+		}
+	}
+}
