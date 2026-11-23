@@ -22,7 +22,8 @@ RUN make build
 FROM alpine:3.22
 
 # Install only the runtime packages needed by the server and health check.
-RUN apk add --no-cache ca-certificates tzdata bash curl
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates tzdata bash curl
 
 # Set the working directory
 WORKDIR /app

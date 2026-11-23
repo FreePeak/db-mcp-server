@@ -1,5 +1,8 @@
 # Changelog
 ## [Unreleased]
+### Fixed
+- Docker release builds apply the image scan gate's configured severity (CRITICAL). The gate previously failed on any fixable finding, which stopped the v1.15.0 tag build before the image was pushed, so no `1.15.0` image exists on Docker Hub; use `1.15.1`
+- The Docker image upgrades its Alpine runtime packages at build time, which picks up the zlib fix for CVE-2026-4738
 
 ## [v1.15.0] - 2026-11-23
 ### Changed (BREAKING)
