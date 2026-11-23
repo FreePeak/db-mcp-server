@@ -21,7 +21,7 @@ jobs:
         check-latest: true
 
     - name: Check out code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Install govulncheck
       # Pinned rather than @latest so a new scanner release cannot change

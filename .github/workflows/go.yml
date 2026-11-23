@@ -18,7 +18,7 @@ jobs:
         check-latest: true
 
     - name: Check out code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Cache Go modules
       uses: actions/cache@v4
@@ -115,7 +115,7 @@ jobs:
         check-latest: true
 
     - name: Check out code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Cache Go modules
       uses: actions/cache@v4
@@ -279,7 +279,7 @@ jobs:
         check-latest: true
 
     - name: Check out code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Cache Go modules
       uses: actions/cache@v4
