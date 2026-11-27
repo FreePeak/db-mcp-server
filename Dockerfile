@@ -1,4 +1,4 @@
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 # Install necessary build tools
 RUN apk add --no-cache make gcc musl-dev
@@ -19,7 +19,7 @@ COPY . .
 RUN make build
 
 # Create a smaller production image
-FROM alpine:3.22
+FROM alpine:3.24
 
 # Install only the runtime packages needed by the server and health check.
 RUN apk upgrade --no-cache \
